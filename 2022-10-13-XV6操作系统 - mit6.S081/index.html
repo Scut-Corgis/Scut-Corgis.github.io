@@ -1,12 +1,25 @@
 <!DOCTYPE html>
-<html>
+<html lang="zh-CN">
 <head>
-  <meta charset="utf-8">
-  
-  
-  <title>XV6操作系统 - mit6.S081 | corgis的笔记</title>
-  <meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no">
-  <meta name="description" content="MIT6.S081操作系统课程介绍 · 6.S081 All-In-One (dgs.zone) 简介 - MIT6.S081 (gitbook.io) 页表Xv6为每个进程维护一个页表，用以描述每个进程的用户地址空间，外加一个单独描述内核地址空间的页表。内核配置其地址空间的布局，以允许自己以可预测的虚拟地址访问物理内存和各种硬件资源。图3.3显示了这种布局如何将内核虚拟地址映射到物理地址。  内">
+  <meta charset="UTF-8">
+<meta name="viewport" content="width=device-width">
+<meta name="theme-color" content="#222"><meta name="generator" content="Hexo 7.3.0">
+
+  <link rel="apple-touch-icon" sizes="180x180" href="/project/images/apple-touch-icon-next.png">
+  <link rel="icon" type="image/png" sizes="32x32" href="/project/images/corgis.jpg">
+  <link rel="icon" type="image/png" sizes="16x16" href="/project/images/corgis.jpg">
+  <link rel="mask-icon" href="/project/images/logo.svg" color="#222">
+
+<link rel="stylesheet" href="/project/css/main.css">
+
+
+
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.2/css/all.min.css" integrity="sha256-XOqroi11tY4EFQMR9ZYwZWKj5ZXiftSx36RRuC3anlA=" crossorigin="anonymous">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/animate.css/3.1.1/animate.min.css" integrity="sha256-PR7ttpcvz8qrF57fur/yAx1qXMFJeJFiA6pSzWi0OIE=" crossorigin="anonymous">
+
+<script class="next-config" data-name="main" type="application/json">{"hostname":"scut-corgis.github.io","root":"/project/","images":"/project/images","scheme":"Muse","darkmode":false,"version":"8.20.0","exturl":false,"sidebar":{"position":"left","width_expanded":320,"width_dual_column":240,"display":"always","padding":18,"offset":12},"hljswrap":true,"copycode":{"enable":true,"style":null},"fold":{"enable":true,"height":500},"bookmark":{"enable":false,"color":"#222","save":"auto"},"mediumzoom":false,"lazyload":false,"pangu":false,"comments":{"style":"tabs","active":null,"storage":true,"lazyload":false,"nav":null},"stickytabs":false,"motion":{"enable":true,"async":false,"transition":{"menu_item":"fadeInDown","post_block":"fadeIn","post_header":"fadeInDown","post_body":"fadeInDown","coll_header":"fadeInLeft","sidebar":"fadeInUp"}},"prism":false,"i18n":{"placeholder":"搜索...","empty":"没有找到任何搜索结果：${query}","hits_time":"找到 ${hits} 个搜索结果（用时 ${time} 毫秒）","hits":"找到 ${hits} 个搜索结果"}}</script><script src="/project/js/config.js"></script>
+
+    <meta name="description" content="MIT6.S081操作系统课程介绍 · 6.S081 All-In-One (dgs.zone) 简介 - MIT6.S081 (gitbook.io) 页表Xv6为每个进程维护一个页表，用以描述每个进程的用户地址空间，外加一个单独描述内核地址空间的页表。内核配置其地址空间的布局，以允许自己以可预测的虚拟地址访问物理内存和各种硬件资源。图3.3显示了这种布局如何将内核虚拟地址映射到物理地址。  内">
 <meta property="og:type" content="article">
 <meta property="og:title" content="XV6操作系统 - mit6.S081">
 <meta property="og:url" content="https://scut-corgis.github.io/project/2022-10-13-XV6%E6%93%8D%E4%BD%9C%E7%B3%BB%E7%BB%9F%20-%20mit6.S081/index.html">
@@ -22,91 +35,190 @@
 <meta property="article:author" content="Corgis">
 <meta name="twitter:card" content="summary">
 <meta name="twitter:image" content="https://scut-corgis.github.io/project/2022-10-13-XV6%E6%93%8D%E4%BD%9C%E7%B3%BB%E7%BB%9F%20-%20mit6.S081/image-20220526105709735.png">
-  
-    <link rel="alternate" href="/project/atom.xml" title="corgis的笔记" type="application/atom+xml">
-  
-  
-    <link rel="shortcut icon" href="/project/favicon.png">
-  
-  
-    
-<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/typeface-source-code-pro@0.0.71/index.min.css">
 
-  
-  
-<link rel="stylesheet" href="/project/css/style.css">
 
-  
-    
-<link rel="stylesheet" href="/project/fancybox/jquery.fancybox.min.css">
+<link rel="canonical" href="https://scut-corgis.github.io/project/2022-10-13-XV6%E6%93%8D%E4%BD%9C%E7%B3%BB%E7%BB%9F%20-%20mit6.S081/">
 
-  
-  
-<meta name="generator" content="Hexo 7.3.0"></head>
 
-<body>
-  <div id="container">
-    <div id="wrap">
-      <header id="header">
-  <div id="banner"></div>
-  <div id="header-outer" class="outer">
-    <div id="header-title" class="inner">
-      <h1 id="logo-wrap">
-        <a href="/project/" id="logo">corgis的笔记</a>
-      </h1>
-      
-    </div>
-    <div id="header-inner" class="inner">
-      <nav id="main-nav">
-        <a id="main-nav-toggle" class="nav-icon"><span class="fa fa-bars"></span></a>
-        
-          <a class="main-nav-link" href="/project/">Home</a>
-        
-          <a class="main-nav-link" href="/project/archives">Archives</a>
-        
-      </nav>
-      <nav id="sub-nav">
-        
-        
-          <a class="nav-icon" href="/project/atom.xml" title="RSS 订阅"><span class="fa fa-rss"></span></a>
-        
-        <a class="nav-icon nav-search-btn" title="搜索"><span class="fa fa-search"></span></a>
-      </nav>
-      <div id="search-form-wrap">
-        <form action="//google.com/search" method="get" accept-charset="UTF-8" class="search-form"><input type="search" name="q" class="search-form-input" placeholder="搜索"><button type="submit" class="search-form-submit">&#xF002;</button><input type="hidden" name="sitesearch" value="https://Scut-Corgis.github.io/project"></form>
-      </div>
+
+<script class="next-config" data-name="page" type="application/json">{"sidebar":"","isHome":false,"isPost":true,"lang":"zh-CN","comments":true,"permalink":"https://scut-corgis.github.io/project/2022-10-13-XV6%E6%93%8D%E4%BD%9C%E7%B3%BB%E7%BB%9F%20-%20mit6.S081/","path":"2022-10-13-XV6操作系统 - mit6.S081/","title":"XV6操作系统 - mit6.S081"}</script>
+
+<script class="next-config" data-name="calendar" type="application/json">""</script>
+<title>XV6操作系统 - mit6.S081 | corgis的笔记</title>
+  
+
+
+
+
+
+
+
+
+  <noscript>
+    <link rel="stylesheet" href="/project/css/noscript.css">
+  </noscript>
+</head>
+
+<body itemscope itemtype="http://schema.org/WebPage" class="use-motion">
+  <div class="headband"></div>
+
+  <main class="main">
+    <div class="column">
+      <header class="header" itemscope itemtype="http://schema.org/WPHeader"><div class="site-brand-container">
+  <div class="site-nav-toggle">
+    <div class="toggle" aria-label="切换导航栏" role="button">
+        <span class="toggle-line"></span>
+        <span class="toggle-line"></span>
+        <span class="toggle-line"></span>
     </div>
   </div>
+
+  <div class="site-meta">
+
+    <a href="/project/" class="brand" rel="start">
+      <i class="logo-line"></i>
+      <p class="site-title">corgis的笔记</p>
+      <i class="logo-line"></i>
+    </a>
+  </div>
+
+  <div class="site-nav-right">
+    <div class="toggle popup-trigger" aria-label="搜索" role="button">
+    </div>
+  </div>
+</div>
+
+
+
+<nav class="site-nav">
+  <ul class="main-menu menu"><li class="menu-item menu-item-home"><a href="/project/" rel="section"><i class="fa fa-home fa-fw"></i>首页</a></li><li class="menu-item menu-item-about"><a href="/project/about/" rel="section"><i class="fa fa-user fa-fw"></i>关于</a></li><li class="menu-item menu-item-categories"><a href="/project/categories/" rel="section"><i class="fa fa-th fa-fw"></i>分类</a></li><li class="menu-item menu-item-archives"><a href="/project/archives/" rel="section"><i class="fa fa-archive fa-fw"></i>归档</a></li>
+  </ul>
+</nav>
+
+
+
+
 </header>
-
-      <div class="outer">
-        <section id="main"><article id="post-XV6操作系统 - mit6.S081" class="h-entry article article-type-post" itemprop="blogPost" itemscope itemtype="https://schema.org/BlogPosting">
-  <div class="article-meta">
-    <a href="/project/2022-10-13-XV6%E6%93%8D%E4%BD%9C%E7%B3%BB%E7%BB%9F%20-%20mit6.S081/" class="article-date">
-  <time class="dt-published" datetime="2022-10-13T13:20:01.000Z" itemprop="datePublished">2022-10-13</time>
-</a>
-    
-  <div class="article-category">
-    <a class="article-category-link" href="/project/categories/os/">os</a>
-  </div>
-
-  </div>
-  <div class="article-inner">
-    
-    
-      <header class="article-header">
         
   
-    <h1 class="p-name article-title" itemprop="headline name">
-      XV6操作系统 - mit6.S081
-    </h1>
+  <aside class="sidebar">
+
+    <div class="sidebar-inner sidebar-nav-active sidebar-toc-active">
+      <ul class="sidebar-nav">
+        <li class="sidebar-nav-toc">
+          文章目录
+        </li>
+        <li class="sidebar-nav-overview">
+          站点概览
+        </li>
+      </ul>
+
+      <div class="sidebar-panel-container">
+        <!--noindex-->
+        <div class="post-toc-wrap sidebar-panel">
+            <div class="post-toc animated"><ol class="nav"><li class="nav-item nav-level-1"><a class="nav-link" href="#MIT6-S081%E6%93%8D%E4%BD%9C%E7%B3%BB%E7%BB%9F"><span class="nav-number">1.</span> <span class="nav-text">MIT6.S081操作系统</span></a><ol class="nav-child"><li class="nav-item nav-level-2"><a class="nav-link" href="#%E9%A1%B5%E8%A1%A8"><span class="nav-number">1.1.</span> <span class="nav-text">页表</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E7%B3%BB%E7%BB%9F%E8%B0%83%E7%94%A8%E5%87%BD%E6%95%B0"><span class="nav-number">1.2.</span> <span class="nav-text">系统调用函数</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#trap"><span class="nav-number">1.3.</span> <span class="nav-text">trap</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E5%86%85%E5%AD%98%E6%83%B0%E6%80%A7%E5%88%86%E9%85%8D"><span class="nav-number">1.4.</span> <span class="nav-text">内存惰性分配</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#fork%E7%9A%84copy-on-write"><span class="nav-number">1.5.</span> <span class="nav-text">fork的copy-on-write</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E4%B8%AD%E6%96%AD%E5%92%8C%E8%AE%BE%E5%A4%87%E9%A9%B1%E5%8A%A8"><span class="nav-number">1.6.</span> <span class="nav-text">中断和设备驱动</span></a><ol class="nav-child"><li class="nav-item nav-level-4"><a class="nav-link" href="#%E6%8E%A7%E5%88%B6%E5%8F%B0%E8%BE%93%E5%85%A5"><span class="nav-number">1.6.0.1.</span> <span class="nav-text">控制台输入</span></a></li><li class="nav-item nav-level-4"><a class="nav-link" href="#%E6%8E%A7%E5%88%B6%E5%8F%B0%E8%BE%93%E5%87%BA"><span class="nav-number">1.6.0.2.</span> <span class="nav-text">控制台输出</span></a></li></ol></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E7%BA%BF%E7%A8%8B%E8%B0%83%E5%BA%A6"><span class="nav-number">1.7.</span> <span class="nav-text">线程调度</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E6%96%87%E4%BB%B6%E7%B3%BB%E7%BB%9F"><span class="nav-number">1.8.</span> <span class="nav-text">文件系统</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#%E7%A3%81%E7%9B%98%E9%AB%98%E9%80%9F%E7%BC%93%E5%AD%98%E5%B1%82-buffer-cache"><span class="nav-number">1.8.1.</span> <span class="nav-text">磁盘高速缓存层 buffer cache</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E6%97%A5%E5%BF%97%E5%B1%82%E5%92%8C%E7%A3%81%E7%9B%98I-O%E8%B0%83%E5%BA%A6%E5%B1%82"><span class="nav-number">1.8.2.</span> <span class="nav-text">日志层和磁盘I&#x2F;O调度层</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E7%B4%A2%E5%BC%95%E8%8A%82%E7%82%B9%E5%B1%82inode"><span class="nav-number">1.8.3.</span> <span class="nav-text">索引节点层inode</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E7%9B%AE%E5%BD%95%E5%B1%82"><span class="nav-number">1.8.4.</span> <span class="nav-text">目录层</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E6%96%87%E4%BB%B6%E6%8F%8F%E8%BF%B0%E7%AC%A6%E5%B1%82"><span class="nav-number">1.8.5.</span> <span class="nav-text">文件描述符层</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#Locks"><span class="nav-number">1.9.</span> <span class="nav-text">Locks</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#mmap%E4%B8%8Emunmap"><span class="nav-number">1.10.</span> <span class="nav-text">mmap与munmap</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E7%BD%91%E5%8D%A1%E9%A9%B1%E5%8A%A8"><span class="nav-number">1.11.</span> <span class="nav-text">网卡驱动</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#meltdown%E6%94%BB%E5%87%BB"><span class="nav-number">1.12.</span> <span class="nav-text">meltdown攻击</span></a></li></ol></li><li class="nav-item nav-level-1"><a class="nav-link" href="#%E9%A1%B9%E7%9B%AE%E4%B8%BB%E8%A6%81%E5%86%85%E5%AE%B9%E5%A4%8D%E7%9B%98"><span class="nav-number">2.</span> <span class="nav-text">项目主要内容复盘</span></a><ol class="nav-child"><li class="nav-item nav-level-2"><a class="nav-link" href="#1-%E5%A2%9E%E5%8A%A0%E7%B3%BB%E7%BB%9F%E8%B0%83%E7%94%A8%EF%BC%8C%E5%AE%9E%E7%8E%B0%E7%94%A8%E6%88%B7%E7%BA%A7%E4%BF%A1%E5%8F%B7%E4%B8%AD%E6%96%ADAlarm"><span class="nav-number">2.1.</span> <span class="nav-text">1.增加系统调用，实现用户级信号中断Alarm</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#2-%E5%A2%9E%E5%8A%A0%E8%BF%9B%E7%A8%8B%E5%86%85%E6%A0%B8%E9%A1%B5%E8%A1%A8%EF%BC%8C%E5%85%81%E8%AE%B8%E5%86%85%E6%A0%B8%E7%9B%B4%E6%8E%A5%E8%A7%A3%E5%BC%95%E7%94%A8%E7%94%A8%E6%88%B7%E6%8C%87%E9%92%88"><span class="nav-number">2.2.</span> <span class="nav-text">2.增加进程内核页表，允许内核直接解引用用户指针</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#3-%E5%AE%9E%E7%8E%B0%E7%94%A8%E6%88%B7%E5%A0%86%E5%86%85%E5%AD%98%E7%9A%84%E6%83%B0%E6%80%A7%E5%88%86%E9%85%8D%EF%BC%8C%E5%AE%9E%E7%8E%B0Copy-on-Write%E7%9A%84fork%E7%B3%BB%E7%BB%9F%E8%B0%83%E7%94%A8"><span class="nav-number">2.3.</span> <span class="nav-text">3.实现用户堆内存的惰性分配，实现Copy-on-Write的fork系统调用</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#4-%E5%AE%9E%E7%8E%B0%E7%AE%80%E6%98%93%E7%9A%84%E5%8D%8F%E7%A8%8B%EF%BC%8C%E5%AE%9E%E7%8E%B0%E5%87%BD%E6%95%B0%E6%A0%88%E5%B8%A7%E5%9B%9E%E6%BA%AF%E6%89%93%E5%8D%B0%E5%8A%9F%E8%83%BD"><span class="nav-number">2.4.</span> <span class="nav-text">4.实现简易的协程，实现函数栈帧回溯打印功能</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#5-%E4%BC%98%E5%8C%96%E5%86%85%E6%A0%B8%E5%86%85%E9%83%A8%E7%9A%84%E9%94%81%E4%BA%89%E7%94%A8%EF%BC%8C%E5%90%84CPU%E5%8F%AF%E7%8B%AC%E8%87%AA%E5%88%86%E9%85%8D%E7%A9%BA%E9%97%B2%E7%89%A9%E7%90%86%E9%A1%B5%EF%BC%8C%E9%87%8D%E6%96%B0%E8%AE%BE%E8%AE%A1%E7%A3%81%E7%9B%98buffer-cache%E6%95%B0%E6%8D%AE%E7%BB%93%E6%9E%84"><span class="nav-number">2.5.</span> <span class="nav-text">5.优化内核内部的锁争用，各CPU可独自分配空闲物理页，重新设计磁盘buffer cache数据结构</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#6-%E6%89%A9%E5%B1%95%E6%96%87%E4%BB%B6%E7%B3%BB%E7%BB%9F%EF%BC%8C%E5%AE%9E%E7%8E%B0%E5%A4%A7%E6%96%87%E4%BB%B6%E4%B8%8E%E7%AC%A6%E5%8F%B7%E9%93%BE%E6%8E%A5%E6%96%87%E4%BB%B6"><span class="nav-number">2.6.</span> <span class="nav-text">6.扩展文件系统，实现大文件与符号链接文件</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#7-%E5%AE%9E%E7%8E%B0%E7%AE%80%E6%98%93%E7%89%88%E5%86%85%E5%AD%98%E6%96%87%E4%BB%B6%E6%98%A0%E5%B0%84mmap%E4%B8%8Emunmap%EF%BC%8C%E5%A2%9E%E5%8A%A0%E5%86%85%E5%AD%98%E5%8C%BA%E5%9F%9F%E7%BB%93%E6%9E%84VMA%E3%80%82"><span class="nav-number">2.7.</span> <span class="nav-text">7. 实现简易版内存文件映射mmap与munmap，增加内存区域结构VMA。</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#8-%E4%B8%BAE1000%E7%BD%91%E5%8D%A1%E5%A2%9E%E5%8A%A0xv6%E8%AE%BE%E5%A4%87%E9%A9%B1%E5%8A%A8%E7%A8%8B%E5%BA%8F%E3%80%82"><span class="nav-number">2.8.</span> <span class="nav-text">8.为E1000网卡增加xv6设备驱动程序。</span></a></li></ol></li></ol></div>
+        </div>
+        <!--/noindex-->
+
+        <div class="site-overview-wrap sidebar-panel">
+          <div class="site-author animated" itemprop="author" itemscope itemtype="http://schema.org/Person">
+    <img class="site-author-image" itemprop="image" alt="Corgis"
+      src="/project/images/corgis.jpg">
+  <p class="site-author-name" itemprop="name">Corgis</p>
+  <div class="site-description" itemprop="description">用于成长过程中，记录值得对外分享的技术，如开源代码理解、国外课程项目，个人对一些领域的心得等</div>
+</div>
+<div class="site-state-wrap animated">
+  <nav class="site-state">
+      <div class="site-state-item site-state-posts">
+        <a href="/project/archives/">
+          <span class="site-state-item-count">8</span>
+          <span class="site-state-item-name">日志</span>
+        </a>
+      </div>
+      <div class="site-state-item site-state-categories">
+          <a href="/project/categories/">
+        <span class="site-state-item-count">5</span>
+        <span class="site-state-item-name">分类</span></a>
+      </div>
+  </nav>
+</div>
+
+        </div>
+      </div>
+        <div class="back-to-top animated" role="button" aria-label="返回顶部">
+          <i class="fa fa-arrow-up"></i>
+          <span>0%</span>
+        </div>
+    </div>
+
+    
+  </aside>
+
+
+    </div>
+
+    <div class="main-inner post posts-expand">
+
+
   
 
+
+<div class="post-block">
+  
+  
+
+  <article itemscope itemtype="http://schema.org/Article" class="post-content" lang="zh-CN">
+    <link itemprop="mainEntityOfPage" href="https://scut-corgis.github.io/project/2022-10-13-XV6%E6%93%8D%E4%BD%9C%E7%B3%BB%E7%BB%9F%20-%20mit6.S081/">
+
+    <span hidden itemprop="author" itemscope itemtype="http://schema.org/Person">
+      <meta itemprop="image" content="/project/images/corgis.jpg">
+      <meta itemprop="name" content="Corgis">
+    </span>
+
+    <span hidden itemprop="publisher" itemscope itemtype="http://schema.org/Organization">
+      <meta itemprop="name" content="corgis的笔记">
+      <meta itemprop="description" content="用于成长过程中，记录值得对外分享的技术，如开源代码理解、国外课程项目，个人对一些领域的心得等">
+    </span>
+
+    <span hidden itemprop="post" itemscope itemtype="http://schema.org/CreativeWork">
+      <meta itemprop="name" content="XV6操作系统 - mit6.S081 | corgis的笔记">
+      <meta itemprop="description" content="">
+    </span>
+      <header class="post-header">
+        <h1 class="post-title" itemprop="name headline">
+          XV6操作系统 - mit6.S081
+        </h1>
+
+        <div class="post-meta-container">
+          <div class="post-meta">
+    <span class="post-meta-item">
+      <span class="post-meta-item-icon">
+        <i class="far fa-calendar"></i>
+      </span>
+      <span class="post-meta-item-text">发表于</span>
+
+      <time title="创建时间：2022-10-13 21:20:01" itemprop="dateCreated datePublished" datetime="2022-10-13T21:20:01+08:00">2022-10-13</time>
+    </span>
+    <span class="post-meta-item">
+      <span class="post-meta-item-icon">
+        <i class="far fa-folder"></i>
+      </span>
+      <span class="post-meta-item-text">分类于</span>
+        <span itemprop="about" itemscope itemtype="http://schema.org/Thing">
+          <a href="/project/categories/os/" itemprop="url" rel="index"><span itemprop="name">os</span></a>
+        </span>
+    </span>
+
+  
+</div>
+
+        </div>
       </header>
+
     
-    <div class="e-content article-entry" itemprop="articleBody">
-      
-        <h1 id="MIT6-S081操作系统"><a href="#MIT6-S081操作系统" class="headerlink" title="MIT6.S081操作系统"></a>MIT6.S081操作系统</h1><p><a target="_blank" rel="noopener" href="http://xv6.dgs.zone/">课程介绍 · 6.S081 All-In-One (dgs.zone)</a></p>
+    
+    
+    <div class="post-body" itemprop="articleBody"><h1 id="MIT6-S081操作系统"><a href="#MIT6-S081操作系统" class="headerlink" title="MIT6.S081操作系统"></a>MIT6.S081操作系统</h1><p><a target="_blank" rel="noopener" href="http://xv6.dgs.zone/">课程介绍 · 6.S081 All-In-One (dgs.zone)</a></p>
 <p><a target="_blank" rel="noopener" href="https://mit-public-courses-cn-translatio.gitbook.io/mit6-s081/">简介 - MIT6.S081 (gitbook.io)</a></p>
 <h2 id="页表"><a href="#页表" class="headerlink" title="页表"></a>页表</h2><p>Xv6为每个进程维护一个页表，用以描述每个进程的用户地址空间，外加一个单独描述内核地址空间的页表。内核配置其地址空间的布局，以允许自己以可预测的虚拟地址访问物理内存和各种硬件资源。图3.3显示了这种布局如何将内核虚拟地址映射到物理地址。</p>
 <p><img src="/project/2022-10-13-XV6%E6%93%8D%E4%BD%9C%E7%B3%BB%E7%BB%9F%20-%20mit6.S081/image-20220526105709735.png" alt="image-20220526105709735"></p>
@@ -429,141 +541,87 @@
 <h2 id="7-实现简易版内存文件映射mmap与munmap，增加内存区域结构VMA。"><a href="#7-实现简易版内存文件映射mmap与munmap，增加内存区域结构VMA。" class="headerlink" title="7. 实现简易版内存文件映射mmap与munmap，增加内存区域结构VMA。"></a>7. 实现简易版<strong>内存文件映射</strong>mmap与munmap，增加内存区域结构VMA。</h2><p>参考上面的 <code>mmap与mummap</code></p>
 <h2 id="8-为E1000网卡增加xv6设备驱动程序。"><a href="#8-为E1000网卡增加xv6设备驱动程序。" class="headerlink" title="8.为E1000网卡增加xv6设备驱动程序。"></a>8.为E1000<strong>网卡</strong>增加xv6<strong>设备驱动</strong>程序。</h2><p>参考上面的 <code>网卡驱动</code></p>
 
-      
     </div>
-    <footer class="article-footer">
-      <a data-url="https://scut-corgis.github.io/project/2022-10-13-XV6%E6%93%8D%E4%BD%9C%E7%B3%BB%E7%BB%9F%20-%20mit6.S081/" data-id="cm0xl4sun0008u6efbm5a7wj7" data-title="XV6操作系统 - mit6.S081" class="article-share-link"><span class="fa fa-share">分享</span></a>
-      
-      
-      
+
+    
+    
+    
+
+    <footer class="post-footer">
+
+        
+
+          <div class="post-nav">
+            <div class="post-nav-item">
+                <a href="/project/2022-04-09-%E4%BA%91%E9%A3%8Ecoroutine%E6%BA%90%E7%A0%81%E5%89%96%E6%9E%90%E7%AC%94%E8%AE%B0/" rel="prev" title="云风coroutine源码剖析笔记">
+                  <i class="fa fa-angle-left"></i> 云风coroutine源码剖析笔记
+                </a>
+            </div>
+            <div class="post-nav-item">
+                <a href="/project/2023-08-01-Redis%E6%BA%90%E7%A0%81%E5%89%96%E6%9E%90%E7%AC%94%E8%AE%B0/" rel="next" title="Redis源码剖析笔记">
+                  Redis源码剖析笔记 <i class="fa fa-angle-right"></i>
+                </a>
+            </div>
+          </div>
     </footer>
+  </article>
+</div>
+
+
+
+
+
+
+</div>
+  </main>
+
+  <footer class="footer">
+    <div class="footer-inner">
+
+  <div class="copyright">
+    &copy; 
+    <span itemprop="copyrightYear">2024</span>
+    <span class="with-love">
+      <i class="fa fa-heart"></i>
+    </span>
+    <span class="author" itemprop="copyrightHolder">Corgis</span>
   </div>
-  
-    
-<nav id="article-nav">
-  
-    <a href="/project/2023-08-01-Redis%E6%BA%90%E7%A0%81%E5%89%96%E6%9E%90%E7%AC%94%E8%AE%B0/" id="article-nav-newer" class="article-nav-link-wrap">
-      <strong class="article-nav-caption">前一篇</strong>
-      <div class="article-nav-title">
-        
-          Redis源码剖析笔记
-        
-      </div>
-    </a>
-  
-  
-    <a href="/project/2022-04-09-%E4%BA%91%E9%A3%8Ecoroutine%E6%BA%90%E7%A0%81%E5%89%96%E6%9E%90%E7%AC%94%E8%AE%B0/" id="article-nav-older" class="article-nav-link-wrap">
-      <strong class="article-nav-caption">后一篇</strong>
-      <div class="article-nav-title">云风coroutine源码剖析笔记</div>
-    </a>
-  
-</nav>
-
-  
-</article>
-
-
-</section>
-        
-          <aside id="sidebar">
-  
-    
-  <div class="widget-wrap">
-    <h3 class="widget-title">分类</h3>
-    <div class="widget">
-      <ul class="category-list"><li class="category-list-item"><a class="category-list-link" href="/project/categories/gin/">gin</a></li><li class="category-list-item"><a class="category-list-link" href="/project/categories/os/">os</a></li><li class="category-list-item"><a class="category-list-link" href="/project/categories/others/">others</a></li><li class="category-list-item"><a class="category-list-link" href="/project/categories/twemproxy/">twemproxy</a></li><li class="category-list-item"><a class="category-list-link" href="/project/categories/%E5%8D%8F%E7%A8%8B/">协程</a></li></ul>
-    </div>
+  <div class="powered-by">由 <a href="https://hexo.io/" rel="noopener" target="_blank">Hexo</a> & <a href="https://theme-next.js.org/muse/" rel="noopener" target="_blank">NexT.Muse</a> 强力驱动
   </div>
-
-
-  
-    
-
-  
-    
-  
-    
-  <div class="widget-wrap">
-    <h3 class="widget-title">归档</h3>
-    <div class="widget">
-      <ul class="archive-list"><li class="archive-list-item"><a class="archive-list-link" href="/project/archives/2024/09/">九月 2024</a></li><li class="archive-list-item"><a class="archive-list-link" href="/project/archives/2024/08/">八月 2024</a></li><li class="archive-list-item"><a class="archive-list-link" href="/project/archives/2023/08/">八月 2023</a></li><li class="archive-list-item"><a class="archive-list-link" href="/project/archives/2022/10/">十月 2022</a></li><li class="archive-list-item"><a class="archive-list-link" href="/project/archives/2022/04/">四月 2022</a></li><li class="archive-list-item"><a class="archive-list-link" href="/project/archives/2021/12/">十二月 2021</a></li></ul>
-    </div>
-  </div>
-
-
-  
-    
-  <div class="widget-wrap">
-    <h3 class="widget-title">最新文章</h3>
-    <div class="widget">
-      <ul>
-        
-          <li>
-            <a href="/project/2024-09-10-gin%E6%BA%90%E7%A0%81%E7%AC%94%E8%AE%B01/">gin源码笔记1</a>
-          </li>
-        
-          <li>
-            <a href="/project/2024-09-01-twemproxy%E5%91%BD%E4%BB%A4%E5%88%86%E6%AE%B5/">twemproxy命令分段</a>
-          </li>
-        
-          <li>
-            <a href="/project/2024-08-15-twemproxy%E6%A0%B8%E5%BF%83%E6%B5%81%E7%A8%8B/">twemproxy核心流程</a>
-          </li>
-        
-          <li>
-            <a href="/project/2023-08-01-Redis%E6%BA%90%E7%A0%81%E5%89%96%E6%9E%90%E7%AC%94%E8%AE%B0/">Redis源码剖析笔记</a>
-          </li>
-        
-          <li>
-            <a href="/project/2022-10-13-XV6%E6%93%8D%E4%BD%9C%E7%B3%BB%E7%BB%9F%20-%20mit6.S081/">XV6操作系统 - mit6.S081</a>
-          </li>
-        
-      </ul>
-    </div>
-  </div>
-
-  
-</aside>
-        
-      </div>
-      <footer id="footer">
-  
-  <div class="outer">
-    <div id="footer-info" class="inner">
-      
-      &copy; 2024 Corgis<br>
-      Powered by <a href="https://hexo.io/" target="_blank">Hexo</a>
-    </div>
-  </div>
-</footer>
 
     </div>
-    <nav id="mobile-nav">
-  
-    <a href="/project/" class="mobile-nav-link">Home</a>
-  
-    <a href="/project/archives" class="mobile-nav-link">Archives</a>
-  
-</nav>
-    
-
-
-<script src="/project/js/jquery-3.6.4.min.js"></script>
-
-
+  </footer>
 
   
-<script src="/project/fancybox/jquery.fancybox.min.js"></script>
-
-
-
-
-<script src="/project/js/script.js"></script>
-
-
-
-
-
+  <div class="toggle sidebar-toggle" role="button">
+    <span class="toggle-line"></span>
+    <span class="toggle-line"></span>
+    <span class="toggle-line"></span>
   </div>
+  <div class="sidebar-dimmer"></div>
+  <div class="reading-progress-bar"></div>
+
+<noscript>
+  <div class="noscript-warning">Theme NexT works best with JavaScript enabled</div>
+</noscript>
+
+
+  
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/animejs/3.2.1/anime.min.js" integrity="sha256-XL2inqUJaslATFnHdJOi9GfQ60on8Wx1C2H8DYiN1xY=" crossorigin="anonymous"></script>
+<script src="/project/js/comments.js"></script><script src="/project/js/utils.js"></script><script src="/project/js/motion.js"></script><script src="/project/js/sidebar.js"></script><script src="/project/js/next-boot.js"></script>
+
+  
+
+
+
+
+
+
+  
+
+
+
+
+
 </body>
 </html>

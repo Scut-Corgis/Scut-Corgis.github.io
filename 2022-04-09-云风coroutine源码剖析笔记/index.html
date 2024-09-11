@@ -1,12 +1,25 @@
 <!DOCTYPE html>
-<html>
+<html lang="zh-CN">
 <head>
-  <meta charset="utf-8">
-  
-  
-  <title>云风coroutine源码剖析笔记 | corgis的笔记</title>
-  <meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no">
-  <meta name="description" content="云风coroutine源码剖析笔记1. ucontext.hlinux实现了ucontext结构，使用户可以操作代码上下文，相当于封装了底层汇编语言操作寄存器指令，让用户获得了代码跳转能力。 ucontext_t 中保存的上下文主要包括以下几个部分：  运行时各个寄存器的值 运行栈 信号  1234567891011typedef struct ucontext &#123;">
+  <meta charset="UTF-8">
+<meta name="viewport" content="width=device-width">
+<meta name="theme-color" content="#222"><meta name="generator" content="Hexo 7.3.0">
+
+  <link rel="apple-touch-icon" sizes="180x180" href="/project/images/apple-touch-icon-next.png">
+  <link rel="icon" type="image/png" sizes="32x32" href="/project/images/corgis.jpg">
+  <link rel="icon" type="image/png" sizes="16x16" href="/project/images/corgis.jpg">
+  <link rel="mask-icon" href="/project/images/logo.svg" color="#222">
+
+<link rel="stylesheet" href="/project/css/main.css">
+
+
+
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.2/css/all.min.css" integrity="sha256-XOqroi11tY4EFQMR9ZYwZWKj5ZXiftSx36RRuC3anlA=" crossorigin="anonymous">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/animate.css/3.1.1/animate.min.css" integrity="sha256-PR7ttpcvz8qrF57fur/yAx1qXMFJeJFiA6pSzWi0OIE=" crossorigin="anonymous">
+
+<script class="next-config" data-name="main" type="application/json">{"hostname":"scut-corgis.github.io","root":"/project/","images":"/project/images","scheme":"Muse","darkmode":false,"version":"8.20.0","exturl":false,"sidebar":{"position":"left","width_expanded":320,"width_dual_column":240,"display":"always","padding":18,"offset":12},"hljswrap":true,"copycode":{"enable":true,"style":null},"fold":{"enable":true,"height":500},"bookmark":{"enable":false,"color":"#222","save":"auto"},"mediumzoom":false,"lazyload":false,"pangu":false,"comments":{"style":"tabs","active":null,"storage":true,"lazyload":false,"nav":null},"stickytabs":false,"motion":{"enable":true,"async":false,"transition":{"menu_item":"fadeInDown","post_block":"fadeIn","post_header":"fadeInDown","post_body":"fadeInDown","coll_header":"fadeInLeft","sidebar":"fadeInUp"}},"prism":false,"i18n":{"placeholder":"搜索...","empty":"没有找到任何搜索结果：${query}","hits_time":"找到 ${hits} 个搜索结果（用时 ${time} 毫秒）","hits":"找到 ${hits} 个搜索结果"}}</script><script src="/project/js/config.js"></script>
+
+    <meta name="description" content="云风coroutine源码剖析笔记1. ucontext.hlinux实现了ucontext结构，使用户可以操作代码上下文，相当于封装了底层汇编语言操作寄存器指令，让用户获得了代码跳转能力。 ucontext_t 中保存的上下文主要包括以下几个部分：  运行时各个寄存器的值 运行栈 信号  1234567891011typedef struct ucontext &#123;">
 <meta property="og:type" content="article">
 <meta property="og:title" content="云风coroutine源码剖析笔记">
 <meta property="og:url" content="https://scut-corgis.github.io/project/2022-04-09-%E4%BA%91%E9%A3%8Ecoroutine%E6%BA%90%E7%A0%81%E5%89%96%E6%9E%90%E7%AC%94%E8%AE%B0/index.html">
@@ -19,91 +32,190 @@
 <meta property="article:author" content="Corgis">
 <meta name="twitter:card" content="summary">
 <meta name="twitter:image" content="https://scut-corgis.github.io/project/2022-04-09-%E4%BA%91%E9%A3%8Ecoroutine%E6%BA%90%E7%A0%81%E5%89%96%E6%9E%90%E7%AC%94%E8%AE%B0/image-20220409151929569.png">
-  
-    <link rel="alternate" href="/project/atom.xml" title="corgis的笔记" type="application/atom+xml">
-  
-  
-    <link rel="shortcut icon" href="/project/favicon.png">
-  
-  
-    
-<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/typeface-source-code-pro@0.0.71/index.min.css">
 
-  
-  
-<link rel="stylesheet" href="/project/css/style.css">
 
-  
-    
-<link rel="stylesheet" href="/project/fancybox/jquery.fancybox.min.css">
+<link rel="canonical" href="https://scut-corgis.github.io/project/2022-04-09-%E4%BA%91%E9%A3%8Ecoroutine%E6%BA%90%E7%A0%81%E5%89%96%E6%9E%90%E7%AC%94%E8%AE%B0/">
 
-  
-  
-<meta name="generator" content="Hexo 7.3.0"></head>
 
-<body>
-  <div id="container">
-    <div id="wrap">
-      <header id="header">
-  <div id="banner"></div>
-  <div id="header-outer" class="outer">
-    <div id="header-title" class="inner">
-      <h1 id="logo-wrap">
-        <a href="/project/" id="logo">corgis的笔记</a>
-      </h1>
-      
-    </div>
-    <div id="header-inner" class="inner">
-      <nav id="main-nav">
-        <a id="main-nav-toggle" class="nav-icon"><span class="fa fa-bars"></span></a>
-        
-          <a class="main-nav-link" href="/project/">Home</a>
-        
-          <a class="main-nav-link" href="/project/archives">Archives</a>
-        
-      </nav>
-      <nav id="sub-nav">
-        
-        
-          <a class="nav-icon" href="/project/atom.xml" title="RSS 订阅"><span class="fa fa-rss"></span></a>
-        
-        <a class="nav-icon nav-search-btn" title="搜索"><span class="fa fa-search"></span></a>
-      </nav>
-      <div id="search-form-wrap">
-        <form action="//google.com/search" method="get" accept-charset="UTF-8" class="search-form"><input type="search" name="q" class="search-form-input" placeholder="搜索"><button type="submit" class="search-form-submit">&#xF002;</button><input type="hidden" name="sitesearch" value="https://Scut-Corgis.github.io/project"></form>
-      </div>
+
+<script class="next-config" data-name="page" type="application/json">{"sidebar":"","isHome":false,"isPost":true,"lang":"zh-CN","comments":true,"permalink":"https://scut-corgis.github.io/project/2022-04-09-%E4%BA%91%E9%A3%8Ecoroutine%E6%BA%90%E7%A0%81%E5%89%96%E6%9E%90%E7%AC%94%E8%AE%B0/","path":"2022-04-09-云风coroutine源码剖析笔记/","title":"云风coroutine源码剖析笔记"}</script>
+
+<script class="next-config" data-name="calendar" type="application/json">""</script>
+<title>云风coroutine源码剖析笔记 | corgis的笔记</title>
+  
+
+
+
+
+
+
+
+
+  <noscript>
+    <link rel="stylesheet" href="/project/css/noscript.css">
+  </noscript>
+</head>
+
+<body itemscope itemtype="http://schema.org/WebPage" class="use-motion">
+  <div class="headband"></div>
+
+  <main class="main">
+    <div class="column">
+      <header class="header" itemscope itemtype="http://schema.org/WPHeader"><div class="site-brand-container">
+  <div class="site-nav-toggle">
+    <div class="toggle" aria-label="切换导航栏" role="button">
+        <span class="toggle-line"></span>
+        <span class="toggle-line"></span>
+        <span class="toggle-line"></span>
     </div>
   </div>
+
+  <div class="site-meta">
+
+    <a href="/project/" class="brand" rel="start">
+      <i class="logo-line"></i>
+      <p class="site-title">corgis的笔记</p>
+      <i class="logo-line"></i>
+    </a>
+  </div>
+
+  <div class="site-nav-right">
+    <div class="toggle popup-trigger" aria-label="搜索" role="button">
+    </div>
+  </div>
+</div>
+
+
+
+<nav class="site-nav">
+  <ul class="main-menu menu"><li class="menu-item menu-item-home"><a href="/project/" rel="section"><i class="fa fa-home fa-fw"></i>首页</a></li><li class="menu-item menu-item-about"><a href="/project/about/" rel="section"><i class="fa fa-user fa-fw"></i>关于</a></li><li class="menu-item menu-item-categories"><a href="/project/categories/" rel="section"><i class="fa fa-th fa-fw"></i>分类</a></li><li class="menu-item menu-item-archives"><a href="/project/archives/" rel="section"><i class="fa fa-archive fa-fw"></i>归档</a></li>
+  </ul>
+</nav>
+
+
+
+
 </header>
-
-      <div class="outer">
-        <section id="main"><article id="post-云风coroutine源码剖析笔记" class="h-entry article article-type-post" itemprop="blogPost" itemscope itemtype="https://schema.org/BlogPosting">
-  <div class="article-meta">
-    <a href="/project/2022-04-09-%E4%BA%91%E9%A3%8Ecoroutine%E6%BA%90%E7%A0%81%E5%89%96%E6%9E%90%E7%AC%94%E8%AE%B0/" class="article-date">
-  <time class="dt-published" datetime="2022-04-09T14:30:00.000Z" itemprop="datePublished">2022-04-09</time>
-</a>
-    
-  <div class="article-category">
-    <a class="article-category-link" href="/project/categories/%E5%8D%8F%E7%A8%8B/">协程</a>
-  </div>
-
-  </div>
-  <div class="article-inner">
-    
-    
-      <header class="article-header">
         
   
-    <h1 class="p-name article-title" itemprop="headline name">
-      云风coroutine源码剖析笔记
-    </h1>
+  <aside class="sidebar">
+
+    <div class="sidebar-inner sidebar-nav-active sidebar-toc-active">
+      <ul class="sidebar-nav">
+        <li class="sidebar-nav-toc">
+          文章目录
+        </li>
+        <li class="sidebar-nav-overview">
+          站点概览
+        </li>
+      </ul>
+
+      <div class="sidebar-panel-container">
+        <!--noindex-->
+        <div class="post-toc-wrap sidebar-panel">
+            <div class="post-toc animated"><ol class="nav"><li class="nav-item nav-level-1"><a class="nav-link" href="#%E4%BA%91%E9%A3%8Ecoroutine%E6%BA%90%E7%A0%81%E5%89%96%E6%9E%90%E7%AC%94%E8%AE%B0"><span class="nav-number">1.</span> <span class="nav-text">云风coroutine源码剖析笔记</span></a><ol class="nav-child"><li class="nav-item nav-level-2"><a class="nav-link" href="#1-ucontext-h"><span class="nav-number">1.1.</span> <span class="nav-text">1. ucontext.h</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#getcontext"><span class="nav-number">1.1.1.</span> <span class="nav-text">getcontext()</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#setcontext"><span class="nav-number">1.1.2.</span> <span class="nav-text">setcontext()</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#makecontext"><span class="nav-number">1.1.3.</span> <span class="nav-text">makecontext()</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#swapcontext"><span class="nav-number">1.1.4.</span> <span class="nav-text">swapcontext()</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#2-coroutine"><span class="nav-number">1.2.</span> <span class="nav-text">2.coroutine</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#%E6%BA%90%E7%A0%81%E6%B3%A8%E9%87%8A"><span class="nav-number">1.2.1.</span> <span class="nav-text">源码注释</span></a><ol class="nav-child"><li class="nav-item nav-level-4"><a class="nav-link" href="#coroutine-h"><span class="nav-number">1.2.1.1.</span> <span class="nav-text">coroutine.h</span></a></li><li class="nav-item nav-level-4"><a class="nav-link" href="#coroutine-c"><span class="nav-number">1.2.1.2.</span> <span class="nav-text">coroutine.c</span></a></li><li class="nav-item nav-level-4"><a class="nav-link" href="#main%E4%BE%8B%E5%AD%90"><span class="nav-number">1.2.1.3.</span> <span class="nav-text">main例子</span></a></li></ol></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E7%AC%94%E8%AE%B0%E5%BF%83%E5%BE%97"><span class="nav-number">1.2.2.</span> <span class="nav-text">笔记心得</span></a></li></ol></li></ol></li></ol></div>
+        </div>
+        <!--/noindex-->
+
+        <div class="site-overview-wrap sidebar-panel">
+          <div class="site-author animated" itemprop="author" itemscope itemtype="http://schema.org/Person">
+    <img class="site-author-image" itemprop="image" alt="Corgis"
+      src="/project/images/corgis.jpg">
+  <p class="site-author-name" itemprop="name">Corgis</p>
+  <div class="site-description" itemprop="description">用于成长过程中，记录值得对外分享的技术，如开源代码理解、国外课程项目，个人对一些领域的心得等</div>
+</div>
+<div class="site-state-wrap animated">
+  <nav class="site-state">
+      <div class="site-state-item site-state-posts">
+        <a href="/project/archives/">
+          <span class="site-state-item-count">8</span>
+          <span class="site-state-item-name">日志</span>
+        </a>
+      </div>
+      <div class="site-state-item site-state-categories">
+          <a href="/project/categories/">
+        <span class="site-state-item-count">5</span>
+        <span class="site-state-item-name">分类</span></a>
+      </div>
+  </nav>
+</div>
+
+        </div>
+      </div>
+        <div class="back-to-top animated" role="button" aria-label="返回顶部">
+          <i class="fa fa-arrow-up"></i>
+          <span>0%</span>
+        </div>
+    </div>
+
+    
+  </aside>
+
+
+    </div>
+
+    <div class="main-inner post posts-expand">
+
+
   
 
+
+<div class="post-block">
+  
+  
+
+  <article itemscope itemtype="http://schema.org/Article" class="post-content" lang="zh-CN">
+    <link itemprop="mainEntityOfPage" href="https://scut-corgis.github.io/project/2022-04-09-%E4%BA%91%E9%A3%8Ecoroutine%E6%BA%90%E7%A0%81%E5%89%96%E6%9E%90%E7%AC%94%E8%AE%B0/">
+
+    <span hidden itemprop="author" itemscope itemtype="http://schema.org/Person">
+      <meta itemprop="image" content="/project/images/corgis.jpg">
+      <meta itemprop="name" content="Corgis">
+    </span>
+
+    <span hidden itemprop="publisher" itemscope itemtype="http://schema.org/Organization">
+      <meta itemprop="name" content="corgis的笔记">
+      <meta itemprop="description" content="用于成长过程中，记录值得对外分享的技术，如开源代码理解、国外课程项目，个人对一些领域的心得等">
+    </span>
+
+    <span hidden itemprop="post" itemscope itemtype="http://schema.org/CreativeWork">
+      <meta itemprop="name" content="云风coroutine源码剖析笔记 | corgis的笔记">
+      <meta itemprop="description" content="">
+    </span>
+      <header class="post-header">
+        <h1 class="post-title" itemprop="name headline">
+          云风coroutine源码剖析笔记
+        </h1>
+
+        <div class="post-meta-container">
+          <div class="post-meta">
+    <span class="post-meta-item">
+      <span class="post-meta-item-icon">
+        <i class="far fa-calendar"></i>
+      </span>
+      <span class="post-meta-item-text">发表于</span>
+
+      <time title="创建时间：2022-04-09 22:30:00" itemprop="dateCreated datePublished" datetime="2022-04-09T22:30:00+08:00">2022-04-09</time>
+    </span>
+    <span class="post-meta-item">
+      <span class="post-meta-item-icon">
+        <i class="far fa-folder"></i>
+      </span>
+      <span class="post-meta-item-text">分类于</span>
+        <span itemprop="about" itemscope itemtype="http://schema.org/Thing">
+          <a href="/project/categories/%E5%8D%8F%E7%A8%8B/" itemprop="url" rel="index"><span itemprop="name">协程</span></a>
+        </span>
+    </span>
+
+  
+</div>
+
+        </div>
       </header>
+
     
-    <div class="e-content article-entry" itemprop="articleBody">
-      
-        <h1 id="云风coroutine源码剖析笔记"><a href="#云风coroutine源码剖析笔记" class="headerlink" title="云风coroutine源码剖析笔记"></a>云风coroutine源码剖析笔记</h1><h2 id="1-ucontext-h"><a href="#1-ucontext-h" class="headerlink" title="1. ucontext.h"></a>1. ucontext.h</h2><p>linux实现了ucontext结构，使用户可以操作代码上下文，相当于封装了底层汇编语言操作寄存器指令，让用户获得了代码跳转能力。</p>
+    
+    
+    <div class="post-body" itemprop="articleBody"><h1 id="云风coroutine源码剖析笔记"><a href="#云风coroutine源码剖析笔记" class="headerlink" title="云风coroutine源码剖析笔记"></a>云风coroutine源码剖析笔记</h1><h2 id="1-ucontext-h"><a href="#1-ucontext-h" class="headerlink" title="1. ucontext.h"></a>1. ucontext.h</h2><p>linux实现了ucontext结构，使用户可以操作代码上下文，相当于封装了底层汇编语言操作寄存器指令，让用户获得了代码跳转能力。</p>
 <p>ucontext_t 中保存的上下文主要包括以下几个部分：</p>
 <ul>
 <li>运行时各个寄存器的值</li>
@@ -178,141 +290,87 @@
 <p><a target="_blank" rel="noopener" href="https://zhengyinyong.com/post/ucontext-usage-and-coroutine/">ucontext 函数族的使用及协程库的实现 - 晒太阳的猫 (zhengyinyong.com)</a></p>
 </blockquote>
 
-      
     </div>
-    <footer class="article-footer">
-      <a data-url="https://scut-corgis.github.io/project/2022-04-09-%E4%BA%91%E9%A3%8Ecoroutine%E6%BA%90%E7%A0%81%E5%89%96%E6%9E%90%E7%AC%94%E8%AE%B0/" data-id="cm0xl4sun000au6ef4q6q59sv" data-title="云风coroutine源码剖析笔记" class="article-share-link"><span class="fa fa-share">分享</span></a>
-      
-      
-      
+
+    
+    
+    
+
+    <footer class="post-footer">
+
+        
+
+          <div class="post-nav">
+            <div class="post-nav-item">
+                <a href="/project/2021-12-01-muduo%E6%BA%90%E7%A0%81%E5%89%96%E6%9E%90/" rel="prev" title="muduo源码剖析">
+                  <i class="fa fa-angle-left"></i> muduo源码剖析
+                </a>
+            </div>
+            <div class="post-nav-item">
+                <a href="/project/2022-10-13-XV6%E6%93%8D%E4%BD%9C%E7%B3%BB%E7%BB%9F%20-%20mit6.S081/" rel="next" title="XV6操作系统 - mit6.S081">
+                  XV6操作系统 - mit6.S081 <i class="fa fa-angle-right"></i>
+                </a>
+            </div>
+          </div>
     </footer>
+  </article>
+</div>
+
+
+
+
+
+
+</div>
+  </main>
+
+  <footer class="footer">
+    <div class="footer-inner">
+
+  <div class="copyright">
+    &copy; 
+    <span itemprop="copyrightYear">2024</span>
+    <span class="with-love">
+      <i class="fa fa-heart"></i>
+    </span>
+    <span class="author" itemprop="copyrightHolder">Corgis</span>
   </div>
-  
-    
-<nav id="article-nav">
-  
-    <a href="/project/2022-10-13-XV6%E6%93%8D%E4%BD%9C%E7%B3%BB%E7%BB%9F%20-%20mit6.S081/" id="article-nav-newer" class="article-nav-link-wrap">
-      <strong class="article-nav-caption">前一篇</strong>
-      <div class="article-nav-title">
-        
-          XV6操作系统 - mit6.S081
-        
-      </div>
-    </a>
-  
-  
-    <a href="/project/2021-12-01-libco%E5%8D%8F%E7%A8%8B%E5%89%96%E6%9E%90/" id="article-nav-older" class="article-nav-link-wrap">
-      <strong class="article-nav-caption">后一篇</strong>
-      <div class="article-nav-title">libco协程剖析</div>
-    </a>
-  
-</nav>
-
-  
-</article>
-
-
-</section>
-        
-          <aside id="sidebar">
-  
-    
-  <div class="widget-wrap">
-    <h3 class="widget-title">分类</h3>
-    <div class="widget">
-      <ul class="category-list"><li class="category-list-item"><a class="category-list-link" href="/project/categories/gin/">gin</a></li><li class="category-list-item"><a class="category-list-link" href="/project/categories/os/">os</a></li><li class="category-list-item"><a class="category-list-link" href="/project/categories/others/">others</a></li><li class="category-list-item"><a class="category-list-link" href="/project/categories/twemproxy/">twemproxy</a></li><li class="category-list-item"><a class="category-list-link" href="/project/categories/%E5%8D%8F%E7%A8%8B/">协程</a></li></ul>
-    </div>
+  <div class="powered-by">由 <a href="https://hexo.io/" rel="noopener" target="_blank">Hexo</a> & <a href="https://theme-next.js.org/muse/" rel="noopener" target="_blank">NexT.Muse</a> 强力驱动
   </div>
-
-
-  
-    
-
-  
-    
-  
-    
-  <div class="widget-wrap">
-    <h3 class="widget-title">归档</h3>
-    <div class="widget">
-      <ul class="archive-list"><li class="archive-list-item"><a class="archive-list-link" href="/project/archives/2024/09/">九月 2024</a></li><li class="archive-list-item"><a class="archive-list-link" href="/project/archives/2024/08/">八月 2024</a></li><li class="archive-list-item"><a class="archive-list-link" href="/project/archives/2023/08/">八月 2023</a></li><li class="archive-list-item"><a class="archive-list-link" href="/project/archives/2022/10/">十月 2022</a></li><li class="archive-list-item"><a class="archive-list-link" href="/project/archives/2022/04/">四月 2022</a></li><li class="archive-list-item"><a class="archive-list-link" href="/project/archives/2021/12/">十二月 2021</a></li></ul>
-    </div>
-  </div>
-
-
-  
-    
-  <div class="widget-wrap">
-    <h3 class="widget-title">最新文章</h3>
-    <div class="widget">
-      <ul>
-        
-          <li>
-            <a href="/project/2024-09-10-gin%E6%BA%90%E7%A0%81%E7%AC%94%E8%AE%B01/">gin源码笔记1</a>
-          </li>
-        
-          <li>
-            <a href="/project/2024-09-01-twemproxy%E5%91%BD%E4%BB%A4%E5%88%86%E6%AE%B5/">twemproxy命令分段</a>
-          </li>
-        
-          <li>
-            <a href="/project/2024-08-15-twemproxy%E6%A0%B8%E5%BF%83%E6%B5%81%E7%A8%8B/">twemproxy核心流程</a>
-          </li>
-        
-          <li>
-            <a href="/project/2023-08-01-Redis%E6%BA%90%E7%A0%81%E5%89%96%E6%9E%90%E7%AC%94%E8%AE%B0/">Redis源码剖析笔记</a>
-          </li>
-        
-          <li>
-            <a href="/project/2022-10-13-XV6%E6%93%8D%E4%BD%9C%E7%B3%BB%E7%BB%9F%20-%20mit6.S081/">XV6操作系统 - mit6.S081</a>
-          </li>
-        
-      </ul>
-    </div>
-  </div>
-
-  
-</aside>
-        
-      </div>
-      <footer id="footer">
-  
-  <div class="outer">
-    <div id="footer-info" class="inner">
-      
-      &copy; 2024 Corgis<br>
-      Powered by <a href="https://hexo.io/" target="_blank">Hexo</a>
-    </div>
-  </div>
-</footer>
 
     </div>
-    <nav id="mobile-nav">
-  
-    <a href="/project/" class="mobile-nav-link">Home</a>
-  
-    <a href="/project/archives" class="mobile-nav-link">Archives</a>
-  
-</nav>
-    
-
-
-<script src="/project/js/jquery-3.6.4.min.js"></script>
-
-
+  </footer>
 
   
-<script src="/project/fancybox/jquery.fancybox.min.js"></script>
-
-
-
-
-<script src="/project/js/script.js"></script>
-
-
-
-
-
+  <div class="toggle sidebar-toggle" role="button">
+    <span class="toggle-line"></span>
+    <span class="toggle-line"></span>
+    <span class="toggle-line"></span>
   </div>
+  <div class="sidebar-dimmer"></div>
+  <div class="reading-progress-bar"></div>
+
+<noscript>
+  <div class="noscript-warning">Theme NexT works best with JavaScript enabled</div>
+</noscript>
+
+
+  
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/animejs/3.2.1/anime.min.js" integrity="sha256-XL2inqUJaslATFnHdJOi9GfQ60on8Wx1C2H8DYiN1xY=" crossorigin="anonymous"></script>
+<script src="/project/js/comments.js"></script><script src="/project/js/utils.js"></script><script src="/project/js/motion.js"></script><script src="/project/js/sidebar.js"></script><script src="/project/js/next-boot.js"></script>
+
+  
+
+
+
+
+
+
+  
+
+
+
+
+
 </body>
 </html>
