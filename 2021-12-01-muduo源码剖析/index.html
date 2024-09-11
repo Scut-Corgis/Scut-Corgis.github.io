@@ -5,24 +5,24 @@
 <meta name="viewport" content="width=device-width">
 <meta name="theme-color" content="#222"><meta name="generator" content="Hexo 7.3.0">
 
-  <link rel="apple-touch-icon" sizes="180x180" href="/project/images/apple-touch-icon-next.png">
-  <link rel="icon" type="image/png" sizes="32x32" href="/project/images/corgis.jpg">
-  <link rel="icon" type="image/png" sizes="16x16" href="/project/images/corgis.jpg">
-  <link rel="mask-icon" href="/project/images/logo.svg" color="#222">
+  <link rel="apple-touch-icon" sizes="180x180" href="/images/apple-touch-icon-next.png">
+  <link rel="icon" type="image/png" sizes="32x32" href="/images/corgis.jpg">
+  <link rel="icon" type="image/png" sizes="16x16" href="/images/corgis.jpg">
+  <link rel="mask-icon" href="/images/logo.svg" color="#222">
 
-<link rel="stylesheet" href="/project/css/main.css">
+<link rel="stylesheet" href="/css/main.css">
 
 
 
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.2/css/all.min.css" integrity="sha256-XOqroi11tY4EFQMR9ZYwZWKj5ZXiftSx36RRuC3anlA=" crossorigin="anonymous">
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/animate.css/3.1.1/animate.min.css" integrity="sha256-PR7ttpcvz8qrF57fur/yAx1qXMFJeJFiA6pSzWi0OIE=" crossorigin="anonymous">
 
-<script class="next-config" data-name="main" type="application/json">{"hostname":"scut-corgis.github.io","root":"/project/","images":"/project/images","scheme":"Muse","darkmode":false,"version":"8.20.0","exturl":false,"sidebar":{"position":"left","width_expanded":320,"width_dual_column":240,"display":"always","padding":18,"offset":12},"hljswrap":true,"copycode":{"enable":true,"style":null},"fold":{"enable":true,"height":500},"bookmark":{"enable":false,"color":"#222","save":"auto"},"mediumzoom":false,"lazyload":false,"pangu":false,"comments":{"style":"tabs","active":null,"storage":true,"lazyload":false,"nav":null},"stickytabs":false,"motion":{"enable":true,"async":false,"transition":{"menu_item":"fadeInDown","post_block":"fadeIn","post_header":"fadeInDown","post_body":"fadeInDown","coll_header":"fadeInLeft","sidebar":"fadeInUp"}},"prism":false,"i18n":{"placeholder":"搜索...","empty":"没有找到任何搜索结果：${query}","hits_time":"找到 ${hits} 个搜索结果（用时 ${time} 毫秒）","hits":"找到 ${hits} 个搜索结果"}}</script><script src="/project/js/config.js"></script>
+<script class="next-config" data-name="main" type="application/json">{"hostname":"scut-corgis.github.io","root":"/","images":"/images","scheme":"Muse","darkmode":false,"version":"8.20.0","exturl":false,"sidebar":{"position":"left","width_expanded":320,"width_dual_column":240,"display":"always","padding":18,"offset":12},"hljswrap":true,"copycode":{"enable":true,"style":null},"fold":{"enable":true,"height":500},"bookmark":{"enable":false,"color":"#222","save":"auto"},"mediumzoom":false,"lazyload":false,"pangu":false,"comments":{"style":"tabs","active":null,"storage":true,"lazyload":false,"nav":null},"stickytabs":false,"motion":{"enable":true,"async":false,"transition":{"menu_item":"fadeInDown","post_block":"fadeIn","post_header":"fadeInDown","post_body":"fadeInDown","coll_header":"fadeInLeft","sidebar":"fadeInUp"}},"prism":false,"i18n":{"placeholder":"搜索...","empty":"没有找到任何搜索结果：${query}","hits_time":"找到 ${hits} 个搜索结果（用时 ${time} 毫秒）","hits":"找到 ${hits} 个搜索结果"}}</script><script src="/js/config.js"></script>
 
     <meta name="description" content="Muduo源码剖析笔记前言注意本笔记只适用于阅读过陈硕的书籍《linux多线程服务端编程》的读者。 本笔记只讲书籍中没有提到的，或者提到但是书中描写寥寥的，为在阅读实际源码的基础上整理出来的笔记。 因此若你对其书籍中的知识还不够理解，请回去阅读书籍，若已经掌握书中思想了，那么本笔记便很适合你进一步了解其实际源码实现的，但书籍中没有说明的重要部分。  建议github下载muduo源码跟着一起学习">
 <meta property="og:type" content="article">
 <meta property="og:title" content="muduo源码剖析">
-<meta property="og:url" content="https://scut-corgis.github.io/project/2021-12-01-muduo%E6%BA%90%E7%A0%81%E5%89%96%E6%9E%90/index.html">
+<meta property="og:url" content="https://scut-corgis.github.io/2021-12-01-muduo%E6%BA%90%E7%A0%81%E5%89%96%E6%9E%90/index.html">
 <meta property="og:site_name" content="corgis的学习笔记">
 <meta property="og:description" content="Muduo源码剖析笔记前言注意本笔记只适用于阅读过陈硕的书籍《linux多线程服务端编程》的读者。 本笔记只讲书籍中没有提到的，或者提到但是书中描写寥寥的，为在阅读实际源码的基础上整理出来的笔记。 因此若你对其书籍中的知识还不够理解，请回去阅读书籍，若已经掌握书中思想了，那么本笔记便很适合你进一步了解其实际源码实现的，但书籍中没有说明的重要部分。  建议github下载muduo源码跟着一起学习">
 <meta property="og:locale" content="zh_CN">
@@ -32,11 +32,11 @@
 <meta name="twitter:card" content="summary">
 
 
-<link rel="canonical" href="https://scut-corgis.github.io/project/2021-12-01-muduo%E6%BA%90%E7%A0%81%E5%89%96%E6%9E%90/">
+<link rel="canonical" href="https://scut-corgis.github.io/2021-12-01-muduo%E6%BA%90%E7%A0%81%E5%89%96%E6%9E%90/">
 
 
 
-<script class="next-config" data-name="page" type="application/json">{"sidebar":"","isHome":false,"isPost":true,"lang":"zh-CN","comments":true,"permalink":"https://scut-corgis.github.io/project/2021-12-01-muduo%E6%BA%90%E7%A0%81%E5%89%96%E6%9E%90/","path":"2021-12-01-muduo源码剖析/","title":"muduo源码剖析"}</script>
+<script class="next-config" data-name="page" type="application/json">{"sidebar":"","isHome":false,"isPost":true,"lang":"zh-CN","comments":true,"permalink":"https://scut-corgis.github.io/2021-12-01-muduo%E6%BA%90%E7%A0%81%E5%89%96%E6%9E%90/","path":"2021-12-01-muduo源码剖析/","title":"muduo源码剖析"}</script>
 
 <script class="next-config" data-name="calendar" type="application/json">""</script>
 <title>muduo源码剖析 | corgis的学习笔记</title>
@@ -50,7 +50,7 @@
 
 
   <noscript>
-    <link rel="stylesheet" href="/project/css/noscript.css">
+    <link rel="stylesheet" href="/css/noscript.css">
   </noscript>
 </head>
 
@@ -70,7 +70,7 @@
 
   <div class="site-meta">
 
-    <a href="/project/" class="brand" rel="start">
+    <a href="/" class="brand" rel="start">
       <i class="logo-line"></i>
       <p class="site-title">corgis的学习笔记</p>
       <i class="logo-line"></i>
@@ -86,7 +86,7 @@
 
 
 <nav class="site-nav">
-  <ul class="main-menu menu"><li class="menu-item menu-item-home"><a href="/project/" rel="section"><i class="fa fa-home fa-fw"></i>首页</a></li><li class="menu-item menu-item-about"><a href="/project/about/" rel="section"><i class="fa fa-user fa-fw"></i>关于</a></li><li class="menu-item menu-item-categories"><a href="/project/categories/" rel="section"><i class="fa fa-th fa-fw"></i>分类</a></li><li class="menu-item menu-item-archives"><a href="/project/archives/" rel="section"><i class="fa fa-archive fa-fw"></i>归档</a></li>
+  <ul class="main-menu menu"><li class="menu-item menu-item-home"><a href="/" rel="section"><i class="fa fa-home fa-fw"></i>首页</a></li><li class="menu-item menu-item-about"><a href="/about/" rel="section"><i class="fa fa-user fa-fw"></i>关于</a></li><li class="menu-item menu-item-categories"><a href="/categories/" rel="section"><i class="fa fa-th fa-fw"></i>分类</a></li><li class="menu-item menu-item-archives"><a href="/archives/" rel="section"><i class="fa fa-archive fa-fw"></i>归档</a></li>
   </ul>
 </nav>
 
@@ -118,20 +118,20 @@
         <div class="site-overview-wrap sidebar-panel">
           <div class="site-author animated" itemprop="author" itemscope itemtype="http://schema.org/Person">
     <img class="site-author-image" itemprop="image" alt="Corgis"
-      src="/project/images/corgis.jpg">
+      src="/images/corgis.jpg">
   <p class="site-author-name" itemprop="name">Corgis</p>
   <div class="site-description" itemprop="description">用于成长过程中，记录值得对外分享的技术，如开源代码理解、国外课程项目，个人对一些领域的心得等</div>
 </div>
 <div class="site-state-wrap animated">
   <nav class="site-state">
       <div class="site-state-item site-state-posts">
-        <a href="/project/archives/">
+        <a href="/archives/">
           <span class="site-state-item-count">8</span>
           <span class="site-state-item-name">日志</span>
         </a>
       </div>
       <div class="site-state-item site-state-categories">
-          <a href="/project/categories/">
+          <a href="/categories/">
         <span class="site-state-item-count">5</span>
         <span class="site-state-item-name">分类</span></a>
       </div>
@@ -163,10 +163,10 @@
   
 
   <article itemscope itemtype="http://schema.org/Article" class="post-content" lang="zh-CN">
-    <link itemprop="mainEntityOfPage" href="https://scut-corgis.github.io/project/2021-12-01-muduo%E6%BA%90%E7%A0%81%E5%89%96%E6%9E%90/">
+    <link itemprop="mainEntityOfPage" href="https://scut-corgis.github.io/2021-12-01-muduo%E6%BA%90%E7%A0%81%E5%89%96%E6%9E%90/">
 
     <span hidden itemprop="author" itemscope itemtype="http://schema.org/Person">
-      <meta itemprop="image" content="/project/images/corgis.jpg">
+      <meta itemprop="image" content="/images/corgis.jpg">
       <meta itemprop="name" content="Corgis">
     </span>
 
@@ -200,7 +200,7 @@
       </span>
       <span class="post-meta-item-text">分类于</span>
         <span itemprop="about" itemscope itemtype="http://schema.org/Thing">
-          <a href="/project/categories/others/" itemprop="url" rel="index"><span itemprop="name">others</span></a>
+          <a href="/categories/others/" itemprop="url" rel="index"><span itemprop="name">others</span></a>
         </span>
     </span>
 
@@ -328,7 +328,7 @@
             <div class="post-nav-item">
             </div>
             <div class="post-nav-item">
-                <a href="/project/2021-12-01-libco%E5%8D%8F%E7%A8%8B%E5%89%96%E6%9E%90/" rel="next" title="libco协程剖析">
+                <a href="/2021-12-01-libco%E5%8D%8F%E7%A8%8B%E5%89%96%E6%9E%90/" rel="next" title="libco协程剖析">
                   libco协程剖析 <i class="fa fa-angle-right"></i>
                 </a>
             </div>
@@ -378,7 +378,7 @@
 
   
   <script src="https://cdnjs.cloudflare.com/ajax/libs/animejs/3.2.1/anime.min.js" integrity="sha256-XL2inqUJaslATFnHdJOi9GfQ60on8Wx1C2H8DYiN1xY=" crossorigin="anonymous"></script>
-<script src="/project/js/comments.js"></script><script src="/project/js/utils.js"></script><script src="/project/js/motion.js"></script><script src="/project/js/sidebar.js"></script><script src="/project/js/next-boot.js"></script>
+<script src="/js/comments.js"></script><script src="/js/utils.js"></script><script src="/js/motion.js"></script><script src="/js/sidebar.js"></script><script src="/js/next-boot.js"></script>
 
   
 
