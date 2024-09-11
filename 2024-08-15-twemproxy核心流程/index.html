@@ -5,41 +5,41 @@
 <meta name="viewport" content="width=device-width">
 <meta name="theme-color" content="#222"><meta name="generator" content="Hexo 7.3.0">
 
-  <link rel="apple-touch-icon" sizes="180x180" href="/project/images/apple-touch-icon-next.png">
-  <link rel="icon" type="image/png" sizes="32x32" href="/project/images/corgis.jpg">
-  <link rel="icon" type="image/png" sizes="16x16" href="/project/images/corgis.jpg">
-  <link rel="mask-icon" href="/project/images/logo.svg" color="#222">
+  <link rel="apple-touch-icon" sizes="180x180" href="/images/apple-touch-icon-next.png">
+  <link rel="icon" type="image/png" sizes="32x32" href="/images/corgis.jpg">
+  <link rel="icon" type="image/png" sizes="16x16" href="/images/corgis.jpg">
+  <link rel="mask-icon" href="/images/logo.svg" color="#222">
 
-<link rel="stylesheet" href="/project/css/main.css">
+<link rel="stylesheet" href="/css/main.css">
 
 
 
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.2/css/all.min.css" integrity="sha256-XOqroi11tY4EFQMR9ZYwZWKj5ZXiftSx36RRuC3anlA=" crossorigin="anonymous">
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/animate.css/3.1.1/animate.min.css" integrity="sha256-PR7ttpcvz8qrF57fur/yAx1qXMFJeJFiA6pSzWi0OIE=" crossorigin="anonymous">
 
-<script class="next-config" data-name="main" type="application/json">{"hostname":"scut-corgis.github.io","root":"/project/","images":"/project/images","scheme":"Muse","darkmode":false,"version":"8.20.0","exturl":false,"sidebar":{"position":"left","width_expanded":320,"width_dual_column":240,"display":"always","padding":18,"offset":12},"hljswrap":true,"copycode":{"enable":true,"style":null},"fold":{"enable":true,"height":500},"bookmark":{"enable":false,"color":"#222","save":"auto"},"mediumzoom":false,"lazyload":false,"pangu":false,"comments":{"style":"tabs","active":null,"storage":true,"lazyload":false,"nav":null},"stickytabs":false,"motion":{"enable":true,"async":false,"transition":{"menu_item":"fadeInDown","post_block":"fadeIn","post_header":"fadeInDown","post_body":"fadeInDown","coll_header":"fadeInLeft","sidebar":"fadeInUp"}},"prism":false,"i18n":{"placeholder":"搜索...","empty":"没有找到任何搜索结果：${query}","hits_time":"找到 ${hits} 个搜索结果（用时 ${time} 毫秒）","hits":"找到 ${hits} 个搜索结果"}}</script><script src="/project/js/config.js"></script>
+<script class="next-config" data-name="main" type="application/json">{"hostname":"scut-corgis.github.io","root":"/","images":"/images","scheme":"Muse","darkmode":false,"version":"8.20.0","exturl":false,"sidebar":{"position":"left","width_expanded":320,"width_dual_column":240,"display":"always","padding":18,"offset":12},"hljswrap":true,"copycode":{"enable":true,"style":null},"fold":{"enable":true,"height":500},"bookmark":{"enable":false,"color":"#222","save":"auto"},"mediumzoom":false,"lazyload":false,"pangu":false,"comments":{"style":"tabs","active":null,"storage":true,"lazyload":false,"nav":null},"stickytabs":false,"motion":{"enable":true,"async":false,"transition":{"menu_item":"fadeInDown","post_block":"fadeIn","post_header":"fadeInDown","post_body":"fadeInDown","coll_header":"fadeInLeft","sidebar":"fadeInUp"}},"prism":false,"i18n":{"placeholder":"搜索...","empty":"没有找到任何搜索结果：${query}","hits_time":"找到 ${hits} 个搜索结果（用时 ${time} 毫秒）","hits":"找到 ${hits} 个搜索结果"}}</script><script src="/js/config.js"></script>
 
     <meta name="description" content="前言github-readme-开源链接 目的redis集群模式难以真正的大规模水平扩展，gossip模式不适合企业生产环境。但使用哨兵模式，单机容量不足以支持大数据量，因此twemproxy最主要的目的是解决了redis水平扩展问题。 解决方案通过一致性哈希等负载均衡方式，可以给twemproxy配置多个redis(主)节点，twemproxy会自动对键操作做路由，相当于做了一层路由层，实现了键">
 <meta property="og:type" content="article">
 <meta property="og:title" content="twemproxy核心流程">
-<meta property="og:url" content="https://scut-corgis.github.io/project/2024-08-15-twemproxy%E6%A0%B8%E5%BF%83%E6%B5%81%E7%A8%8B/index.html">
+<meta property="og:url" content="https://scut-corgis.github.io/2024-08-15-twemproxy%E6%A0%B8%E5%BF%83%E6%B5%81%E7%A8%8B/index.html">
 <meta property="og:site_name" content="corgis的笔记">
 <meta property="og:description" content="前言github-readme-开源链接 目的redis集群模式难以真正的大规模水平扩展，gossip模式不适合企业生产环境。但使用哨兵模式，单机容量不足以支持大数据量，因此twemproxy最主要的目的是解决了redis水平扩展问题。 解决方案通过一致性哈希等负载均衡方式，可以给twemproxy配置多个redis(主)节点，twemproxy会自动对键操作做路由，相当于做了一层路由层，实现了键">
 <meta property="og:locale" content="zh_CN">
-<meta property="og:image" content="https://scut-corgis.github.io/project/2024-08-15-twemproxy%E6%A0%B8%E5%BF%83%E6%B5%81%E7%A8%8B/deploy_structure.png">
-<meta property="og:image" content="https://scut-corgis.github.io/project/2024-08-15-twemproxy%E6%A0%B8%E5%BF%83%E6%B5%81%E7%A8%8B/accept_flow.svg">
+<meta property="og:image" content="https://scut-corgis.github.io/2024-08-15-twemproxy%E6%A0%B8%E5%BF%83%E6%B5%81%E7%A8%8B/deploy_structure.png">
+<meta property="og:image" content="https://scut-corgis.github.io/2024-08-15-twemproxy%E6%A0%B8%E5%BF%83%E6%B5%81%E7%A8%8B/accept_flow.svg">
 <meta property="article:published_time" content="2024-08-15T14:30:05.000Z">
 <meta property="article:modified_time" content="2024-09-11T07:25:02.571Z">
 <meta property="article:author" content="Corgis">
 <meta name="twitter:card" content="summary">
-<meta name="twitter:image" content="https://scut-corgis.github.io/project/2024-08-15-twemproxy%E6%A0%B8%E5%BF%83%E6%B5%81%E7%A8%8B/deploy_structure.png">
+<meta name="twitter:image" content="https://scut-corgis.github.io/2024-08-15-twemproxy%E6%A0%B8%E5%BF%83%E6%B5%81%E7%A8%8B/deploy_structure.png">
 
 
-<link rel="canonical" href="https://scut-corgis.github.io/project/2024-08-15-twemproxy%E6%A0%B8%E5%BF%83%E6%B5%81%E7%A8%8B/">
+<link rel="canonical" href="https://scut-corgis.github.io/2024-08-15-twemproxy%E6%A0%B8%E5%BF%83%E6%B5%81%E7%A8%8B/">
 
 
 
-<script class="next-config" data-name="page" type="application/json">{"sidebar":"","isHome":false,"isPost":true,"lang":"zh-CN","comments":true,"permalink":"https://scut-corgis.github.io/project/2024-08-15-twemproxy%E6%A0%B8%E5%BF%83%E6%B5%81%E7%A8%8B/","path":"2024-08-15-twemproxy核心流程/","title":"twemproxy核心流程"}</script>
+<script class="next-config" data-name="page" type="application/json">{"sidebar":"","isHome":false,"isPost":true,"lang":"zh-CN","comments":true,"permalink":"https://scut-corgis.github.io/2024-08-15-twemproxy%E6%A0%B8%E5%BF%83%E6%B5%81%E7%A8%8B/","path":"2024-08-15-twemproxy核心流程/","title":"twemproxy核心流程"}</script>
 
 <script class="next-config" data-name="calendar" type="application/json">""</script>
 <title>twemproxy核心流程 | corgis的笔记</title>
@@ -53,7 +53,7 @@
 
 
   <noscript>
-    <link rel="stylesheet" href="/project/css/noscript.css">
+    <link rel="stylesheet" href="/css/noscript.css">
   </noscript>
 </head>
 
@@ -73,7 +73,7 @@
 
   <div class="site-meta">
 
-    <a href="/project/" class="brand" rel="start">
+    <a href="/" class="brand" rel="start">
       <i class="logo-line"></i>
       <p class="site-title">corgis的笔记</p>
       <i class="logo-line"></i>
@@ -89,7 +89,7 @@
 
 
 <nav class="site-nav">
-  <ul class="main-menu menu"><li class="menu-item menu-item-home"><a href="/project/" rel="section"><i class="fa fa-home fa-fw"></i>首页</a></li><li class="menu-item menu-item-about"><a href="/project/about/" rel="section"><i class="fa fa-user fa-fw"></i>关于</a></li><li class="menu-item menu-item-categories"><a href="/project/categories/" rel="section"><i class="fa fa-th fa-fw"></i>分类</a></li><li class="menu-item menu-item-archives"><a href="/project/archives/" rel="section"><i class="fa fa-archive fa-fw"></i>归档</a></li>
+  <ul class="main-menu menu"><li class="menu-item menu-item-home"><a href="/" rel="section"><i class="fa fa-home fa-fw"></i>首页</a></li><li class="menu-item menu-item-about"><a href="/about/" rel="section"><i class="fa fa-user fa-fw"></i>关于</a></li><li class="menu-item menu-item-categories"><a href="/categories/" rel="section"><i class="fa fa-th fa-fw"></i>分类</a></li><li class="menu-item menu-item-archives"><a href="/archives/" rel="section"><i class="fa fa-archive fa-fw"></i>归档</a></li>
   </ul>
 </nav>
 
@@ -121,20 +121,20 @@
         <div class="site-overview-wrap sidebar-panel">
           <div class="site-author animated" itemprop="author" itemscope itemtype="http://schema.org/Person">
     <img class="site-author-image" itemprop="image" alt="Corgis"
-      src="/project/images/corgis.jpg">
+      src="/images/corgis.jpg">
   <p class="site-author-name" itemprop="name">Corgis</p>
   <div class="site-description" itemprop="description">用于成长过程中，记录值得对外分享的技术，如开源代码理解、国外课程项目，个人对一些领域的心得等</div>
 </div>
 <div class="site-state-wrap animated">
   <nav class="site-state">
       <div class="site-state-item site-state-posts">
-        <a href="/project/archives/">
+        <a href="/archives/">
           <span class="site-state-item-count">8</span>
           <span class="site-state-item-name">日志</span>
         </a>
       </div>
       <div class="site-state-item site-state-categories">
-          <a href="/project/categories/">
+          <a href="/categories/">
         <span class="site-state-item-count">5</span>
         <span class="site-state-item-name">分类</span></a>
       </div>
@@ -166,10 +166,10 @@
   
 
   <article itemscope itemtype="http://schema.org/Article" class="post-content" lang="zh-CN">
-    <link itemprop="mainEntityOfPage" href="https://scut-corgis.github.io/project/2024-08-15-twemproxy%E6%A0%B8%E5%BF%83%E6%B5%81%E7%A8%8B/">
+    <link itemprop="mainEntityOfPage" href="https://scut-corgis.github.io/2024-08-15-twemproxy%E6%A0%B8%E5%BF%83%E6%B5%81%E7%A8%8B/">
 
     <span hidden itemprop="author" itemscope itemtype="http://schema.org/Person">
-      <meta itemprop="image" content="/project/images/corgis.jpg">
+      <meta itemprop="image" content="/images/corgis.jpg">
       <meta itemprop="name" content="Corgis">
     </span>
 
@@ -203,7 +203,7 @@
       </span>
       <span class="post-meta-item-text">分类于</span>
         <span itemprop="about" itemscope itemtype="http://schema.org/Thing">
-          <a href="/project/categories/twemproxy/" itemprop="url" rel="index"><span itemprop="name">twemproxy</span></a>
+          <a href="/categories/twemproxy/" itemprop="url" rel="index"><span itemprop="name">twemproxy</span></a>
         </span>
     </span>
 
@@ -221,7 +221,7 @@
 <h2 id="解决方案"><a href="#解决方案" class="headerlink" title="解决方案"></a>解决方案</h2><p>通过一致性哈希等负载均衡方式，可以给twemproxy配置多个redis(主)节点，twemproxy会自动对键操作做路由，相当于做了一层路由层，实现了键分片的效果，本质上与redis的cluster模式的slots方式相同。</p>
 <p>twemproxy对使用redis的用户看来，跟redis没有区别，twemproxy可以将其理解为转发层。至于如何访问到twemproxy，可以使用dns等方式的实现。</p>
 <p>一般搭配redis哨兵实现，哨兵负责主从切换，并通过故障切换后自动执行的脚本来修改twemproxy的配置文件，并对其重启加载最新主节点信息。</p>
-<p><img src="/project/2024-08-15-twemproxy%E6%A0%B8%E5%BF%83%E6%B5%81%E7%A8%8B/deploy_structure.png"></p>
+<p><img src="/2024-08-15-twemproxy%E6%A0%B8%E5%BF%83%E6%B5%81%E7%A8%8B/deploy_structure.png"></p>
 <h2 id="部署方式"><a href="#部署方式" class="headerlink" title="部署方式"></a>部署方式</h2><p><a target="_blank" rel="noopener" href="https://blog.csdn.net/qq_25241721/article/details/116769633">部署Twemproxy集群-CSDN</a></p>
 <h1 id="源码解析"><a href="#源码解析" class="headerlink" title="源码解析"></a>源码解析</h1><h2 id="主循环"><a href="#主循环" class="headerlink" title="主循环"></a>主循环</h2><p><a target="_blank" rel="noopener" href="https://www.cnblogs.com/foxmailed/p/3623817.html">twemproxy源码解析 - 博客园</a></p>
 <h3 id="前言-1"><a href="#前言-1" class="headerlink" title="前言"></a>前言</h3><p>几乎所有的C&#x2F;C++的网络编程代码都是围绕epoll的reactor模式的两个半事件展开</p>
@@ -245,7 +245,7 @@
 <p>client前缀的变量均为客户侧与proxy的连接，server+为proxy与redis的连接，proxy表示监听套接字对应的conn。</p>
 <figure class="highlight c"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br><span class="line">27</span><br><span class="line">28</span><br><span class="line">29</span><br><span class="line">30</span><br><span class="line">31</span><br><span class="line">32</span><br><span class="line">33</span><br><span class="line">34</span><br><span class="line">35</span><br><span class="line">36</span><br><span class="line">37</span><br><span class="line">38</span><br></pre></td><td class="code"><pre><span class="line"></span><br><span class="line"><span class="comment">/*             Client+             Proxy           Server+</span></span><br><span class="line"><span class="comment"> *                              (nutcracker)</span></span><br><span class="line"><span class="comment"> *                                   .</span></span><br><span class="line"><span class="comment"> *       msg_recv &#123;read event&#125;       .       msg_recv &#123;read event&#125;</span></span><br><span class="line"><span class="comment"> *         +                         .                         +</span></span><br><span class="line"><span class="comment"> *         |                         .                         |</span></span><br><span class="line"><span class="comment"> *         \                         .                         /</span></span><br><span class="line"><span class="comment"> *         req_recv_next             .             rsp_recv_next</span></span><br><span class="line"><span class="comment"> *           +                       .                       +</span></span><br><span class="line"><span class="comment"> *           |                       .                       |       Rsp</span></span><br><span class="line"><span class="comment"> *           req_recv_done           .           rsp_recv_done      &lt;===</span></span><br><span class="line"><span class="comment"> *             +                     .                     +</span></span><br><span class="line"><span class="comment"> *             |                     .                     |</span></span><br><span class="line"><span class="comment"> *    Req      \                     .                     /</span></span><br><span class="line"><span class="comment"> *    ===&gt;     req_filter*           .           *rsp_filter</span></span><br><span class="line"><span class="comment"> *               +                   .                   +</span></span><br><span class="line"><span class="comment"> *               |                   .                   |</span></span><br><span class="line"><span class="comment"> *               \                   .                   /</span></span><br><span class="line"><span class="comment"> *               req_forward-//  (a) . (c)  \\-rsp_forward</span></span><br><span class="line"><span class="comment"> *                                   .</span></span><br><span class="line"><span class="comment"> *                                   .</span></span><br><span class="line"><span class="comment"> *       msg_send &#123;write event&#125;      .      msg_send &#123;write event&#125;</span></span><br><span class="line"><span class="comment"> *         +                         .                         +</span></span><br><span class="line"><span class="comment"> *         |                         .                         |</span></span><br><span class="line"><span class="comment"> *    Rsp&#x27; \                         .                         /     Req&#x27;</span></span><br><span class="line"><span class="comment"> *   &lt;===  rsp_send_next             .             req_send_next     ===&gt;</span></span><br><span class="line"><span class="comment"> *           +                       .                       +</span></span><br><span class="line"><span class="comment"> *           |                       .                       |</span></span><br><span class="line"><span class="comment"> *           \                       .                       /</span></span><br><span class="line"><span class="comment"> *           rsp_send_done-//    (d) . (b)    //-req_send_done</span></span><br><span class="line"><span class="comment"> *</span></span><br><span class="line"><span class="comment"> *</span></span><br><span class="line"><span class="comment"> * (a) -&gt; (b) -&gt; (c) -&gt; (d) is the normal flow of transaction consisting</span></span><br><span class="line"><span class="comment"> * of a single request response, where (a) and (b) handle request from</span></span><br><span class="line"><span class="comment"> * client, while (c) and (d) handle the corresponding response from the</span></span><br><span class="line"><span class="comment"> * server.</span></span><br><span class="line"><span class="comment"> */</span></span><br></pre></td></tr></table></figure>
 
-<p><img src="/project/2024-08-15-twemproxy%E6%A0%B8%E5%BF%83%E6%B5%81%E7%A8%8B/accept_flow.svg" alt="twemproxy请求流程"></p>
+<p><img src="/2024-08-15-twemproxy%E6%A0%B8%E5%BF%83%E6%B5%81%E7%A8%8B/accept_flow.svg" alt="twemproxy请求流程"></p>
 <p>对于消息的处理过程如下，每个conn均有一个消息入队列in_q，与出队列out_q，每一个队列元素为msg，而msg由更细粒度的字符串数组mbuf构成。</p>
 <p>client收到消息便往in_q存，触发读事件回调，读事件回调会将消息转发到已选择的server端in_q，并且往自身out_q里面存。</p>
 <p>server读回调处理自身in_q，发给redis，每发完一个完整req便放到自身out_q里面，当redis回复完毕，从out_q里面取出队头，从里面获取client的连接对应信息，触发client对应连接的写事件。</p>
@@ -317,12 +317,12 @@
 
           <div class="post-nav">
             <div class="post-nav-item">
-                <a href="/project/2023-08-01-Redis%E6%BA%90%E7%A0%81%E5%89%96%E6%9E%90%E7%AC%94%E8%AE%B0/" rel="prev" title="Redis源码剖析笔记">
+                <a href="/2023-08-01-Redis%E6%BA%90%E7%A0%81%E5%89%96%E6%9E%90%E7%AC%94%E8%AE%B0/" rel="prev" title="Redis源码剖析笔记">
                   <i class="fa fa-angle-left"></i> Redis源码剖析笔记
                 </a>
             </div>
             <div class="post-nav-item">
-                <a href="/project/2024-09-01-twemproxy%E5%91%BD%E4%BB%A4%E5%88%86%E6%AE%B5/" rel="next" title="twemproxy命令分段">
+                <a href="/2024-09-01-twemproxy%E5%91%BD%E4%BB%A4%E5%88%86%E6%AE%B5/" rel="next" title="twemproxy命令分段">
                   twemproxy命令分段 <i class="fa fa-angle-right"></i>
                 </a>
             </div>
@@ -372,7 +372,7 @@
 
   
   <script src="https://cdnjs.cloudflare.com/ajax/libs/animejs/3.2.1/anime.min.js" integrity="sha256-XL2inqUJaslATFnHdJOi9GfQ60on8Wx1C2H8DYiN1xY=" crossorigin="anonymous"></script>
-<script src="/project/js/comments.js"></script><script src="/project/js/utils.js"></script><script src="/project/js/motion.js"></script><script src="/project/js/sidebar.js"></script><script src="/project/js/next-boot.js"></script>
+<script src="/js/comments.js"></script><script src="/js/utils.js"></script><script src="/js/motion.js"></script><script src="/js/sidebar.js"></script><script src="/js/next-boot.js"></script>
 
   
 
