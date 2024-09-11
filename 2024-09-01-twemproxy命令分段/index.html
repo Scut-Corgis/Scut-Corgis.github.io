@@ -23,7 +23,7 @@
 <meta property="og:type" content="article">
 <meta property="og:title" content="twemproxy命令分段">
 <meta property="og:url" content="https://scut-corgis.github.io/project/2024-09-01-twemproxy%E5%91%BD%E4%BB%A4%E5%88%86%E6%AE%B5/index.html">
-<meta property="og:site_name" content="corgis的学习笔记">
+<meta property="og:site_name" content="corgis的笔记">
 <meta property="og:description" content="起源twemproxy作为路由层，需要判断命令的转发，比如mget命令涉及的多个key涉及多个底层redis节点。 1234MGET key1 key2 key3key1 -&gt; redis1:6379key2 -&gt; redis2:6379key3 -&gt; redis3:6379 则proxy需要做命令分段转发，并最终聚合返回给客户端的操作。 原理解析如下图所示，先将原命令拆分成子命">
 <meta property="og:locale" content="zh_CN">
 <meta property="og:image" content="https://scut-corgis.github.io/project/2024-09-01-twemproxy%E5%91%BD%E4%BB%A4%E5%88%86%E6%AE%B5/msg_frag.svg">
@@ -41,7 +41,7 @@
 <script class="next-config" data-name="page" type="application/json">{"sidebar":"","isHome":false,"isPost":true,"lang":"zh-CN","comments":true,"permalink":"https://scut-corgis.github.io/project/2024-09-01-twemproxy%E5%91%BD%E4%BB%A4%E5%88%86%E6%AE%B5/","path":"2024-09-01-twemproxy命令分段/","title":"twemproxy命令分段"}</script>
 
 <script class="next-config" data-name="calendar" type="application/json">""</script>
-<title>twemproxy命令分段 | corgis的学习笔记</title>
+<title>twemproxy命令分段 | corgis的笔记</title>
   
 
 
@@ -74,7 +74,7 @@
 
     <a href="/project/" class="brand" rel="start">
       <i class="logo-line"></i>
-      <p class="site-title">corgis的学习笔记</p>
+      <p class="site-title">corgis的笔记</p>
       <i class="logo-line"></i>
     </a>
   </div>
@@ -173,12 +173,12 @@
     </span>
 
     <span hidden itemprop="publisher" itemscope itemtype="http://schema.org/Organization">
-      <meta itemprop="name" content="corgis的学习笔记">
+      <meta itemprop="name" content="corgis的笔记">
       <meta itemprop="description" content="用于成长过程中，记录值得对外分享的技术，如开源代码理解、国外课程项目，个人对一些领域的心得等">
     </span>
 
     <span hidden itemprop="post" itemscope itemtype="http://schema.org/CreativeWork">
-      <meta itemprop="name" content="twemproxy命令分段 | corgis的学习笔记">
+      <meta itemprop="name" content="twemproxy命令分段 | corgis的笔记">
       <meta itemprop="description" content="">
     </span>
       <header class="post-header">

@@ -23,7 +23,7 @@
 <meta property="og:type" content="article">
 <meta property="og:title" content="twemproxy核心流程">
 <meta property="og:url" content="https://scut-corgis.github.io/project/2024-08-15-twemproxy%E6%A0%B8%E5%BF%83%E6%B5%81%E7%A8%8B/index.html">
-<meta property="og:site_name" content="corgis的学习笔记">
+<meta property="og:site_name" content="corgis的笔记">
 <meta property="og:description" content="前言github-readme-开源链接 目的redis集群模式难以真正的大规模水平扩展，gossip模式不适合企业生产环境。但使用哨兵模式，单机容量不足以支持大数据量，因此twemproxy最主要的目的是解决了redis水平扩展问题。 解决方案通过一致性哈希等负载均衡方式，可以给twemproxy配置多个redis(主)节点，twemproxy会自动对键操作做路由，相当于做了一层路由层，实现了键">
 <meta property="og:locale" content="zh_CN">
 <meta property="og:image" content="https://scut-corgis.github.io/project/2024-08-15-twemproxy%E6%A0%B8%E5%BF%83%E6%B5%81%E7%A8%8B/deploy_structure.png">
@@ -42,7 +42,7 @@
 <script class="next-config" data-name="page" type="application/json">{"sidebar":"","isHome":false,"isPost":true,"lang":"zh-CN","comments":true,"permalink":"https://scut-corgis.github.io/project/2024-08-15-twemproxy%E6%A0%B8%E5%BF%83%E6%B5%81%E7%A8%8B/","path":"2024-08-15-twemproxy核心流程/","title":"twemproxy核心流程"}</script>
 
 <script class="next-config" data-name="calendar" type="application/json">""</script>
-<title>twemproxy核心流程 | corgis的学习笔记</title>
+<title>twemproxy核心流程 | corgis的笔记</title>
   
 
 
@@ -75,7 +75,7 @@
 
     <a href="/project/" class="brand" rel="start">
       <i class="logo-line"></i>
-      <p class="site-title">corgis的学习笔记</p>
+      <p class="site-title">corgis的笔记</p>
       <i class="logo-line"></i>
     </a>
   </div>
@@ -174,12 +174,12 @@
     </span>
 
     <span hidden itemprop="publisher" itemscope itemtype="http://schema.org/Organization">
-      <meta itemprop="name" content="corgis的学习笔记">
+      <meta itemprop="name" content="corgis的笔记">
       <meta itemprop="description" content="用于成长过程中，记录值得对外分享的技术，如开源代码理解、国外课程项目，个人对一些领域的心得等">
     </span>
 
     <span hidden itemprop="post" itemscope itemtype="http://schema.org/CreativeWork">
-      <meta itemprop="name" content="twemproxy核心流程 | corgis的学习笔记">
+      <meta itemprop="name" content="twemproxy核心流程 | corgis的笔记">
       <meta itemprop="description" content="">
     </span>
       <header class="post-header">
