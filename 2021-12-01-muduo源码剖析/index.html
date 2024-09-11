@@ -1,25 +1,12 @@
 <!DOCTYPE html>
-<html lang="zh-CN">
+<html>
 <head>
-  <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width">
-<meta name="theme-color" content="#222"><meta name="generator" content="Hexo 7.3.0">
-
-  <link rel="apple-touch-icon" sizes="180x180" href="/project/images/apple-touch-icon-next.png">
-  <link rel="icon" type="image/png" sizes="32x32" href="/project/images/corgis.jpg">
-  <link rel="icon" type="image/png" sizes="16x16" href="/project/images/corgis.jpg">
-  <link rel="mask-icon" href="/project/images/logo.svg" color="#222">
-
-<link rel="stylesheet" href="/project/css/main.css">
-
-
-
-<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.2/css/all.min.css" integrity="sha256-XOqroi11tY4EFQMR9ZYwZWKj5ZXiftSx36RRuC3anlA=" crossorigin="anonymous">
-  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/animate.css/3.1.1/animate.min.css" integrity="sha256-PR7ttpcvz8qrF57fur/yAx1qXMFJeJFiA6pSzWi0OIE=" crossorigin="anonymous">
-
-<script class="next-config" data-name="main" type="application/json">{"hostname":"scut-corgis.github.io","root":"/project/","images":"/project/images","scheme":"Muse","darkmode":false,"version":"8.20.0","exturl":false,"sidebar":{"position":"left","width_expanded":320,"width_dual_column":240,"display":"always","padding":18,"offset":12},"hljswrap":true,"copycode":{"enable":true,"style":null},"fold":{"enable":true,"height":500},"bookmark":{"enable":false,"color":"#222","save":"auto"},"mediumzoom":false,"lazyload":false,"pangu":false,"comments":{"style":"tabs","active":null,"storage":true,"lazyload":false,"nav":null},"stickytabs":false,"motion":{"enable":true,"async":false,"transition":{"menu_item":"fadeInDown","post_block":"fadeIn","post_header":"fadeInDown","post_body":"fadeInDown","coll_header":"fadeInLeft","sidebar":"fadeInUp"}},"prism":false,"i18n":{"placeholder":"搜索...","empty":"没有找到任何搜索结果：${query}","hits_time":"找到 ${hits} 个搜索结果（用时 ${time} 毫秒）","hits":"找到 ${hits} 个搜索结果"}}</script><script src="/project/js/config.js"></script>
-
-    <meta name="description" content="Muduo源码剖析笔记前言注意本笔记只适用于阅读过陈硕的书籍《linux多线程服务端编程》的读者。 本笔记只讲书籍中没有提到的，或者提到但是书中描写寥寥的，为在阅读实际源码的基础上整理出来的笔记。 因此若你对其书籍中的知识还不够理解，请回去阅读书籍，若已经掌握书中思想了，那么本笔记便很适合你进一步了解其实际源码实现的，但书籍中没有说明的重要部分。  建议github下载muduo源码跟着一起学习">
+  <meta charset="utf-8">
+  
+  
+  <title>muduo源码剖析 | corgis的笔记</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no">
+  <meta name="description" content="Muduo源码剖析笔记前言注意本笔记只适用于阅读过陈硕的书籍《linux多线程服务端编程》的读者。 本笔记只讲书籍中没有提到的，或者提到但是书中描写寥寥的，为在阅读实际源码的基础上整理出来的笔记。 因此若你对其书籍中的知识还不够理解，请回去阅读书籍，若已经掌握书中思想了，那么本笔记便很适合你进一步了解其实际源码实现的，但书籍中没有说明的重要部分。  建议github下载muduo源码跟着一起学习">
 <meta property="og:type" content="article">
 <meta property="og:title" content="muduo源码剖析">
 <meta property="og:url" content="https://scut-corgis.github.io/project/2021-12-01-muduo%E6%BA%90%E7%A0%81%E5%89%96%E6%9E%90/index.html">
@@ -30,190 +17,91 @@
 <meta property="article:modified_time" content="2024-09-11T07:25:02.566Z">
 <meta property="article:author" content="Corgis">
 <meta name="twitter:card" content="summary">
-
-
-<link rel="canonical" href="https://scut-corgis.github.io/project/2021-12-01-muduo%E6%BA%90%E7%A0%81%E5%89%96%E6%9E%90/">
-
-
-
-<script class="next-config" data-name="page" type="application/json">{"sidebar":"","isHome":false,"isPost":true,"lang":"zh-CN","comments":true,"permalink":"https://scut-corgis.github.io/project/2021-12-01-muduo%E6%BA%90%E7%A0%81%E5%89%96%E6%9E%90/","path":"2021-12-01-muduo源码剖析/","title":"muduo源码剖析"}</script>
-
-<script class="next-config" data-name="calendar" type="application/json">""</script>
-<title>muduo源码剖析 | corgis的笔记</title>
   
+    <link rel="alternate" href="/project/atom.xml" title="corgis的笔记" type="application/atom+xml">
+  
+  
+    <link rel="shortcut icon" href="/project/favicon.png">
+  
+  
+    
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/typeface-source-code-pro@0.0.71/index.min.css">
 
+  
+  
+<link rel="stylesheet" href="/project/css/style.css">
 
+  
+    
+<link rel="stylesheet" href="/project/fancybox/jquery.fancybox.min.css">
 
+  
+  
+<meta name="generator" content="Hexo 7.3.0"></head>
 
-
-
-
-
-  <noscript>
-    <link rel="stylesheet" href="/project/css/noscript.css">
-  </noscript>
-</head>
-
-<body itemscope itemtype="http://schema.org/WebPage" class="use-motion">
-  <div class="headband"></div>
-
-  <main class="main">
-    <div class="column">
-      <header class="header" itemscope itemtype="http://schema.org/WPHeader"><div class="site-brand-container">
-  <div class="site-nav-toggle">
-    <div class="toggle" aria-label="切换导航栏" role="button">
-        <span class="toggle-line"></span>
-        <span class="toggle-line"></span>
-        <span class="toggle-line"></span>
+<body>
+  <div id="container">
+    <div id="wrap">
+      <header id="header">
+  <div id="banner"></div>
+  <div id="header-outer" class="outer">
+    <div id="header-title" class="inner">
+      <h1 id="logo-wrap">
+        <a href="/project/" id="logo">corgis的笔记</a>
+      </h1>
+      
+    </div>
+    <div id="header-inner" class="inner">
+      <nav id="main-nav">
+        <a id="main-nav-toggle" class="nav-icon"><span class="fa fa-bars"></span></a>
+        
+          <a class="main-nav-link" href="/project/">Home</a>
+        
+          <a class="main-nav-link" href="/project/archives">Archives</a>
+        
+      </nav>
+      <nav id="sub-nav">
+        
+        
+          <a class="nav-icon" href="/project/atom.xml" title="RSS 订阅"><span class="fa fa-rss"></span></a>
+        
+        <a class="nav-icon nav-search-btn" title="搜索"><span class="fa fa-search"></span></a>
+      </nav>
+      <div id="search-form-wrap">
+        <form action="//google.com/search" method="get" accept-charset="UTF-8" class="search-form"><input type="search" name="q" class="search-form-input" placeholder="搜索"><button type="submit" class="search-form-submit">&#xF002;</button><input type="hidden" name="sitesearch" value="https://Scut-Corgis.github.io/project"></form>
+      </div>
     </div>
   </div>
-
-  <div class="site-meta">
-
-    <a href="/project/" class="brand" rel="start">
-      <i class="logo-line"></i>
-      <p class="site-title">corgis的笔记</p>
-      <i class="logo-line"></i>
-    </a>
-  </div>
-
-  <div class="site-nav-right">
-    <div class="toggle popup-trigger" aria-label="搜索" role="button">
-    </div>
-  </div>
-</div>
-
-
-
-<nav class="site-nav">
-  <ul class="main-menu menu"><li class="menu-item menu-item-home"><a href="/project/" rel="section"><i class="fa fa-home fa-fw"></i>首页</a></li><li class="menu-item menu-item-about"><a href="/project/about/" rel="section"><i class="fa fa-user fa-fw"></i>关于</a></li><li class="menu-item menu-item-categories"><a href="/project/categories/" rel="section"><i class="fa fa-th fa-fw"></i>分类</a></li><li class="menu-item menu-item-archives"><a href="/project/archives/" rel="section"><i class="fa fa-archive fa-fw"></i>归档</a></li>
-  </ul>
-</nav>
-
-
-
-
 </header>
+
+      <div class="outer">
+        <section id="main"><article id="post-muduo源码剖析" class="h-entry article article-type-post" itemprop="blogPost" itemscope itemtype="https://schema.org/BlogPosting">
+  <div class="article-meta">
+    <a href="/project/2021-12-01-muduo%E6%BA%90%E7%A0%81%E5%89%96%E6%9E%90/" class="article-date">
+  <time class="dt-published" datetime="2021-12-01T14:30:05.000Z" itemprop="datePublished">2021-12-01</time>
+</a>
+    
+  <div class="article-category">
+    <a class="article-category-link" href="/project/categories/others/">others</a>
+  </div>
+
+  </div>
+  <div class="article-inner">
+    
+    
+      <header class="article-header">
         
   
-  <aside class="sidebar">
-
-    <div class="sidebar-inner sidebar-nav-active sidebar-toc-active">
-      <ul class="sidebar-nav">
-        <li class="sidebar-nav-toc">
-          文章目录
-        </li>
-        <li class="sidebar-nav-overview">
-          站点概览
-        </li>
-      </ul>
-
-      <div class="sidebar-panel-container">
-        <!--noindex-->
-        <div class="post-toc-wrap sidebar-panel">
-            <div class="post-toc animated"><ol class="nav"><li class="nav-item nav-level-1"><a class="nav-link" href="#Muduo%E6%BA%90%E7%A0%81%E5%89%96%E6%9E%90%E7%AC%94%E8%AE%B0"><span class="nav-number">1.</span> <span class="nav-text">Muduo源码剖析笔记</span></a></li><li class="nav-item nav-level-1"><a class="nav-link" href="#%E5%89%8D%E8%A8%80"><span class="nav-number">2.</span> <span class="nav-text">前言</span></a><ol class="nav-child"><li class="nav-item nav-level-2"><a class="nav-link" href="#1-%E6%97%A5%E5%BF%97%E7%B3%BB%E7%BB%9F"><span class="nav-number">2.1.</span> <span class="nav-text">1. 日志系统</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#2-%E6%97%B6%E9%97%B4%E8%BD%AE"><span class="nav-number">2.2.</span> <span class="nav-text">2. 时间轮</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#3-%E9%AB%98%E6%B0%B4%E4%BD%8D%E5%9B%9E%E8%B0%83"><span class="nav-number">2.3.</span> <span class="nav-text">3.高水位回调</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#4-%E4%B8%89%E7%A7%8D%E8%81%8A%E5%A4%A9%E5%AE%A4%E7%A8%8B%E5%BA%8F"><span class="nav-number">2.4.</span> <span class="nav-text">4.三种聊天室程序</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#5-function-bind%E8%BD%AC%E6%8D%A2"><span class="nav-number">2.5.</span> <span class="nav-text">5. function&#x2F;bind转换</span></a></li></ol></li></ol></div>
-        </div>
-        <!--/noindex-->
-
-        <div class="site-overview-wrap sidebar-panel">
-          <div class="site-author animated" itemprop="author" itemscope itemtype="http://schema.org/Person">
-    <img class="site-author-image" itemprop="image" alt="Corgis"
-      src="/project/images/corgis.jpg">
-  <p class="site-author-name" itemprop="name">Corgis</p>
-  <div class="site-description" itemprop="description">用于成长过程中，记录值得对外分享的技术，如开源代码理解、国外课程项目，个人对一些领域的心得等</div>
-</div>
-<div class="site-state-wrap animated">
-  <nav class="site-state">
-      <div class="site-state-item site-state-posts">
-        <a href="/project/archives/">
-          <span class="site-state-item-count">8</span>
-          <span class="site-state-item-name">日志</span>
-        </a>
-      </div>
-      <div class="site-state-item site-state-categories">
-          <a href="/project/categories/">
-        <span class="site-state-item-count">5</span>
-        <span class="site-state-item-name">分类</span></a>
-      </div>
-  </nav>
-</div>
-
-        </div>
-      </div>
-        <div class="back-to-top animated" role="button" aria-label="返回顶部">
-          <i class="fa fa-arrow-up"></i>
-          <span>0%</span>
-        </div>
-    </div>
-
-    
-  </aside>
-
-
-    </div>
-
-    <div class="main-inner post posts-expand">
-
-
+    <h1 class="p-name article-title" itemprop="headline name">
+      muduo源码剖析
+    </h1>
   
 
-
-<div class="post-block">
-  
-  
-
-  <article itemscope itemtype="http://schema.org/Article" class="post-content" lang="zh-CN">
-    <link itemprop="mainEntityOfPage" href="https://scut-corgis.github.io/project/2021-12-01-muduo%E6%BA%90%E7%A0%81%E5%89%96%E6%9E%90/">
-
-    <span hidden itemprop="author" itemscope itemtype="http://schema.org/Person">
-      <meta itemprop="image" content="/project/images/corgis.jpg">
-      <meta itemprop="name" content="Corgis">
-    </span>
-
-    <span hidden itemprop="publisher" itemscope itemtype="http://schema.org/Organization">
-      <meta itemprop="name" content="corgis的笔记">
-      <meta itemprop="description" content="用于成长过程中，记录值得对外分享的技术，如开源代码理解、国外课程项目，个人对一些领域的心得等">
-    </span>
-
-    <span hidden itemprop="post" itemscope itemtype="http://schema.org/CreativeWork">
-      <meta itemprop="name" content="muduo源码剖析 | corgis的笔记">
-      <meta itemprop="description" content="">
-    </span>
-      <header class="post-header">
-        <h1 class="post-title" itemprop="name headline">
-          muduo源码剖析
-        </h1>
-
-        <div class="post-meta-container">
-          <div class="post-meta">
-    <span class="post-meta-item">
-      <span class="post-meta-item-icon">
-        <i class="far fa-calendar"></i>
-      </span>
-      <span class="post-meta-item-text">发表于</span>
-
-      <time title="创建时间：2021-12-01 22:30:05" itemprop="dateCreated datePublished" datetime="2021-12-01T22:30:05+08:00">2021-12-01</time>
-    </span>
-    <span class="post-meta-item">
-      <span class="post-meta-item-icon">
-        <i class="far fa-folder"></i>
-      </span>
-      <span class="post-meta-item-text">分类于</span>
-        <span itemprop="about" itemscope itemtype="http://schema.org/Thing">
-          <a href="/project/categories/others/" itemprop="url" rel="index"><span itemprop="name">others</span></a>
-        </span>
-    </span>
-
-  
-</div>
-
-        </div>
       </header>
-
     
-    
-    
-    <div class="post-body" itemprop="articleBody"><h1 id="Muduo源码剖析笔记"><a href="#Muduo源码剖析笔记" class="headerlink" title="Muduo源码剖析笔记"></a>Muduo源码剖析笔记</h1><h1 id="前言"><a href="#前言" class="headerlink" title="前言"></a>前言</h1><p>注意本笔记只适用于<strong>阅读过</strong>陈硕的书籍《linux多线程服务端编程》的读者。</p>
+    <div class="e-content article-entry" itemprop="articleBody">
+      
+        <h1 id="Muduo源码剖析笔记"><a href="#Muduo源码剖析笔记" class="headerlink" title="Muduo源码剖析笔记"></a>Muduo源码剖析笔记</h1><h1 id="前言"><a href="#前言" class="headerlink" title="前言"></a>前言</h1><p>注意本笔记只适用于<strong>阅读过</strong>陈硕的书籍《linux多线程服务端编程》的读者。</p>
 <p>本笔记只讲书籍中没有提到的，或者提到但是书中描写寥寥的，为在阅读实际源码的基础上整理出来的笔记。</p>
 <p>因此<strong>若你对其书籍中的知识还不够理解，请回去阅读书籍</strong>，若已经掌握书中思想了，那么本笔记便很适合你进一步了解其实际源码实现的，但书籍中没有说明的重要部分。</p>
 <blockquote>
@@ -314,84 +202,136 @@
 <p>以上没有报任何错误！所以void()类型能转换成void(xxx)类型？amazing!</p>
 <p>因为有以上转换，完全可以增加一个新的<code>typedef function&lt;void(Timestamp)&gt; ReadEventCallback;</code><br>其参数传入poller返回时的时间辍，却不影响之前的所有设计函数，因为需要用Timestamp自然可以用，不需要的继续调用自己的空参数函数就好，<br>就是因为存在以上可调用对象的转换。</p>
 
+      
     </div>
-
-    
-    
-    
-
-    <footer class="post-footer">
-
-        
-
-          <div class="post-nav">
-            <div class="post-nav-item">
-            </div>
-            <div class="post-nav-item">
-                <a href="/project/2021-12-01-libco%E5%8D%8F%E7%A8%8B%E5%89%96%E6%9E%90/" rel="next" title="libco协程剖析">
-                  libco协程剖析 <i class="fa fa-angle-right"></i>
-                </a>
-            </div>
-          </div>
+    <footer class="article-footer">
+      <a data-url="https://scut-corgis.github.io/project/2021-12-01-muduo%E6%BA%90%E7%A0%81%E5%89%96%E6%9E%90/" data-id="cm0xl4sul0006u6efamd72f8u" data-title="muduo源码剖析" class="article-share-link"><span class="fa fa-share">分享</span></a>
+      
+      
+      
     </footer>
-  </article>
-</div>
-
-
-
-
-
-
-</div>
-  </main>
-
-  <footer class="footer">
-    <div class="footer-inner">
-
-  <div class="copyright">
-    &copy; 
-    <span itemprop="copyrightYear">2024</span>
-    <span class="with-love">
-      <i class="fa fa-heart"></i>
-    </span>
-    <span class="author" itemprop="copyrightHolder">Corgis</span>
   </div>
-  <div class="powered-by">由 <a href="https://hexo.io/" rel="noopener" target="_blank">Hexo</a> & <a href="https://theme-next.js.org/muse/" rel="noopener" target="_blank">NexT.Muse</a> 强力驱动
+  
+    
+<nav id="article-nav">
+  
+    <a href="/project/2021-12-01-libco%E5%8D%8F%E7%A8%8B%E5%89%96%E6%9E%90/" id="article-nav-newer" class="article-nav-link-wrap">
+      <strong class="article-nav-caption">前一篇</strong>
+      <div class="article-nav-title">
+        
+          libco协程剖析
+        
+      </div>
+    </a>
+  
+  
+</nav>
+
+  
+</article>
+
+
+</section>
+        
+          <aside id="sidebar">
+  
+    
+  <div class="widget-wrap">
+    <h3 class="widget-title">分类</h3>
+    <div class="widget">
+      <ul class="category-list"><li class="category-list-item"><a class="category-list-link" href="/project/categories/gin/">gin</a></li><li class="category-list-item"><a class="category-list-link" href="/project/categories/os/">os</a></li><li class="category-list-item"><a class="category-list-link" href="/project/categories/others/">others</a></li><li class="category-list-item"><a class="category-list-link" href="/project/categories/twemproxy/">twemproxy</a></li><li class="category-list-item"><a class="category-list-link" href="/project/categories/%E5%8D%8F%E7%A8%8B/">协程</a></li></ul>
+    </div>
   </div>
+
+
+  
+    
+
+  
+    
+  
+    
+  <div class="widget-wrap">
+    <h3 class="widget-title">归档</h3>
+    <div class="widget">
+      <ul class="archive-list"><li class="archive-list-item"><a class="archive-list-link" href="/project/archives/2024/09/">九月 2024</a></li><li class="archive-list-item"><a class="archive-list-link" href="/project/archives/2024/08/">八月 2024</a></li><li class="archive-list-item"><a class="archive-list-link" href="/project/archives/2023/08/">八月 2023</a></li><li class="archive-list-item"><a class="archive-list-link" href="/project/archives/2022/10/">十月 2022</a></li><li class="archive-list-item"><a class="archive-list-link" href="/project/archives/2022/04/">四月 2022</a></li><li class="archive-list-item"><a class="archive-list-link" href="/project/archives/2021/12/">十二月 2021</a></li></ul>
+    </div>
+  </div>
+
+
+  
+    
+  <div class="widget-wrap">
+    <h3 class="widget-title">最新文章</h3>
+    <div class="widget">
+      <ul>
+        
+          <li>
+            <a href="/project/2024-09-10-gin%E6%BA%90%E7%A0%81%E7%AC%94%E8%AE%B01/">gin源码笔记1</a>
+          </li>
+        
+          <li>
+            <a href="/project/2024-09-01-twemproxy%E5%91%BD%E4%BB%A4%E5%88%86%E6%AE%B5/">twemproxy命令分段</a>
+          </li>
+        
+          <li>
+            <a href="/project/2024-08-15-twemproxy%E6%A0%B8%E5%BF%83%E6%B5%81%E7%A8%8B/">twemproxy核心流程</a>
+          </li>
+        
+          <li>
+            <a href="/project/2023-08-01-Redis%E6%BA%90%E7%A0%81%E5%89%96%E6%9E%90%E7%AC%94%E8%AE%B0/">Redis源码剖析笔记</a>
+          </li>
+        
+          <li>
+            <a href="/project/2022-10-13-XV6%E6%93%8D%E4%BD%9C%E7%B3%BB%E7%BB%9F%20-%20mit6.S081/">XV6操作系统 - mit6.S081</a>
+          </li>
+        
+      </ul>
+    </div>
+  </div>
+
+  
+</aside>
+        
+      </div>
+      <footer id="footer">
+  
+  <div class="outer">
+    <div id="footer-info" class="inner">
+      
+      &copy; 2024 Corgis<br>
+      Powered by <a href="https://hexo.io/" target="_blank">Hexo</a>
+    </div>
+  </div>
+</footer>
 
     </div>
-  </footer>
+    <nav id="mobile-nav">
+  
+    <a href="/project/" class="mobile-nav-link">Home</a>
+  
+    <a href="/project/archives" class="mobile-nav-link">Archives</a>
+  
+</nav>
+    
+
+
+<script src="/project/js/jquery-3.6.4.min.js"></script>
+
+
 
   
-  <div class="toggle sidebar-toggle" role="button">
-    <span class="toggle-line"></span>
-    <span class="toggle-line"></span>
-    <span class="toggle-line"></span>
+<script src="/project/fancybox/jquery.fancybox.min.js"></script>
+
+
+
+
+<script src="/project/js/script.js"></script>
+
+
+
+
+
   </div>
-  <div class="sidebar-dimmer"></div>
-  <div class="reading-progress-bar"></div>
-
-<noscript>
-  <div class="noscript-warning">Theme NexT works best with JavaScript enabled</div>
-</noscript>
-
-
-  
-  <script src="https://cdnjs.cloudflare.com/ajax/libs/animejs/3.2.1/anime.min.js" integrity="sha256-XL2inqUJaslATFnHdJOi9GfQ60on8Wx1C2H8DYiN1xY=" crossorigin="anonymous"></script>
-<script src="/project/js/comments.js"></script><script src="/project/js/utils.js"></script><script src="/project/js/motion.js"></script><script src="/project/js/sidebar.js"></script><script src="/project/js/next-boot.js"></script>
-
-  
-
-
-
-
-
-
-  
-
-
-
-
-
 </body>
 </html>
