@@ -22,21 +22,21 @@
     <meta name="description" content="Muduo源码剖析笔记前言注意本笔记只适用于阅读过陈硕的书籍《linux多线程服务端编程》的读者。 本笔记只讲书籍中没有提到的，或者提到但是书中描写寥寥的，为在阅读实际源码的基础上整理出来的笔记。 因此若你对其书籍中的知识还不够理解，请回去阅读书籍，若已经掌握书中思想了，那么本笔记便很适合你进一步了解其实际源码实现的，但书籍中没有说明的重要部分。  建议github下载muduo源码跟着一起学习">
 <meta property="og:type" content="article">
 <meta property="og:title" content="muduo源码剖析">
-<meta property="og:url" content="https://scut-corgis.github.io/2021-12-01-muduo%E6%BA%90%E7%A0%81%E5%89%96%E6%9E%90/index.html">
+<meta property="og:url" content="https://scut-corgis.github.io/2021-10-01-muduo%E6%BA%90%E7%A0%81%E5%89%96%E6%9E%90/index.html">
 <meta property="og:site_name" content="corgis的笔记">
 <meta property="og:description" content="Muduo源码剖析笔记前言注意本笔记只适用于阅读过陈硕的书籍《linux多线程服务端编程》的读者。 本笔记只讲书籍中没有提到的，或者提到但是书中描写寥寥的，为在阅读实际源码的基础上整理出来的笔记。 因此若你对其书籍中的知识还不够理解，请回去阅读书籍，若已经掌握书中思想了，那么本笔记便很适合你进一步了解其实际源码实现的，但书籍中没有说明的重要部分。  建议github下载muduo源码跟着一起学习">
 <meta property="og:locale" content="zh_CN">
-<meta property="article:published_time" content="2021-12-01T14:30:05.000Z">
-<meta property="article:modified_time" content="2024-09-11T07:25:02.566Z">
+<meta property="article:published_time" content="2021-10-01T14:30:05.000Z">
+<meta property="article:modified_time" content="2024-09-18T13:41:06.649Z">
 <meta property="article:author" content="Corgis">
 <meta name="twitter:card" content="summary">
 
 
-<link rel="canonical" href="https://scut-corgis.github.io/2021-12-01-muduo%E6%BA%90%E7%A0%81%E5%89%96%E6%9E%90/">
+<link rel="canonical" href="https://scut-corgis.github.io/2021-10-01-muduo%E6%BA%90%E7%A0%81%E5%89%96%E6%9E%90/">
 
 
 
-<script class="next-config" data-name="page" type="application/json">{"sidebar":"","isHome":false,"isPost":true,"lang":"zh-CN","comments":true,"permalink":"https://scut-corgis.github.io/2021-12-01-muduo%E6%BA%90%E7%A0%81%E5%89%96%E6%9E%90/","path":"2021-12-01-muduo源码剖析/","title":"muduo源码剖析"}</script>
+<script class="next-config" data-name="page" type="application/json">{"sidebar":"","isHome":false,"isPost":true,"lang":"zh-CN","comments":true,"permalink":"https://scut-corgis.github.io/2021-10-01-muduo%E6%BA%90%E7%A0%81%E5%89%96%E6%9E%90/","path":"2021-10-01-muduo源码剖析/","title":"muduo源码剖析"}</script>
 
 <script class="next-config" data-name="calendar" type="application/json">""</script>
 <title>muduo源码剖析 | corgis的笔记</title>
@@ -126,13 +126,13 @@
   <nav class="site-state">
       <div class="site-state-item site-state-posts">
         <a href="/archives/">
-          <span class="site-state-item-count">8</span>
+          <span class="site-state-item-count">9</span>
           <span class="site-state-item-name">日志</span>
         </a>
       </div>
       <div class="site-state-item site-state-categories">
           <a href="/categories/">
-        <span class="site-state-item-count">5</span>
+        <span class="site-state-item-count">6</span>
         <span class="site-state-item-name">分类</span></a>
       </div>
   </nav>
@@ -163,7 +163,7 @@
   
 
   <article itemscope itemtype="http://schema.org/Article" class="post-content" lang="zh-CN">
-    <link itemprop="mainEntityOfPage" href="https://scut-corgis.github.io/2021-12-01-muduo%E6%BA%90%E7%A0%81%E5%89%96%E6%9E%90/">
+    <link itemprop="mainEntityOfPage" href="https://scut-corgis.github.io/2021-10-01-muduo%E6%BA%90%E7%A0%81%E5%89%96%E6%9E%90/">
 
     <span hidden itemprop="author" itemscope itemtype="http://schema.org/Person">
       <meta itemprop="image" content="/images/corgis.jpg">
@@ -192,7 +192,7 @@
       </span>
       <span class="post-meta-item-text">发表于</span>
 
-      <time title="创建时间：2021-12-01 22:30:05" itemprop="dateCreated datePublished" datetime="2021-12-01T22:30:05+08:00">2021-12-01</time>
+      <time title="创建时间：2021-10-01 22:30:05" itemprop="dateCreated datePublished" datetime="2021-10-01T22:30:05+08:00">2021-10-01</time>
     </span>
     <span class="post-meta-item">
       <span class="post-meta-item-icon">
