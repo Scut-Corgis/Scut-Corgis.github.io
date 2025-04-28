@@ -1,0 +1,337 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+<meta name="viewport" content="width=device-width">
+<meta name="theme-color" content="#222"><meta name="generator" content="Hexo 7.3.0">
+
+  <link rel="apple-touch-icon" sizes="180x180" href="/images/apple-touch-icon-next.png">
+  <link rel="icon" type="image/png" sizes="32x32" href="/images/corgis.jpg">
+  <link rel="icon" type="image/png" sizes="16x16" href="/images/corgis.jpg">
+  <link rel="mask-icon" href="/images/logo.svg" color="#222">
+
+<link rel="stylesheet" href="/css/main.css">
+
+
+
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.2/css/all.min.css" integrity="sha256-XOqroi11tY4EFQMR9ZYwZWKj5ZXiftSx36RRuC3anlA=" crossorigin="anonymous">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/animate.css/3.1.1/animate.min.css" integrity="sha256-PR7ttpcvz8qrF57fur/yAx1qXMFJeJFiA6pSzWi0OIE=" crossorigin="anonymous">
+
+<script class="next-config" data-name="main" type="application/json">{"hostname":"scut-corgis.github.io","root":"/","images":"/images","scheme":"Muse","darkmode":false,"version":"8.20.0","exturl":false,"sidebar":{"position":"left","width_expanded":320,"width_dual_column":240,"display":"always","padding":18,"offset":12},"hljswrap":true,"copycode":{"enable":true,"style":null},"fold":{"enable":true,"height":500},"bookmark":{"enable":false,"color":"#222","save":"auto"},"mediumzoom":false,"lazyload":false,"pangu":false,"comments":{"style":"tabs","active":null,"storage":true,"lazyload":false,"nav":null},"stickytabs":false,"motion":{"enable":true,"async":false,"transition":{"menu_item":"fadeInDown","post_block":"fadeIn","post_header":"fadeInDown","post_body":"fadeInDown","coll_header":"fadeInLeft","sidebar":"fadeInUp"}},"prism":false,"i18n":{"placeholder":"搜索...","empty":"没有找到任何搜索结果：${query}","hits_time":"找到 ${hits} 个搜索结果（用时 ${time} 毫秒）","hits":"找到 ${hits} 个搜索结果"}}</script><script src="/js/config.js"></script>
+
+    <meta name="description" content="从sdk出发之后的所有源码解析均基于社区版。 社区版不支持但商业版支持的功能有  强一致性 快速启动（索引落盘） 持久删除 跨数据中心同步 索引与数据均用ssd（社区版只支持索引放内存）  学习完aerospike的官方文档，接下来就是查看其支持的功能，最全最好的方法就是直接看sdk提供的接口。 scan 支持多种scan范围，如按整个集群或partition 不支持按key顺序scan，支持按k">
+<meta property="og:type" content="article">
+<meta property="og:title" content="aerospike学习(1)-SDK提供的能力">
+<meta property="og:url" content="https://scut-corgis.github.io/2025-04-10-aerospike%E5%AD%A6%E4%B9%A0(1)-SDK%E6%8F%90%E4%BE%9B%E7%9A%84%E8%83%BD%E5%8A%9B/index.html">
+<meta property="og:site_name" content="corgis的笔记">
+<meta property="og:description" content="从sdk出发之后的所有源码解析均基于社区版。 社区版不支持但商业版支持的功能有  强一致性 快速启动（索引落盘） 持久删除 跨数据中心同步 索引与数据均用ssd（社区版只支持索引放内存）  学习完aerospike的官方文档，接下来就是查看其支持的功能，最全最好的方法就是直接看sdk提供的接口。 scan 支持多种scan范围，如按整个集群或partition 不支持按key顺序scan，支持按k">
+<meta property="og:locale" content="zh_CN">
+<meta property="article:published_time" content="2025-04-09T17:21:36.000Z">
+<meta property="article:modified_time" content="2025-04-28T07:54:08.817Z">
+<meta property="article:author" content="Corgis">
+<meta name="twitter:card" content="summary">
+
+
+<link rel="canonical" href="https://scut-corgis.github.io/2025-04-10-aerospike%E5%AD%A6%E4%B9%A0(1)-SDK%E6%8F%90%E4%BE%9B%E7%9A%84%E8%83%BD%E5%8A%9B/">
+
+
+
+<script class="next-config" data-name="page" type="application/json">{"sidebar":"","isHome":false,"isPost":true,"lang":"zh-CN","comments":true,"permalink":"https://scut-corgis.github.io/2025-04-10-aerospike%E5%AD%A6%E4%B9%A0(1)-SDK%E6%8F%90%E4%BE%9B%E7%9A%84%E8%83%BD%E5%8A%9B/","path":"2025-04-10-aerospike学习(1)-SDK提供的能力/","title":"aerospike学习(1)-SDK提供的能力"}</script>
+
+<script class="next-config" data-name="calendar" type="application/json">""</script>
+<title>aerospike学习(1)-SDK提供的能力 | corgis的笔记</title>
+  
+
+
+
+
+
+
+
+
+  <noscript>
+    <link rel="stylesheet" href="/css/noscript.css">
+  </noscript>
+</head>
+
+<body itemscope itemtype="http://schema.org/WebPage" class="use-motion">
+  <div class="headband"></div>
+
+  <main class="main">
+    <div class="column">
+      <header class="header" itemscope itemtype="http://schema.org/WPHeader"><div class="site-brand-container">
+  <div class="site-nav-toggle">
+    <div class="toggle" aria-label="切换导航栏" role="button">
+        <span class="toggle-line"></span>
+        <span class="toggle-line"></span>
+        <span class="toggle-line"></span>
+    </div>
+  </div>
+
+  <div class="site-meta">
+
+    <a href="/" class="brand" rel="start">
+      <i class="logo-line"></i>
+      <p class="site-title">corgis的笔记</p>
+      <i class="logo-line"></i>
+    </a>
+  </div>
+
+  <div class="site-nav-right">
+    <div class="toggle popup-trigger" aria-label="搜索" role="button">
+    </div>
+  </div>
+</div>
+
+
+
+<nav class="site-nav">
+  <ul class="main-menu menu"><li class="menu-item menu-item-home"><a href="/" rel="section"><i class="fa fa-home fa-fw"></i>首页</a></li><li class="menu-item menu-item-about"><a href="/about/" rel="section"><i class="fa fa-user fa-fw"></i>关于</a></li><li class="menu-item menu-item-categories"><a href="/categories/" rel="section"><i class="fa fa-th fa-fw"></i>分类</a></li><li class="menu-item menu-item-archives"><a href="/archives/" rel="section"><i class="fa fa-archive fa-fw"></i>归档</a></li>
+  </ul>
+</nav>
+
+
+
+
+</header>
+        
+  
+  <aside class="sidebar">
+
+    <div class="sidebar-inner sidebar-nav-active sidebar-toc-active">
+      <ul class="sidebar-nav">
+        <li class="sidebar-nav-toc">
+          文章目录
+        </li>
+        <li class="sidebar-nav-overview">
+          站点概览
+        </li>
+      </ul>
+
+      <div class="sidebar-panel-container">
+        <!--noindex-->
+        <div class="post-toc-wrap sidebar-panel">
+            <div class="post-toc animated"><ol class="nav"><li class="nav-item nav-level-1"><a class="nav-link" href="#%E4%BB%8Esdk%E5%87%BA%E5%8F%91"><span class="nav-number">1.</span> <span class="nav-text">从sdk出发</span></a><ol class="nav-child"><li class="nav-item nav-level-2"><a class="nav-link" href="#scan"><span class="nav-number">1.1.</span> <span class="nav-text">scan</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E5%8D%95key%E7%9A%84%E5%86%99%E6%93%8D%E4%BD%9C"><span class="nav-number">1.2.</span> <span class="nav-text">单key的写操作</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#sdk%E4%BD%BF%E7%94%A8%E8%BF%87%E7%A8%8B"><span class="nav-number">1.3.</span> <span class="nav-text">sdk使用过程</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#sdk%E4%BB%A3%E7%A0%81%E5%AE%9E%E7%8E%B0"><span class="nav-number">1.4.</span> <span class="nav-text">sdk代码实现</span></a></li></ol></li></ol></div>
+        </div>
+        <!--/noindex-->
+
+        <div class="site-overview-wrap sidebar-panel">
+          <div class="site-author animated" itemprop="author" itemscope itemtype="http://schema.org/Person">
+    <img class="site-author-image" itemprop="image" alt="Corgis"
+      src="/images/corgis.jpg">
+  <p class="site-author-name" itemprop="name">Corgis</p>
+  <div class="site-description" itemprop="description">用于成长过程中，记录值得对外分享的技术，如开源代码理解、国外课程项目，个人对一些领域的心得等</div>
+</div>
+<div class="site-state-wrap animated">
+  <nav class="site-state">
+      <div class="site-state-item site-state-posts">
+        <a href="/archives/">
+          <span class="site-state-item-count">23</span>
+          <span class="site-state-item-name">日志</span>
+        </a>
+      </div>
+      <div class="site-state-item site-state-categories">
+          <a href="/categories/">
+        <span class="site-state-item-count">13</span>
+        <span class="site-state-item-name">分类</span></a>
+      </div>
+  </nav>
+</div>
+
+        </div>
+      </div>
+        <div class="back-to-top animated" role="button" aria-label="返回顶部">
+          <i class="fa fa-arrow-up"></i>
+          <span>0%</span>
+        </div>
+    </div>
+
+    
+  </aside>
+
+
+    </div>
+
+    <div class="main-inner post posts-expand">
+
+
+  
+
+
+<div class="post-block">
+  
+  
+
+  <article itemscope itemtype="http://schema.org/Article" class="post-content" lang="zh-CN">
+    <link itemprop="mainEntityOfPage" href="https://scut-corgis.github.io/2025-04-10-aerospike%E5%AD%A6%E4%B9%A0(1)-SDK%E6%8F%90%E4%BE%9B%E7%9A%84%E8%83%BD%E5%8A%9B/">
+
+    <span hidden itemprop="author" itemscope itemtype="http://schema.org/Person">
+      <meta itemprop="image" content="/images/corgis.jpg">
+      <meta itemprop="name" content="Corgis">
+    </span>
+
+    <span hidden itemprop="publisher" itemscope itemtype="http://schema.org/Organization">
+      <meta itemprop="name" content="corgis的笔记">
+      <meta itemprop="description" content="用于成长过程中，记录值得对外分享的技术，如开源代码理解、国外课程项目，个人对一些领域的心得等">
+    </span>
+
+    <span hidden itemprop="post" itemscope itemtype="http://schema.org/CreativeWork">
+      <meta itemprop="name" content="aerospike学习(1)-SDK提供的能力 | corgis的笔记">
+      <meta itemprop="description" content="">
+    </span>
+      <header class="post-header">
+        <h1 class="post-title" itemprop="name headline">
+          aerospike学习(1)-SDK提供的能力
+        </h1>
+
+        <div class="post-meta-container">
+          <div class="post-meta">
+    <span class="post-meta-item">
+      <span class="post-meta-item-icon">
+        <i class="far fa-calendar"></i>
+      </span>
+      <span class="post-meta-item-text">发表于</span>
+
+      <time title="创建时间：2025-04-10 01:21:36" itemprop="dateCreated datePublished" datetime="2025-04-10T01:21:36+08:00">2025-04-10</time>
+    </span>
+    <span class="post-meta-item">
+      <span class="post-meta-item-icon">
+        <i class="far fa-folder"></i>
+      </span>
+      <span class="post-meta-item-text">分类于</span>
+        <span itemprop="about" itemscope itemtype="http://schema.org/Thing">
+          <a href="/categories/%E5%93%88%E5%B8%8C%E5%AD%98%E5%82%A8%E5%BC%95%E6%93%8E/" itemprop="url" rel="index"><span itemprop="name">哈希存储引擎</span></a>
+        </span>
+    </span>
+
+  
+</div>
+
+        </div>
+      </header>
+
+    
+    
+    
+    <div class="post-body" itemprop="articleBody"><h1 id="从sdk出发"><a href="#从sdk出发" class="headerlink" title="从sdk出发"></a>从sdk出发</h1><p>之后的所有源码解析均基于社区版。</p>
+<p>社区版不支持但商业版支持的功能有</p>
+<ul>
+<li>强一致性</li>
+<li>快速启动（索引落盘）</li>
+<li>持久删除</li>
+<li>跨数据中心同步</li>
+<li>索引与数据均用ssd（社区版只支持索引放内存）</li>
+</ul>
+<p>学习完aerospike的官方文档，接下来就是查看其支持的功能，最全最好的方法就是直接看sdk提供的接口。</p>
+<h2 id="scan"><a href="#scan" class="headerlink" title="scan"></a>scan</h2><ol>
+<li>支持多种scan范围，如按整个集群或partition</li>
+<li>不支持按key顺序scan，支持按key的hash值按序按量scan</li>
+</ol>
+<h2 id="单key的写操作"><a href="#单key的写操作" class="headerlink" title="单key的写操作"></a>单key的写操作</h2><ol>
+<li>计算key的hash摘要，共20字节，取出前16位（实际其中的低12位），计算出分区id</li>
+<li>根据分区id，查路由表，得到将要发送的目标server</li>
+<li>根据设置的policy，决定是否只发摘要或者摘要与key值都发。write_buf包括: policy(写策略标识)+namespace+set+digest+key值(可选)<blockquote>
+<p>写策略有如：持久删除、写命令类型（删除），commit时机（是否要所有从节点都回复）</p>
+</blockquote>
+</li>
+</ol>
+<h2 id="sdk使用过程"><a href="#sdk使用过程" class="headerlink" title="sdk使用过程"></a>sdk使用过程</h2><p>对一行记录的，简单行操作如下</p>
+<figure class="highlight c++"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br></pre></td><td class="code"><pre><span class="line"><span class="comment">// 1. 连接as，得到as结构题</span></span><br><span class="line">aerospike as;</span><br><span class="line"><span class="comment">/* 初始化该连接的配置，此配置可以设置，比如修改写策略policy，实现多种能力。</span></span><br><span class="line"><span class="comment">如: 是否持久化写操作（默认否）、是否需要所有副本回复（默认是）、是否用key的元数据版本控制写入（默认否）。</span></span><br><span class="line"><span class="comment">*/</span></span><br><span class="line">as_config config;</span><br><span class="line"><span class="built_in">as_config_init</span>(&amp;config)</span><br><span class="line"><span class="built_in">aerospike_init</span>(as, &amp;config);</span><br><span class="line"><span class="built_in">aerospike_connect</span>(as, &amp;err)</span><br><span class="line"></span><br><span class="line"><span class="comment">// 1.申明key、ns、set</span></span><br><span class="line">as_key key;</span><br><span class="line"><span class="built_in">as_key_init_str</span>(&amp;key, <span class="string">&quot;ns&quot;</span>, <span class="string">&quot;set&quot;</span>, <span class="string">&quot;key&quot;</span>);</span><br><span class="line"><span class="comment">// 3.声明一行待插入的记录，包括bin名和bin值(类型与具体值)</span></span><br><span class="line">as_record rec;</span><br><span class="line"><span class="built_in">as_record_inita</span>(&amp;rec, <span class="number">2</span>);</span><br><span class="line"><span class="built_in">as_record_set_int64</span>(&amp;rec, <span class="string">&quot;test-bin-1&quot;</span>, <span class="number">1234</span>);</span><br><span class="line"><span class="built_in">as_record_set_str</span>(&amp;rec, <span class="string">&quot;test-bin-2&quot;</span>, <span class="string">&quot;test-bin-2-data&quot;</span>);</span><br><span class="line"><span class="comment">// 4.执行put</span></span><br><span class="line"><span class="built_in">aerospike_key_put</span>(&amp;as, &amp;err, <span class="literal">NULL</span>, &amp;g_key, &amp;rec)</span><br><span class="line"><span class="comment">// 5.可以get出来看结果，也可以select其中几个bin</span></span><br><span class="line">as_record* p_rec = <span class="literal">NULL</span>;</span><br><span class="line"><span class="built_in">aerospike_key_get</span>(&amp;as, &amp;err, <span class="literal">NULL</span>, &amp;g_key, &amp;p_rec)</span><br><span class="line"></span><br><span class="line"><span class="type">static</span> <span class="type">const</span> <span class="type">char</span>* bins_1_3[] = &#123; <span class="string">&quot;test-bin-1&quot;</span>, <span class="string">&quot;test-bin-3&quot;</span>, <span class="literal">NULL</span> &#125;;</span><br><span class="line"><span class="built_in">aerospike_key_select</span>(&amp;as, &amp;err, <span class="literal">NULL</span>, &amp;g_key, bins_1_3, &amp;p_rec)</span><br></pre></td></tr></table></figure>
+
+<p>对于复杂数据类型，以ordered_map举例</p>
+<figure class="highlight c++"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br><span class="line">27</span><br><span class="line">28</span><br><span class="line">29</span><br><span class="line">30</span><br><span class="line">31</span><br><span class="line">32</span><br><span class="line">33</span><br><span class="line">34</span><br><span class="line">35</span><br><span class="line">36</span><br><span class="line">37</span><br><span class="line">38</span><br><span class="line">39</span><br><span class="line">40</span><br><span class="line">41</span><br><span class="line">42</span><br></pre></td><td class="code"><pre><span class="line"><span class="comment">// 1.同样是连接as，指定默认配置</span></span><br><span class="line">aerospike as;</span><br><span class="line">as_config config;</span><br><span class="line"><span class="built_in">as_config_init</span>(&amp;config)</span><br><span class="line"><span class="built_in">aerospike_init</span>(as, &amp;config);</span><br><span class="line"><span class="built_in">aerospike_connect</span>(as, &amp;err)</span><br><span class="line"><span class="comment">// 2. 创建hashmap，声明为2个key-value，value值为int</span></span><br><span class="line">as_hashmap scores;</span><br><span class="line"><span class="built_in">as_hashmap_init</span>(&amp;scores, <span class="number">2</span>);</span><br><span class="line">as_string  mkey1;</span><br><span class="line">as_integer mval1;</span><br><span class="line"><span class="built_in">as_string_init</span>(&amp;mkey1, <span class="string">&quot;Bob&quot;</span>, <span class="literal">false</span>);</span><br><span class="line"><span class="built_in">as_integer_init</span>(&amp;mval1, <span class="number">55</span>);</span><br><span class="line"><span class="built_in">as_hashmap_set</span>(&amp;scores, (as_val*)&amp;mkey1, (as_val*)&amp;mval1);</span><br><span class="line">as_string  mkey2;</span><br><span class="line">as_integer mval2;</span><br><span class="line"><span class="built_in">as_string_init</span>(&amp;mkey2, <span class="string">&quot;Jim&quot;</span>, <span class="literal">false</span>);</span><br><span class="line"><span class="built_in">as_integer_init</span>(&amp;mval2, <span class="number">98</span>);</span><br><span class="line"><span class="built_in">as_hashmap_set</span>(&amp;scores, (as_val*)&amp;mkey2, (as_val*)&amp;mval2);</span><br><span class="line"><span class="comment">// 3.创建写策略，默认策略是unordered，我们可以修改为有序。有序既可以声明为key有序，也可以先按key再按value。</span></span><br><span class="line">as_map_policy map_policy;</span><br><span class="line"><span class="built_in">as_map_policy_init</span>(&amp;map_policy);</span><br><span class="line">map_policy.attributes = AS_MAP_KEY_VALUE_ORDERED; <span class="comment">//here</span></span><br><span class="line"><span class="comment">// 4.声明put操作</span></span><br><span class="line">as_operations ops;</span><br><span class="line"><span class="built_in">as_operations_inita</span>(&amp;ops, <span class="number">1</span>); <span class="comment">//1表示一个操作</span></span><br><span class="line"><span class="built_in">as_operations_add_map_put_items</span>(&amp;ops, <span class="string">&quot;bin名&quot;</span>, &amp;map_policy, (as_map*)&amp;scores);</span><br><span class="line"><span class="comment">// 5.开始put</span></span><br><span class="line">as_record* rec = <span class="literal">NULL</span>;</span><br><span class="line"><span class="built_in">aerospike_key_operate</span>(&amp;as, &amp;err, <span class="literal">NULL</span>, &amp;g_key, &amp;ops, &amp;rec)</span><br><span class="line"><span class="comment">// 6.也可以对map中的单key做操作，比如增加&quot;Bob&quot;的值25</span></span><br><span class="line"><span class="built_in">as_operations_inita</span>(&amp;ops, <span class="number">1</span>);</span><br><span class="line"></span><br><span class="line"><span class="built_in">as_string_init</span>(&amp;mkey1, <span class="string">&quot;Bob&quot;</span>, <span class="literal">false</span>);</span><br><span class="line"><span class="built_in">as_integer_init</span>(&amp;mval1, <span class="number">25</span>);</span><br><span class="line"><span class="built_in">as_operations_add_map_increment</span>(&amp;ops, map_bin_name, &amp;map_policy, (as_val*)&amp;mkey1, (as_val*)&amp;mval1);</span><br><span class="line"><span class="built_in">aerospike_key_operate</span>(&amp;as, &amp;err, <span class="literal">NULL</span>, &amp;g_key, &amp;ops, &amp;rec)</span><br><span class="line"><span class="comment">// 7. 可以按分数顺序查询，比如取分数最高的两个值</span></span><br><span class="line"><span class="built_in">as_operations_inita</span>(&amp;ops, <span class="number">1</span>);</span><br><span class="line"><span class="built_in">as_operations_add_map_get_by_rank_range</span>(&amp;ops, map_bin_name, <span class="number">-2</span>, <span class="number">2</span>, AS_MAP_RETURN_KEY_VALUE);</span><br><span class="line"><span class="built_in">aerospike_key_operate</span>(&amp;as, &amp;err, <span class="literal">NULL</span>, &amp;g_key, &amp;ops, &amp;rec)</span><br><span class="line"></span><br></pre></td></tr></table></figure>
+
+
+
+<h2 id="sdk代码实现"><a href="#sdk代码实现" class="headerlink" title="sdk代码实现"></a>sdk代码实现</h2><p>对于一行记录的put，经历的整个过程细节如下，主要关注需要传递给server哪些信息</p>
+<figure class="highlight c++"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br><span class="line">27</span><br><span class="line">28</span><br><span class="line">29</span><br><span class="line">30</span><br><span class="line">31</span><br><span class="line">32</span><br><span class="line">33</span><br><span class="line">34</span><br><span class="line">35</span><br><span class="line">36</span><br><span class="line">37</span><br><span class="line">38</span><br><span class="line">39</span><br><span class="line">40</span><br><span class="line">41</span><br><span class="line">42</span><br><span class="line">43</span><br><span class="line">44</span><br><span class="line">45</span><br><span class="line">46</span><br><span class="line">47</span><br><span class="line">48</span><br><span class="line">49</span><br><span class="line">50</span><br><span class="line">51</span><br><span class="line">52</span><br><span class="line">53</span><br><span class="line">54</span><br><span class="line">55</span><br><span class="line">56</span><br><span class="line">57</span><br><span class="line">58</span><br><span class="line">59</span><br><span class="line">60</span><br><span class="line">61</span><br><span class="line">62</span><br><span class="line">63</span><br><span class="line">64</span><br><span class="line">65</span><br><span class="line">66</span><br><span class="line">67</span><br><span class="line">68</span><br><span class="line">69</span><br><span class="line">70</span><br></pre></td><td class="code"><pre><span class="line"><span class="comment">// key初始化函数，生成as_key</span></span><br><span class="line"><span class="function">as_key* <span class="title">as_key_init_str</span><span class="params">(as_key* key, <span class="type">const</span> <span class="type">char</span>* ns, <span class="type">const</span> <span class="type">char</span>* set, <span class="type">const</span> <span class="type">char</span>* value)</span></span>;</span><br><span class="line"><span class="comment">//key的结构体定义。含ns、set、value、digest</span></span><br><span class="line"><span class="keyword">typedef</span> <span class="keyword">struct</span> <span class="title class_">as_key_s</span> &#123;</span><br><span class="line">	as_namespace ns;</span><br><span class="line">	as_set set;</span><br><span class="line">	<span class="comment">/**</span></span><br><span class="line"><span class="comment">	 * The key value.</span></span><br><span class="line"><span class="comment">	 */</span></span><br><span class="line">	as_key_value value;</span><br><span class="line">	<span class="comment">/**</span></span><br><span class="line"><span class="comment">	 * The key value pointer.</span></span><br><span class="line"><span class="comment">	 * It can point to as_key.value or a different value.</span></span><br><span class="line"><span class="comment">	 */</span></span><br><span class="line">	as_key_value* valuep;</span><br><span class="line">    <span class="comment">// hash值</span></span><br><span class="line">	as_digest digest;</span><br><span class="line"></span><br><span class="line">&#125; as_key</span><br><span class="line"></span><br><span class="line"><span class="comment">// 生成发送的buffer</span></span><br><span class="line"><span class="function">as_status</span></span><br><span class="line"><span class="function"><span class="title">aerospike_key_put</span><span class="params">(</span></span></span><br><span class="line"><span class="params"><span class="function">	aerospike* as, as_error* err, <span class="type">const</span> as_policy_write* policy, <span class="type">const</span> as_key* key, as_record* rec</span></span></span><br><span class="line"><span class="params"><span class="function">	)</span></span></span><br><span class="line"><span class="function"></span>&#123;</span><br><span class="line">    <span class="comment">// 计算key对应的分区（digest的前16位）</span></span><br><span class="line">	as_partition_info pi;</span><br><span class="line">	as_status status = <span class="built_in">as_command_prepare_write</span>(as, err, &amp;policy-&gt;base, key, &amp;pi);</span><br><span class="line"></span><br><span class="line">	<span class="keyword">if</span> (status != AEROSPIKE_OK) &#123;</span><br><span class="line">		<span class="keyword">return</span> status;</span><br><span class="line">	&#125;</span><br><span class="line">    <span class="comment">// 分配内存空间，用于发送整条put请求，每一个bin一个buffer</span></span><br><span class="line">	as_queue buffers;</span><br><span class="line">	<span class="built_in">as_queue_inita</span>(&amp;buffers, <span class="built_in">sizeof</span>(as_buffer), rec-&gt;bins.size);</span><br><span class="line">	as_put put;</span><br><span class="line">	status = <span class="built_in">as_put_init</span>(&amp;put, policy, key, rec, &amp;buffers, err);</span><br><span class="line"></span><br><span class="line">	as_command cmd;</span><br><span class="line">	<span class="built_in">as_command_init_write</span>(&amp;cmd, as-&gt;cluster, &amp;policy-&gt;base, policy-&gt;replica, key, put.size, &amp;pi,</span><br><span class="line">						  as_command_parse_header, <span class="literal">NULL</span>);</span><br><span class="line">    <span class="comment">// 发送命令。as_put_write函数将所有待发送信息放到tcp用户缓存buffer中</span></span><br><span class="line">	status = <span class="built_in">as_command_send</span>(&amp;cmd, err, compression_threshold, as_put_write, &amp;put);</span><br><span class="line">	<span class="keyword">return</span> status;</span><br><span class="line">&#125;</span><br><span class="line"></span><br><span class="line"><span class="function"><span class="type">static</span> as_status</span></span><br><span class="line"><span class="function"><span class="title">as_put_init</span><span class="params">(</span></span></span><br><span class="line"><span class="params"><span class="function">	as_put* put, <span class="type">const</span> as_policy_write* policy, <span class="type">const</span> as_key* key, as_record* rec,</span></span></span><br><span class="line"><span class="params"><span class="function">	as_queue* buffers, as_error* err</span></span></span><br><span class="line"><span class="params"><span class="function">	)</span></span></span><br><span class="line"><span class="function"></span>&#123;</span><br><span class="line">	put-&gt;policy = policy;</span><br><span class="line">	put-&gt;key = key;</span><br><span class="line">	put-&gt;rec = rec;</span><br><span class="line">    <span class="comment">// 每一个buffer对应一个bin</span></span><br><span class="line">	put-&gt;buffers = buffers;</span><br><span class="line">    <span class="comment">// 计算key所需的空间</span></span><br><span class="line">	put-&gt;size = <span class="built_in">as_command_key_size</span>(&amp;policy-&gt;base, policy-&gt;key, key, <span class="literal">true</span>, &amp;put-&gt;tdata);</span><br><span class="line">	put-&gt;n_bins = rec-&gt;bins.size;</span><br><span class="line"></span><br><span class="line">	as_bin* bins = rec-&gt;bins.entries;</span><br><span class="line"></span><br><span class="line">	<span class="keyword">for</span> (<span class="type">uint16_t</span> i = <span class="number">0</span>; i &lt; put-&gt;n_bins; i++) &#123;</span><br><span class="line">        <span class="comment">// 这里计算size，同时填入了bin的值，根据bin的类型有不同的序列化方式</span></span><br><span class="line">		as_status status = <span class="built_in">as_command_bin_size</span>(&amp;bins[i], buffers, &amp;put-&gt;size, err);</span><br><span class="line">	&#125;</span><br><span class="line">	<span class="keyword">return</span> AEROSPIKE_OK;</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+<p>对于map的operator操作，实现细节如下。</p>
+<p>解析如下过程函数：</p>
+<figure class="highlight c++"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br></pre></td><td class="code"><pre><span class="line">as_map_policy map_policy;</span><br><span class="line"><span class="built_in">as_map_policy_init</span>(&amp;map_policy);</span><br><span class="line"><span class="built_in">as_operations_add_map_put_items</span>(&amp;ops, map_bin_name, &amp;map_policy, (as_map*)&amp;scores);</span><br><span class="line"><span class="built_in">aerospike_key_operate</span>(&amp;as, &amp;err, <span class="literal">NULL</span>, &amp;g_key, &amp;ops, &amp;rec)</span><br></pre></td></tr></table></figure>
+
+<figure class="highlight c++"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br><span class="line">27</span><br><span class="line">28</span><br><span class="line">29</span><br><span class="line">30</span><br><span class="line">31</span><br><span class="line">32</span><br><span class="line">33</span><br><span class="line">34</span><br><span class="line">35</span><br><span class="line">36</span><br><span class="line">37</span><br><span class="line">38</span><br><span class="line">39</span><br><span class="line">40</span><br><span class="line">41</span><br><span class="line">42</span><br><span class="line">43</span><br><span class="line">44</span><br><span class="line">45</span><br><span class="line">46</span><br><span class="line">47</span><br><span class="line">48</span><br><span class="line">49</span><br><span class="line">50</span><br><span class="line">51</span><br><span class="line">52</span><br><span class="line">53</span><br><span class="line">54</span><br><span class="line">55</span><br><span class="line">56</span><br><span class="line">57</span><br><span class="line">58</span><br><span class="line">59</span><br><span class="line">60</span><br><span class="line">61</span><br><span class="line">62</span><br><span class="line">63</span><br><span class="line">64</span><br></pre></td><td class="code"><pre><span class="line"><span class="function"><span class="type">bool</span> <span class="title">as_operations_add_map_put_items</span><span class="params">(</span></span></span><br><span class="line"><span class="params"><span class="function">	as_operations* ops, <span class="type">const</span> <span class="type">char</span>* name, as_map_policy* policy, as_map* items</span></span></span><br><span class="line"><span class="params"><span class="function">	)</span></span></span><br><span class="line"><span class="function"></span>&#123;</span><br><span class="line">	<span class="keyword">return</span> <span class="built_in">as_operations_map_put_items</span>(ops, name, <span class="literal">NULL</span>, policy, items);</span><br><span class="line">&#125;</span><br><span class="line"><span class="function"><span class="type">bool</span></span></span><br><span class="line"><span class="function"><span class="title">as_operations_map_put_items</span><span class="params">(</span></span></span><br><span class="line"><span class="params"><span class="function">	as_operations* ops, <span class="type">const</span> <span class="type">char</span>* name, as_cdt_ctx* ctx, as_map_policy* policy,</span></span></span><br><span class="line"><span class="params"><span class="function">	as_map* items</span></span></span><br><span class="line"><span class="params"><span class="function">	)</span></span></span><br><span class="line"><span class="function"></span>&#123;</span><br><span class="line">	as_packer pk = <span class="built_in">as_cdt_begin</span>();</span><br><span class="line">    <span class="comment">// 命令的序列化过程。将命令类型(PUT_ITEMS)、实际items键值、排序类型（哪种有序或无序）打包进as_pack结构</span></span><br><span class="line">    <span class="built_in">as_cdt_pack_header</span>(&amp;pk, ctx, policy-&gt;items_command, <span class="number">2</span>);</span><br><span class="line">    <span class="built_in">as_pack_val</span>(&amp;pk, (as_val*)items);</span><br><span class="line">    <span class="built_in">as_pack_uint64</span>(&amp;pk, policy-&gt;attributes);</span><br><span class="line"></span><br><span class="line">	<span class="built_in">as_cdt_end</span>(&amp;pk);</span><br><span class="line">	<span class="built_in">as_map_destroy</span>(items);</span><br><span class="line">    <span class="comment">// 这里将bin的名字、对bin的操作类型和上一步的整体数据一起打包进ops中</span></span><br><span class="line">	<span class="keyword">return</span> <span class="built_in">as_cdt_add_packed</span>(&amp;pk, ops, name, AS_OPERATOR_MAP_MODIFY);</span><br><span class="line">&#125;</span><br><span class="line"></span><br><span class="line"><span class="function">as_status</span></span><br><span class="line"><span class="function"><span class="title">aerospike_key_operate</span><span class="params">(</span></span></span><br><span class="line"><span class="params"><span class="function">	aerospike* as, as_error* err, <span class="type">const</span> as_policy_operate* policy, <span class="type">const</span> as_key* key,</span></span></span><br><span class="line"><span class="params"><span class="function">	<span class="type">const</span> as_operations* ops, as_record** rec</span></span></span><br><span class="line"><span class="params"><span class="function">	)</span></span></span><br><span class="line"><span class="function"></span>&#123;</span><br><span class="line">    <span class="comment">// 多少个bin操作</span></span><br><span class="line">	<span class="type">uint32_t</span> n_operations = ops-&gt;binops.size;</span><br><span class="line">    <span class="comment">// 每个bin操作一个buffer</span></span><br><span class="line">	as_queue buffers;</span><br><span class="line">	<span class="built_in">as_queue_inita</span>(&amp;buffers, <span class="built_in">sizeof</span>(as_buffer), n_operations);</span><br><span class="line"></span><br><span class="line">	as_policy_operate policy_local;</span><br><span class="line">	as_operate oper;</span><br><span class="line"></span><br><span class="line">	as_status status = <span class="built_in">as_operate_init</span>(&amp;oper, as, policy, &amp;policy_local, key, ops, &amp;buffers, err);</span><br><span class="line"></span><br><span class="line">	policy = oper.policy;</span><br><span class="line"></span><br><span class="line">	as_partition_info pi;</span><br><span class="line">	status = <span class="built_in">as_command_prepare</span>(as-&gt;cluster, err, &amp;policy-&gt;base, key, &amp;pi);</span><br><span class="line"></span><br><span class="line">	<span class="built_in">as_operate_size</span>(&amp;oper);</span><br><span class="line"></span><br><span class="line">	as_command_parse_result_data data;</span><br><span class="line">	data.record = rec;</span><br><span class="line">	data.deserialize = policy-&gt;deserialize;</span><br><span class="line"></span><br><span class="line">	as_command cmd;</span><br><span class="line"></span><br><span class="line">	<span class="keyword">if</span> (oper.write_attr &amp; AS_MSG_INFO2_WRITE) &#123;</span><br><span class="line">		<span class="built_in">as_command_init_write</span>(&amp;cmd, as-&gt;cluster, &amp;policy-&gt;base, policy-&gt;replica, key, oper.size, &amp;pi,</span><br><span class="line">							  as_command_parse_result, &amp;data);</span><br><span class="line">	&#125;</span><br><span class="line">    ...</span><br><span class="line">    <span class="comment">// 用的as_operate_write函数构造tcp-buffer</span></span><br><span class="line">	status = <span class="built_in">as_command_send</span>(&amp;cmd, err, compression_threshold, as_operate_write, &amp;oper);</span><br><span class="line"></span><br><span class="line">	<span class="keyword">return</span> status;</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+    </div>
+
+    
+    
+    
+
+    <footer class="post-footer">
+
+        
+
+          <div class="post-nav">
+            <div class="post-nav-item">
+                <a href="/2025-04-01-hash%E5%AD%98%E5%82%A8%E5%BC%95%E6%93%8E%E6%9D%82%E8%B0%88/" rel="prev" title="hash存储引擎杂谈">
+                  <i class="fa fa-angle-left"></i> hash存储引擎杂谈
+                </a>
+            </div>
+            <div class="post-nav-item">
+                <a href="/2025-04-19-aerospike%E5%AD%A6%E4%B9%A0(2)-%E5%86%85%E5%AD%98%E7%AE%A1%E7%90%86/" rel="next" title="aerospike学习(2)-内存管理">
+                  aerospike学习(2)-内存管理 <i class="fa fa-angle-right"></i>
+                </a>
+            </div>
+          </div>
+    </footer>
+  </article>
+</div>
+
+
+
+
+
+
+</div>
+  </main>
+
+  <footer class="footer">
+    <div class="footer-inner">
+
+  <div class="copyright">
+    &copy; 
+    <span itemprop="copyrightYear">2025</span>
+    <span class="with-love">
+      <i class="fa fa-heart"></i>
+    </span>
+    <span class="author" itemprop="copyrightHolder">Corgis</span>
+  </div>
+  <div class="powered-by">由 <a href="https://hexo.io/" rel="noopener" target="_blank">Hexo</a> & <a href="https://theme-next.js.org/muse/" rel="noopener" target="_blank">NexT.Muse</a> 强力驱动
+  </div>
+
+    </div>
+  </footer>
+
+  
+  <div class="toggle sidebar-toggle" role="button">
+    <span class="toggle-line"></span>
+    <span class="toggle-line"></span>
+    <span class="toggle-line"></span>
+  </div>
+  <div class="sidebar-dimmer"></div>
+  <div class="reading-progress-bar"></div>
+
+<noscript>
+  <div class="noscript-warning">Theme NexT works best with JavaScript enabled</div>
+</noscript>
+
+
+  
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/animejs/3.2.1/anime.min.js" integrity="sha256-XL2inqUJaslATFnHdJOi9GfQ60on8Wx1C2H8DYiN1xY=" crossorigin="anonymous"></script>
+<script src="/js/comments.js"></script><script src="/js/utils.js"></script><script src="/js/motion.js"></script><script src="/js/sidebar.js"></script><script src="/js/next-boot.js"></script>
+
+  
+
+
+
+
+
+
+  
+
+
+
+
+
+</body>
+</html>

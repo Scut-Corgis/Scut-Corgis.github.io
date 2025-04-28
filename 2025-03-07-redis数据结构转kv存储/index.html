@@ -27,7 +27,7 @@
 <meta property="og:description" content="目的类似kvrocks这类的以磁盘ssd作为底层冷数据，并且存储引擎（如rocksdb）只支持kv的场景，又需要支持redis协议，提供五类数据模型，即string、hash、set、zset、list。那么必须找到一种高效的方式将此类数据结构转化到kv存储中，并利用底层存储引擎的gc能力（如rocksdb的compaction）来过滤旧数据。 在快手，有多种此类数据库，如以本地rocksdb为存">
 <meta property="og:locale" content="zh_CN">
 <meta property="article:published_time" content="2025-03-07T09:23:01.000Z">
-<meta property="article:modified_time" content="2025-03-07T09:23:28.895Z">
+<meta property="article:modified_time" content="2025-04-28T07:54:08.853Z">
 <meta property="article:author" content="Corgis">
 <meta name="twitter:card" content="summary">
 
@@ -126,13 +126,13 @@
   <nav class="site-state">
       <div class="site-state-item site-state-posts">
         <a href="/archives/">
-          <span class="site-state-item-count">17</span>
+          <span class="site-state-item-count">23</span>
           <span class="site-state-item-name">日志</span>
         </a>
       </div>
       <div class="site-state-item site-state-categories">
           <a href="/categories/">
-        <span class="site-state-item-count">12</span>
+        <span class="site-state-item-count">13</span>
         <span class="site-state-item-name">分类</span></a>
       </div>
   </nav>
@@ -223,14 +223,14 @@
 <h2 id="key排序"><a href="#key排序" class="headerlink" title="key排序"></a>key排序</h2><p>对于rocksdb，其在level1之后的sst中会按key直接排序，为了让hashtag一致的key尽量放在一起，便于前缀搜索（删除）等能力，所以的redis请求的key都会处理为</p>
 <figure class="highlight plaintext"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br></pre></td><td class="code"><pre><span class="line">+---------+-----+</span><br><span class="line">| hashtag | key |</span><br><span class="line">+---------+-----+</span><br></pre></td></tr></table></figure>
 <h1 id="string类型"><a href="#string类型" class="headerlink" title="string类型"></a>string类型</h1><h2 id="写过程（set）"><a href="#写过程（set）" class="headerlink" title="写过程（set）"></a>写过程（set）</h2><p>转换后整体key结构如下：</p>
-<figure class="highlight plaintext"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br></pre></td><td class="code"><pre><span class="line">+---------+-----+----------------------------+</span><br><span class="line">| key | type(如String是&#x27;S&#x27;) |</span><br><span class="line">+---------+-----+----------------------------+</span><br></pre></td></tr></table></figure>
+<figure class="highlight plaintext"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br></pre></td><td class="code"><pre><span class="line">+-----+--------------------+</span><br><span class="line">| key | type(如String是&#x27;S&#x27;) |</span><br><span class="line">+-----+--------------------+</span><br></pre></td></tr></table></figure>
 
 <p>即找出hashtag，将key转换为<code>hashtag+key+类型号</code>，而value使用pb来表达</p>
 <figure class="highlight pb"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br></pre></td><td class="code"><pre><span class="line">message StringValue &#123;</span><br><span class="line">    uint64 expire_at      = 1<span class="comment">; //过期时间</span></span><br><span class="line">    bytes  user_value     = 2<span class="comment">; //实际的值</span></span><br><span class="line">    uint64 user_value_len = 3<span class="comment">; //值长度</span></span><br><span class="line">    uint64 seq            = 4<span class="comment">; //数据版本，每次修改后单调递增</span></span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
 <p>其中seq是单调递增的，比如使用<strong>hlc时钟</strong>的值来做。</p>
 <p>那么set过程很简单，就将以上键值直接调存储引擎的kv存储写进去即可。对于rocksdb，它后续会自己gc掉旧值。</p>
 <h2 id="读过程-get"><a href="#读过程-get" class="headerlink" title="读过程(get)"></a>读过程(get)</h2><p>同样直接get就行。只不过get完之后，多判断一个是否过期，若过期，直接返回<code>nil</code>。</p>
-<h2 id="gc过程-1"><a href="#gc过程-1" class="headerlink" title="gc过程"></a>gc过程</h2><p>通过key的最后，string很简单，gc时取出值，pb解码，获取过期时间，判断是否过期来决定是否gc。</p>
+<h2 id="gc过程-1"><a href="#gc过程-1" class="headerlink" title="gc过程"></a>gc过程</h2><p>过程很简单，gc时取出值，pb解码，获取过期时间，判断是否过期来决定是否gc。</p>
 <h1 id="hash类型"><a href="#hash类型" class="headerlink" title="hash类型"></a>hash类型</h1><h2 id="元数据结构"><a href="#元数据结构" class="headerlink" title="元数据结构"></a>元数据结构</h2><p>会将整个hash结构，分为元数据以及实际field两种kv存储。</p>
 <p>其元数据的key结构如下，其中用<code>&#39;&#39;</code>包括的就是实际字符，表示一种标识而已</p>
 <figure class="highlight pb"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br></pre></td><td class="code"><pre><span class="line"></span><br><span class="line">+-----+-----+-----+----------+-----+</span><br><span class="line">| key | &#x27;H&#x27; | &#x27;_&#x27; | key_size | &#x27;H&#x27; |</span><br><span class="line">+-----+-----+-----+----------+-----+</span><br></pre></td></tr></table></figure>
@@ -320,7 +320,7 @@
 <figure class="highlight pb"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br></pre></td><td class="code"><pre><span class="line"></span><br><span class="line">+-----+-----+-----+----------+-----+</span><br><span class="line">| key | &#x27;Z&#x27; | &#x27;_&#x27; | key_size | &#x27;Z&#x27; |</span><br><span class="line">+-----+-----+-----+----------+-----+</span><br></pre></td></tr></table></figure>
 
 <p>value的pb结构如下</p>
-<figure class="highlight pb"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br></pre></td><td class="code"><pre><span class="line">message ZSetMetadata &#123;</span><br><span class="line">    uint64 version     = 1<span class="comment">;</span></span><br><span class="line">    uint64 expire_at   = 2<span class="comment">;</span></span><br><span class="line">    uint32 count       = 3<span class="comment">;</span></span><br><span class="line">    uint64 seq         = 4<span class="comment">;</span></span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+<figure class="highlight pb"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br></pre></td><td class="code"><pre><span class="line">message ZSetMetadata &#123;</span><br><span class="line">    uint64 version     = 1<span class="comment">;</span></span><br><span class="line">    uint64 expire_at   = 2<span class="comment">;</span></span><br><span class="line">    uint32 count       = 3<span class="comment">;</span></span><br><span class="line">    uint64 seq         = 4<span class="comment">;`</span></span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
 
 
 <h2 id="field数据结构-2"><a href="#field数据结构-2" class="headerlink" title="field数据结构"></a>field数据结构</h2><p>有两种field，即一个field会在rocksdb中有两种kv同时存在</p>
@@ -348,7 +348,7 @@
 <li>将迭代器调用<code>Next()</code>,逐步获取后面的key，校验其key格式是否满足以上前缀，若满足，取出score值，判断分熟是否在range范围内，如果在，直接添加到返回列表即可</li>
 </ol>
 <blockquote>
-<p>注：zrange（非byscore）的实现比redis差很多，迭代器会从头扫到尾，知道满足返回数量，没法用二分查找定位到start_index的位置。</p>
+<p>注：zrange（非byscore）的实现比redis差很多，迭代器会从头扫到尾，直到满足返回数量，没法用二分查找定位到start_index的位置。</p>
 </blockquote>
 <h2 id="gc过程-4"><a href="#gc过程-4" class="headerlink" title="gc过程"></a>gc过程</h2><p>跟hash一模一样。</p>
 
@@ -369,6 +369,9 @@
                 </a>
             </div>
             <div class="post-nav-item">
+                <a href="/2025-03-20-aerospike%E5%AD%A6%E4%B9%A0(0)-%E7%BC%96%E8%AF%91%E4%B8%8E%E8%BF%90%E8%A1%8C/" rel="next" title="aerospike学习(0)-编译与运行">
+                  aerospike学习(0)-编译与运行 <i class="fa fa-angle-right"></i>
+                </a>
             </div>
           </div>
     </footer>
