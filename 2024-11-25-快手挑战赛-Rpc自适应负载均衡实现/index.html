@@ -33,7 +33,7 @@
 <meta property="og:image" content="https://scut-corgis.github.io/2024-11-25-%E5%BF%AB%E6%89%8B%E6%8C%91%E6%88%98%E8%B5%9B-Rpc%E8%87%AA%E9%80%82%E5%BA%94%E8%B4%9F%E8%BD%BD%E5%9D%87%E8%A1%A1%E5%AE%9E%E7%8E%B0/hex%E7%AC%AC%E4%BA%8C%E6%AC%A1%E4%BC%98%E5%8C%96.png">
 <meta property="og:image" content="https://scut-corgis.github.io/2024-11-25-%E5%BF%AB%E6%89%8B%E6%8C%91%E6%88%98%E8%B5%9B-Rpc%E8%87%AA%E9%80%82%E5%BA%94%E8%B4%9F%E8%BD%BD%E5%9D%87%E8%A1%A1%E5%AE%9E%E7%8E%B0/%E6%81%92%E5%AE%9A%E7%9A%84block.png">
 <meta property="article:published_time" content="2024-11-25T13:30:05.000Z">
-<meta property="article:modified_time" content="2025-05-06T11:32:52.555Z">
+<meta property="article:modified_time" content="2025-05-27T12:33:07.135Z">
 <meta property="article:author" content="Corgis">
 <meta name="twitter:card" content="summary">
 <meta name="twitter:image" content="https://scut-corgis.github.io/2024-11-25-%E5%BF%AB%E6%89%8B%E6%8C%91%E6%88%98%E8%B5%9B-Rpc%E8%87%AA%E9%80%82%E5%BA%94%E8%B4%9F%E8%BD%BD%E5%9D%87%E8%A1%A1%E5%AE%9E%E7%8E%B0/%E5%A5%96%E7%8A%B6.jpg">
@@ -224,7 +224,7 @@
 <p>比赛使得我对顶层服务、负载均衡架构进行了较深入的探索，也全程让自己去单独开发服务，去找开源库，去对比开源库算法，并让我意识到go的标准库的性能原来并没有做到最优，甚至是比起第三方库实现还很差。</p>
 <p>再者，比赛逼着我去研究<strong>go汇编</strong>，去研究<strong>avx指令集</strong>，让我学习到了avx指令集的强大，我艰难的完成了手写avx汇编代码，并完全靠自己写了一个极为优化版本的汇编sha256实现。这个过程很难，但是看到性能得到了相当的提升后（核心sha256优化提升了近20%的性能），我感到空前的自豪与满足。</p>
 <p>最终比赛拿了三等奖（第五名），虽然我觉得我应该是前二，因为前三名抱团团战，都找到了一个十分冷门的用avx512指令实现的sha256库。</p>
-<p><a target="_blank" rel="noopener" href="https://github.com/Scut-Corgis/kuaishou-banlance-competation">github代码仓库</a></p>
+<p><a target="_blank" rel="noopener" href="https://github.com/Scut-Corgis/banlance-competation">github代码仓库</a></p>
 <p><img src="/2024-11-25-%E5%BF%AB%E6%89%8B%E6%8C%91%E6%88%98%E8%B5%9B-Rpc%E8%87%AA%E9%80%82%E5%BA%94%E8%B4%9F%E8%BD%BD%E5%9D%87%E8%A1%A1%E5%AE%9E%E7%8E%B0/%E5%A5%96%E7%8A%B6.jpg"></p>
 <h1 id="赛题介绍"><a href="#赛题介绍" class="headerlink" title="赛题介绍"></a>赛题介绍</h1><h2 id="赛事背景"><a href="#赛事背景" class="headerlink" title="赛事背景"></a>赛事背景</h2><p>公司采购的服务器当中，不同批次或型号的机器之间存在明显性能差异，导致业务服务处理等量QPS的前端请求时，所需的CPU资源呈现出明显的不均衡。这种CPU使用率的差异性，进一步加剧了整体运营成本的压力，特别是在流量激增时，更可能引发稳定性问题，影响服务的连续性和可靠性。</p>
 <p>为应对这一挑战，我们期望研发一种高效的服务调度策略，根据机器的实际计算能力，实现全局的Rpc自适应负载均衡。这一机制的核心在于，能够智能地识别并响应不同性能表现的服务器实例，通过动态调整请求分配，确保各实例的CPU使用率维持在一个相对均衡的水平上。在保持总机器成本不变的前提下，提供尽可能多的算力。同时，需确保服务响应延时满足既定的业务要求。</p>
