@@ -123,7 +123,7 @@
   <nav class="site-state">
       <div class="site-state-item site-state-posts">
         <a href="/archives/">
-          <span class="site-state-item-count">24</span>
+          <span class="site-state-item-count">26</span>
           <span class="site-state-item-name">日志</span>
         </a>
       </div>
@@ -159,7 +159,7 @@
   
 
   <article itemscope itemtype="http://schema.org/Article" class="post-content" lang="">
-    <link itemprop="mainEntityOfPage" href="https://scut-corgis.github.io/2025-02-16-Rocksdb%E5%AD%A6%E4%B9%A0-%E4%BA%8B%E5%8A%A1.md/Rocksdb%E5%AD%A6%E4%B9%A0-%E4%BA%8B%E5%8A%A1/">
+    <link itemprop="mainEntityOfPage" href="https://scut-corgis.github.io/2025-02-18-%E5%BD%BB%E5%BA%95%E7%90%86%E8%A7%A3C++%E5%86%85%E5%AD%98%E5%BA%8F/">
 
     <span hidden itemprop="author" itemscope itemtype="http://schema.org/Person">
       <meta itemprop="image" content="/images/corgis.jpg">
@@ -177,7 +177,7 @@
     </span>
       <header class="post-header">
         <h2 class="post-title" itemprop="name headline">
-          <a href="/2025-02-16-Rocksdb%E5%AD%A6%E4%B9%A0-%E4%BA%8B%E5%8A%A1.md/Rocksdb%E5%AD%A6%E4%B9%A0-%E4%BA%8B%E5%8A%A1/" class="post-title-link" itemprop="url">Rocksdb事务</a>
+          <a href="/2025-02-18-%E5%BD%BB%E5%BA%95%E7%90%86%E8%A7%A3C++%E5%86%85%E5%AD%98%E5%BA%8F/" class="post-title-link" itemprop="url">彻底理解C++内存序</a>
         </h2>
 
         <div class="post-meta-container">
@@ -188,7 +188,7 @@
       </span>
       <span class="post-meta-item-text">发表于</span>
 
-      <time title="创建时间：2025-02-16 19:52:15" itemprop="dateCreated datePublished" datetime="2025-02-16T19:52:15+08:00">2025-02-16</time>
+      <time title="创建时间：2025-02-18 11:55:05" itemprop="dateCreated datePublished" datetime="2025-02-18T11:55:05+08:00">2025-02-18</time>
     </span>
     <span class="post-meta-item">
       <span class="post-meta-item-icon">
@@ -196,7 +196,7 @@
       </span>
       <span class="post-meta-item-text">分类于</span>
         <span itemprop="about" itemscope itemtype="http://schema.org/Thing">
-          <a href="/categories/Rocksdb/" itemprop="url" rel="index"><span itemprop="name">Rocksdb</span></a>
+          <a href="/categories/C/" itemprop="url" rel="index"><span itemprop="name">C++</span></a>
         </span>
     </span>
 
@@ -210,267 +210,40 @@
     
     
     <div class="post-body" itemprop="articleBody">
-          <h1 id="Rocksdb事务"><a href="#Rocksdb事务" class="headerlink" title="Rocksdb事务"></a>Rocksdb事务</h1><blockquote>
-<p>该篇主要通过网上文章和deepseek问答的方式学习与记录</p>
+          <h1 id="前言"><a href="#前言" class="headerlink" title="前言"></a>前言</h1><p>c++官网的介绍: <a target="_blank" rel="noopener" href="https://en.cppreference.com/w/cpp/atomic/memory_order">https://en.cppreference.com/w/cpp/atomic/memory_order</a></p>
+<p>C++提供的原子变量api，基本都会提供一个入参选项，可以填内存序。很早之前我就学习了内存模型的相关概念，但是一直没有系统的学习和整理C++应该怎么用这些内存序。</p>
+<p>首先直接给个总结</p>
+<ol>
+<li>绝大多数程序逻辑只需要acq、rel和relaxed的内存序即可</li>
+<li>releaxed的内存用于对该变量读写值不关心的情况，比如读写顺序彻底乱排也不影响程序逻辑，比如只是用来计数统计结果</li>
+<li>seq_cst内存序的使用场景为，当存在多个线程和多个原子变量，并且程序逻辑强依赖于多个原子变量的读写时，需要全局存在一个原子变量读写顺序时，才使用该内存序。</li>
+<li>其他情况都用acq或rel或两者结合的内存序即可。</li>
+</ol>
+<h1 id="C-内存序"><a href="#C-内存序" class="headerlink" title="C++内存序"></a>C++内存序</h1><h2 id="C-内存模型"><a href="#C-内存模型" class="headerlink" title="C++内存模型"></a>C++内存模型</h2><p>定义： 程序的可能执行顺序<br>六种内存序，保证了四种内存模型，其中consumer模型已经弃用</p>
+<ol>
+<li>顺序一致性模型：我们写代码的顺序一样，内存操作不会发生乱序，C++默认模型</li>
+<li>Acquire-release模型： Acquire语义保证load之后的读写操作不会重排到load之前，Release语义保证store之前的读写操作不会重排到store之后，为X86架构默认的内存模型，即X86只支持Store-load之间的读写指令重排，是一种强模型</li>
+</ol>
+<blockquote>
+<p>load 从内存中取值到寄存器， store将寄存器中的值送回内存</p>
 </blockquote>
-<p>总览</p>
-<ol>
-<li>提供了一系列的事务API，和快照api:<code>GetSnapshot()</code></li>
-<li>原理跟mysql类似，存在多版本mvcc，使用悲观锁，key级别锁，死锁回滚等</li>
-<li>无主动的死锁检测（图检测算法），而是通过获取key的锁超时（默认1秒）来回滚前一个事务。</li>
+<ol start="3">
+<li>Relaxed语义，几乎能进行一切指令重排（当然是无关变量之间比如 c&#x3D; b, d&#x3D; a就可以重排，X86就不会），Arm架构默认的内存模型。因此程序员可能需要手动通过内存模型或者C++的内存序保证执行的顺序。</li>
 </ol>
-<h2 id="与mysql的事务对比"><a href="#与mysql的事务对比" class="headerlink" title="与mysql的事务对比"></a>与mysql的事务对比</h2><p>首先，关于行级锁。RocksDB的事务确实在悲观模式下会对涉及的键加锁，类似于MySQL的行锁，防止其他事务修改相同的数据。但MySQL的InnoDB不仅有行锁，还有间隙锁等，而RocksDB的锁更简单，只是针对具体的键，没有间隙锁的概念。</p>
-<p>接下来是版本链。RocksDB使用MVCC，通过序列号来维护版本信息，但并不是每个键都有显式的版本链元数据。相反，它利用LSM-Tree的结构，旧版本的数据保留在SST文件中，直到被压缩清理。而MySQL的InnoDB则在行中存储版本信息，通过undo log构建版本链。两者的机制不同。</p>
-<p>然后是死锁检测。RocksDB的悲观事务确实有死锁检测，通过锁管理器和超时机制来处理。MySQL则使用等待图算法主动检测死锁，并回滚代价较小的事务。</p>
-<p>RocksDB 和 MySQL 在事务实现的核心机制上存在本质差异。以下从锁机制、版本管理、死锁检测三个维度详细对比：</p>
-<hr>
-<h3 id="一、锁机制对比"><a href="#一、锁机制对比" class="headerlink" title="一、锁机制对比"></a>一、锁机制对比</h3><table>
-<thead>
-<tr>
-<th><strong>特性</strong></th>
-<th><strong>RocksDB</strong></th>
-<th><strong>MySQL InnoDB</strong></th>
-</tr>
-</thead>
-<tbody><tr>
-<td><strong>锁粒度</strong></td>
-<td>Key 级别锁（仅悲观事务）</td>
-<td>行锁 + 间隙锁（Next-Key Locking）</td>
-</tr>
-<tr>
-<td><strong>锁类型</strong></td>
-<td>简单独占锁（写锁）</td>
-<td>共享锁(S)、排他锁(X)、意向锁</td>
-</tr>
-<tr>
-<td><strong>锁管理器</strong></td>
-<td>内置分片锁表（<code>TransactionLockMgr</code>）</td>
-<td>全局锁表 + 事务上下文</td>
-</tr>
-<tr>
-<td><strong>锁升级</strong></td>
-<td>不支持</td>
-<td>支持行锁升级为表锁</td>
-</tr>
-<tr>
-<td><strong>锁冲突检测</strong></td>
-<td>超时机制（<code>lock_timeout</code>）</td>
-<td>主动死锁检测（等待图算法）</td>
-</tr>
-</tbody></table>
-<p><strong>关键差异</strong>：</p>
-<ul>
-<li><strong>RocksDB</strong> 没有真正的行锁，只有键锁，且缺乏间隙锁，无法防止幻读。</li>
-<li><strong>MySQL</strong> 的锁机制更复杂，支持多粒度锁和锁升级策略。</li>
-</ul>
-<hr>
-<h3 id="二、版本管理对比"><a href="#二、版本管理对比" class="headerlink" title="二、版本管理对比"></a>二、版本管理对比</h3><table>
-<thead>
-<tr>
-<th><strong>特性</strong></th>
-<th><strong>RocksDB</strong></th>
-<th><strong>MySQL InnoDB</strong></th>
-</tr>
-</thead>
-<tbody><tr>
-<td><strong>MVCC 实现</strong></td>
-<td>全局序列号（Sequence Number）</td>
-<td>事务ID + 回滚段（Undo Log）</td>
-</tr>
-<tr>
-<td><strong>版本链存储</strong></td>
-<td>LSM-Tree 多版本数据物理保留</td>
-<td>行内隐藏字段（DB_TRX_ID, DB_ROLL_PTR）</td>
-</tr>
-<tr>
-<td><strong>可见性判断</strong></td>
-<td>基于快照的序列号范围过滤</td>
-<td>基于事务ID和Read View</td>
-</tr>
-<tr>
-<td><strong>旧数据清理</strong></td>
-<td>Compaction 时物理删除</td>
-<td>Purge 线程异步清理 Undo Log</td>
-</tr>
-</tbody></table>
-<p><strong>关键差异</strong>：</p>
-<ul>
-<li><strong>RocksDB</strong> 的版本是隐式的（由 LSM-Tree 的不可变性天然支持），而 <strong>MySQL</strong> 需要显式维护版本链。</li>
-<li><strong>RocksDB</strong> 的 MVCC 无法实现完整的快照隔离（Snapshot Isolation），而 MySQL 的 RR 级别通过间隙锁+MVCC 解决幻读。</li>
-</ul>
-<hr>
-<h3 id="三、死锁检测对比"><a href="#三、死锁检测对比" class="headerlink" title="三、死锁检测对比"></a>三、死锁检测对比</h3><table>
-<thead>
-<tr>
-<th><strong>特性</strong></th>
-<th><strong>RocksDB</strong></th>
-<th><strong>MySQL InnoDB</strong></th>
-</tr>
-</thead>
-<tbody><tr>
-<td><strong>检测方式</strong></td>
-<td>超时回滚（无主动检测）</td>
-<td>主动检测（等待图算法）</td>
-</tr>
-<tr>
-<td><strong>检测粒度</strong></td>
-<td>键锁等待链</td>
-<td>行锁等待关系</td>
-</tr>
-<tr>
-<td><strong>处理策略</strong></td>
-<td>超时后强制回滚</td>
-<td>选择代价小的事务回滚（<code>innodb_deadlock_detect</code>）</td>
-</tr>
-<tr>
-<td><strong>分布式扩展</strong></td>
-<td>无内置支持</td>
-<td>通过 XA 协议支持分布式死锁检测</td>
-</tr>
-</tbody></table>
-<p><strong>关键差异</strong>：</p>
-<ul>
-<li><strong>RocksDB</strong> 的死锁处理更简单粗暴，而 <strong>MySQL</strong> 有精细的主动检测和回滚策略。</li>
-<li><strong>RocksDB</strong> 的锁管理器设计更适合单机高并发，<strong>MySQL</strong> 的锁机制为分布式场景留有扩展性。</li>
-</ul>
-<hr>
-<h3 id="四、实现原理深度解析"><a href="#四、实现原理深度解析" class="headerlink" title="四、实现原理深度解析"></a>四、实现原理深度解析</h3><h4 id="1-RocksDB-事务实现"><a href="#1-RocksDB-事务实现" class="headerlink" title="1. RocksDB 事务实现"></a>1. <strong>RocksDB 事务实现</strong></h4><ul>
-<li><strong>版本管理</strong>：<ul>
-<li>每个写入操作分配全局递增的 <code>SequenceNumber</code></li>
-<li>读取时通过 <code>GetSnapshot()</code> 获取当前序列号，过滤掉更高版本的数据</li>
-<li>旧版本数据在 Compaction 时被物理删除</li>
-</ul>
-</li>
-</ul>
-<h4 id="2-MySQL-InnoDB-事务实现"><a href="#2-MySQL-InnoDB-事务实现" class="headerlink" title="2. MySQL InnoDB 事务实现"></a>2. <strong>MySQL InnoDB 事务实现</strong></h4><ul>
-<li><strong>Undo Log 管理</strong>：<ul>
-<li>每个行修改记录旧版本到 Undo Log</li>
-<li>Purge 线程根据最老活跃事务ID清理过期版本</li>
-</ul>
-</li>
-</ul>
-<h2 id="死锁回滚原理"><a href="#死锁回滚原理" class="headerlink" title="死锁回滚原理"></a>死锁回滚原理</h2><p>RocksDB <strong>默认的事务实现（悲观事务）没有内置的主动死锁检测机制</strong>，它主要依赖 <strong>锁超时（Lock Timeout）</strong> 策略来解除死锁。但可以通过一些扩展或自定义策略实现类似主动检测的功能。</p>
-<hr>
-<h3 id="一、RocksDB-默认的死锁处理机制"><a href="#一、RocksDB-默认的死锁处理机制" class="headerlink" title="一、RocksDB 默认的死锁处理机制"></a>一、RocksDB 默认的死锁处理机制</h3><h4 id="1-锁等待超时（Lock-Timeout）"><a href="#1-锁等待超时（Lock-Timeout）" class="headerlink" title="1. 锁等待超时（Lock Timeout）"></a>1. <strong>锁等待超时（Lock Timeout）</strong></h4><ul>
-<li><strong>参数</strong>：通过 <code>transaction_options.lock_timeout</code> 设置（默认值：1000ms）</li>
-<li><strong>触发条件</strong>：事务在等待锁时超过指定时间未获取到锁</li>
-<li><strong>行为</strong>：事务自动回滚并返回 <code>Status::TimedOut</code> 错误</li>
-<li><strong>示例配置</strong>：<figure class="highlight cpp"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br></pre></td><td class="code"><pre><span class="line">rocksdb::TransactionOptions txn_options;</span><br><span class="line">txn_options.lock_timeout = <span class="number">500</span>; <span class="comment">// 超时时间设为500ms</span></span><br><span class="line">rocksdb::Transaction* txn = db-&gt;<span class="built_in">BeginTransaction</span>(write_options, txn_options);</span><br></pre></td></tr></table></figure></li>
-</ul>
-<h4 id="2-锁重试机制（Retry-on-Conflict）"><a href="#2-锁重试机制（Retry-on-Conflict）" class="headerlink" title="2. 锁重试机制（Retry on Conflict）"></a>2. <strong>锁重试机制（Retry on Conflict）</strong></h4><ul>
-<li><strong>参数</strong>：通过 <code>transaction_options.deadlock_detect_retries</code> 控制重试次数（默认0次）</li>
-<li><strong>行为</strong>：在超时后自动重试获取锁，而非立即回滚</li>
-<li><strong>示例配置</strong>：<figure class="highlight cpp"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">txn_options.deadlock_detect_retries = <span class="number">3</span>; <span class="comment">// 最多重试3次</span></span><br></pre></td></tr></table></figure></li>
-</ul>
-<hr>
-<h3 id="二、RocksDB-无主动死锁检测的设计原因"><a href="#二、RocksDB-无主动死锁检测的设计原因" class="headerlink" title="二、RocksDB 无主动死锁检测的设计原因"></a>二、RocksDB 无主动死锁检测的设计原因</h3><ol>
-<li><p><strong>性能考量</strong>：</p>
-<ul>
-<li>主动死锁检测（如等待图算法）需要全局状态跟踪，对高并发场景性能影响较大。</li>
-<li>RocksDB 作为嵌入式存储引擎，更注重低延迟和高吞吐。</li>
-</ul>
-</li>
-<li><p><strong>锁管理器简化</strong>：</p>
-<ul>
-<li>RocksDB 的锁管理器（<code>TransactionLockMgr</code>）采用分片设计（<code>num_stripes</code>），无跨分片的全局锁信息。</li>
-<li>分片锁表难以高效构建全局等待图（Wait-for Graph）。</li>
-</ul>
-</li>
-<li><p><strong>适用场景假设</strong>：</p>
-<ul>
-<li>预期在键值存储中，事务冲突概率较低（尤其是宽列数据模型）。</li>
-<li>死锁主要由应用层逻辑错误导致，而非高频随机锁竞争。</li>
-</ul>
-</li>
-</ol>
-<hr>
-<h3 id="三、生产环境建议"><a href="#三、生产环境建议" class="headerlink" title="三、生产环境建议"></a>三、生产环境建议</h3><ol>
-<li><p><strong>优化锁竞争</strong>：</p>
-<ul>
-<li>对事务访问的键进行排序（避免交叉锁请求）。</li>
-<li>使用更细粒度的键设计减少冲突。</li>
-</ul>
-</li>
-<li><p><strong>参数调优</strong>：</p>
-<figure class="highlight cpp"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br></pre></td><td class="code"><pre><span class="line"><span class="comment">// 增加锁分片减少竞争</span></span><br><span class="line">rocksdb::TransactionDBOptions txn_db_options;</span><br><span class="line">txn_db_options.num_stripes = <span class="number">64</span>; <span class="comment">// 默认16</span></span><br><span class="line"></span><br><span class="line"><span class="comment">// 缩短超时时间 + 允许重试</span></span><br><span class="line">txn_options.lock_timeout = <span class="number">100</span>;  <span class="comment">// 100ms</span></span><br><span class="line">txn_options.deadlock_detect_retries = <span class="number">2</span>;</span><br></pre></td></tr></table></figure>
-</li>
-<li><p><strong>监控与告警</strong>：</p>
-<ul>
-<li>监控指标：<code>rocksdb.deadlock_retries</code>、<code>rocksdb.lock_timeouts</code></li>
-<li>日志分析：定期扫描 <code>LOG</code> 文件中的 <code>Timeout waiting for lock</code> 条目。</li>
-</ul>
-</li>
-</ol>
-<hr>
-<h3 id="四、锁分片设计（Lock-Sharding）详解"><a href="#四、锁分片设计（Lock-Sharding）详解" class="headerlink" title="四、锁分片设计（Lock Sharding）详解"></a>四、锁分片设计（Lock Sharding）详解</h3><hr>
-<h4 id="1-锁分片的核心思想"><a href="#1-锁分片的核心思想" class="headerlink" title="1. 锁分片的核心思想"></a><strong>1. 锁分片的核心思想</strong></h4><p>锁分片是一种 <strong>通过哈希将锁资源分散到多个独立组（分片）中以减少竞争</strong> 的并发控制技术。RocksDB 的锁管理器（<code>TransactionLockMgr</code>）通过分片设计，将所有的键（Key）分配到多个分片中，每个分片独立管理自己的锁集合。<br>这种设计的核心目标是 <strong>减少多线程访问锁时的竞争开销</strong>，从而提升高并发场景下的吞吐量。</p>
-<hr>
-<h4 id="2-分片设计的具体实现"><a href="#2-分片设计的具体实现" class="headerlink" title="2. 分片设计的具体实现"></a><strong>2. 分片设计的具体实现</strong></h4><h5 id="a-分片分配逻辑"><a href="#a-分片分配逻辑" class="headerlink" title="a. 分片分配逻辑"></a><strong>a. 分片分配逻辑</strong></h5><ul>
-<li><strong>分片数量</strong>：由 <code>TransactionDBOptions::num_stripes</code> 参数控制（默认值：16）。</li>
-<li><strong>哈希函数</strong>：对 Key 进行哈希运算，将结果模分片数（<code>hash(key) % num_stripes</code>），决定 Key 属于哪个分片。</li>
-<li><strong>示例</strong>：<figure class="highlight cpp"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br></pre></td><td class="code"><pre><span class="line"><span class="comment">// 初始化分片式锁管理器</span></span><br><span class="line">rocksdb::TransactionDBOptions txn_db_options;</span><br><span class="line">txn_db_options.num_stripes = <span class="number">64</span>; <span class="comment">// 分片数设为64</span></span><br><span class="line">rocksdb::TransactionDB* txn_db;</span><br><span class="line">rocksdb::TransactionDB::<span class="built_in">Open</span>(options, txn_db_options, <span class="string">&quot;/data&quot;</span>, &amp;txn_db);</span><br></pre></td></tr></table></figure></li>
-</ul>
-<h5 id="b-分片锁表结构"><a href="#b-分片锁表结构" class="headerlink" title="b. 分片锁表结构"></a><strong>b. 分片锁表结构</strong></h5><p>每个分片包含一个独立的锁表（<code>LockMap</code>），其数据结构如下：</p>
-<figure class="highlight cpp"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">struct</span> <span class="title class_">LockMapStripe</span> &#123;</span><br><span class="line">  std::mutex stripe_mutex;           <span class="comment">// 分片级互斥锁</span></span><br><span class="line">  std::unordered_map&lt;std::string, LockInfo&gt; keys; <span class="comment">// Key到锁信息的映射</span></span><br><span class="line">&#125;;</span><br></pre></td></tr></table></figure>
-<ul>
-<li><strong>锁表操作</strong>：<br>当一个事务尝试获取 Key 的锁时：<ol>
-<li>计算 Key 所属分片（<code>stripe_idx = hash(key) % num_stripes</code>）。</li>
-<li>获取对应分片的 <code>stripe_mutex</code>。</li>
-<li>在分片锁表中检查该 Key 的锁状态：<ul>
-<li>若未被锁定，则记录事务持有锁。</li>
-<li>若已被其他事务锁定，则进入等待队列或触发超时。</li>
-</ul>
-</li>
-</ol>
-</li>
-</ul>
-<hr>
-<h4 id="3-超时检测机制"><a href="#3-超时检测机制" class="headerlink" title="3. 超时检测机制"></a><strong>3. 超时检测机制</strong></h4><h5 id="a-分片级超时检测（非逐-Key-检测）"><a href="#a-分片级超时检测（非逐-Key-检测）" class="headerlink" title="a. 分片级超时检测（非逐 Key 检测）"></a><strong>a. 分片级超时检测（非逐 Key 检测）</strong></h5><p>RocksDB <strong>不会为每个 Key 单独维护超时检测槽</strong>，而是通过以下方式实现超时控制：</p>
-<ol>
-<li><strong>事务级超时计时</strong>：每个事务在请求锁时记录起始时间戳。</li>
-<li><strong>分片锁检查</strong>：当其他事务尝试获取同一分片中的锁时，若发现锁被占用且超时，则触发回滚。</li>
-<li><strong>被动超时触发</strong>：没有独立的后台线程主动扫描超时，依赖后续事务的锁请求驱动检测。</li>
-</ol>
-<h5 id="b-超时检测示例"><a href="#b-超时检测示例" class="headerlink" title="b. 超时检测示例"></a><strong>b. 超时检测示例</strong></h5><figure class="highlight cpp"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br></pre></td><td class="code"><pre><span class="line"><span class="comment">// 事务尝试获取 Key 的锁</span></span><br><span class="line"><span class="function">Status <span class="title">TransactionLockMgr::TryLock</span><span class="params">(Transaction* txn, <span class="type">const</span> std::string&amp; key)</span> </span>&#123;</span><br><span class="line">  <span class="type">int</span> stripe_idx = <span class="built_in">hash</span>(key) % num_stripes_;</span><br><span class="line">  LockMapStripe&amp; stripe = lock_map_[stripe_idx];</span><br><span class="line">  </span><br><span class="line">  <span class="function">std::lock_guard&lt;std::mutex&gt; <span class="title">lock</span><span class="params">(stripe.stripe_mutex)</span></span>;</span><br><span class="line">  <span class="keyword">auto</span> it = stripe.keys.<span class="built_in">find</span>(key);</span><br><span class="line">  <span class="keyword">if</span> (it != stripe.keys.<span class="built_in">end</span>()) &#123;</span><br><span class="line">    <span class="comment">// 检查锁是否超时</span></span><br><span class="line">    <span class="keyword">if</span> (<span class="built_in">Now</span>() - it-&gt;second.acquire_time &gt; txn_options_.lock_timeout) &#123;</span><br><span class="line">      <span class="comment">// 强制释放超时锁并回滚持有者事务</span></span><br><span class="line">      it-&gt;second.txn-&gt;<span class="built_in">Rollback</span>();</span><br><span class="line">      stripe.keys.<span class="built_in">erase</span>(it);</span><br><span class="line">    &#125; <span class="keyword">else</span> &#123;</span><br><span class="line">      <span class="keyword">return</span> Status::<span class="built_in">TimedOut</span>();</span><br><span class="line">    &#125;</span><br><span class="line">  &#125;</span><br><span class="line">  <span class="comment">// 授予锁</span></span><br><span class="line">  stripe.keys[key] = <span class="built_in">LockInfo</span>(txn, <span class="built_in">Now</span>());</span><br><span class="line">  <span class="keyword">return</span> Status::<span class="built_in">OK</span>();</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+<p>一共定义了六个内存序，其中<code>consume</code>没见过，弃用。</p>
+<figure class="highlight c++"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br></pre></td><td class="code"><pre><span class="line"></span><br><span class="line"><span class="keyword">typedef</span> <span class="keyword">enum</span> <span class="title class_">memory_order</span> &#123;</span><br><span class="line">    memory_order_relaxed,</span><br><span class="line">    memory_order_consume,</span><br><span class="line">    memory_order_acquire,</span><br><span class="line">    memory_order_release,</span><br><span class="line">    memory_order_acq_rel,</span><br><span class="line">    memory_order_seq_cst</span><br><span class="line">&#125; memory_order;</span><br></pre></td></tr></table></figure>
 
-<hr>
-<h4 id="4-分片设计的优势与不足"><a href="#4-分片设计的优势与不足" class="headerlink" title="4. 分片设计的优势与不足"></a><strong>4. 分片设计的优势与不足</strong></h4><h5 id="a-优势"><a href="#a-优势" class="headerlink" title="a. 优势"></a><strong>a. 优势</strong></h5><ul>
-<li><strong>减少锁竞争</strong>：将全局锁竞争分散到多个分片，提高并发性能。</li>
-<li><strong>内存高效</strong>：无需为每个 Key 单独维护锁结构，分片内哈希表按需扩展。</li>
-<li><strong>扩展性</strong>：通过调整 <code>num_stripes</code> 适应不同规模的硬件（CPU核心数、并发线程数）。</li>
-</ul>
-<h5 id="b-不足"><a href="#b-不足" class="headerlink" title="b. 不足"></a><strong>b. 不足</strong></h5><ul>
-<li><strong>哈希冲突</strong>：不同 Key 可能落入同一分片，仍可能引发竞争。</li>
-<li><strong>无全局死锁检测</strong>：分片隔离导致无法跨分片检测死锁环。</li>
-<li><strong>被动超时机制</strong>：依赖后续事务触发超时回滚，可能延迟死锁解除。</li>
-</ul>
-<hr>
-<h4 id="5-分片参数调优建议"><a href="#5-分片参数调优建议" class="headerlink" title="5. 分片参数调优建议"></a><strong>5. 分片参数调优建议</strong></h4><table>
-<thead>
-<tr>
-<th><strong>场景</strong></th>
-<th><strong>优化建议</strong></th>
-</tr>
-</thead>
-<tbody><tr>
-<td><strong>高并发写入</strong></td>
-<td>增大 <code>num_stripes</code>（如设为 CPU 核心数的 4 倍）以降低分片内竞争。</td>
-</tr>
-<tr>
-<td><strong>长事务占比高</strong></td>
-<td>增加 <code>lock_timeout</code> 避免误杀，但需权衡系统响应速度。</td>
-</tr>
-<tr>
-<td><strong>Key 分布不均匀</strong></td>
-<td>使用更均匀的哈希函数（如 <code>XXH3</code>）减少分片负载倾斜。</td>
-</tr>
-</tbody></table>
-<hr>
-<h4 id="6-总结"><a href="#6-总结" class="headerlink" title="6.总结"></a>6.总结</h4><ul>
-<li><strong>锁分片设计</strong>：通过哈希将锁资源分散到多个分片，是 RocksDB 实现高并发事务的核心优化，但并非为每个 Key 单独维护锁状态。</li>
-<li><strong>超时检测</strong>：依赖被动触发而非主动扫描，牺牲了死锁处理及时性以换取更高吞吐。</li>
-<li><strong>调优方向</strong>：合理配置 <code>num_stripes</code> 和 <code>lock_timeout</code>，结合业务负载特征平衡性能与可靠性。</li>
-</ul>
+<h2 id="acquire与release内存序"><a href="#acquire与release内存序" class="headerlink" title="acquire与release内存序"></a>acquire与release内存序</h2><p>以下例子即用了该内存序实现，不允许使用relaxed内存序，多个线程逻辑顺序由原子变量的读写过程控制。</p>
+<figure class="highlight c++"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br></pre></td><td class="code"><pre><span class="line"><span class="meta">#<span class="keyword">include</span> <span class="string">&lt;atomic&gt;</span></span></span><br><span class="line"><span class="meta">#<span class="keyword">include</span> <span class="string">&lt;iostream&gt;</span> </span></span><br><span class="line"><span class="meta">#<span class="keyword">include</span> <span class="string">&lt;vector&gt;</span></span></span><br><span class="line"></span><br><span class="line"><span class="function">std::atomic_int <span class="title">indicator</span> <span class="params">(<span class="number">0</span>)</span></span>; <span class="comment">// 初始值为零</span></span><br><span class="line"></span><br><span class="line"><span class="type">int</span> x, y = <span class="number">0</span>;</span><br><span class="line"></span><br><span class="line"><span class="function"><span class="type">void</span> <span class="title">thread_func1</span><span class="params">()</span> </span>&#123;</span><br><span class="line">    x = y + <span class="number">1</span>;</span><br><span class="line"></span><br><span class="line">    <span class="comment">// 通知thread_func2</span></span><br><span class="line">    indicator.<span class="built_in">store</span>(<span class="number">1</span>, <span class="comment">// 写操作</span></span><br><span class="line">            std::memory_order_release); </span><br><span class="line">&#125;</span><br><span class="line"></span><br><span class="line"><span class="function"><span class="type">void</span> <span class="title">thread_func2</span><span class="params">()</span> </span>&#123;</span><br><span class="line">    <span class="type">int</span> ready = indicator.<span class="built_in">load</span>( <span class="comment">// 读操作</span></span><br><span class="line">            std::memory_order_acquire);</span><br><span class="line"></span><br><span class="line">    <span class="comment">// 等待thread_func1</span></span><br><span class="line">    <span class="keyword">if</span> (read &gt; <span class="number">0</span>) &#123;</span><br><span class="line">        y = <span class="number">2</span>;</span><br><span class="line">    &#125;</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+<p>以上x绝不可能等于3，即先store了，函数2通行后y&#x3D;2，函数1再执行<code>x = 2 + 1为3</code>。如果使用releaxed内存序就有可能发生。</p>
+<p>store操作确保了其前面的读写，即<code>x=y+1</code>无法排到其后面。而acquire操作确保了y的赋值一定在load后做。因为<strong>release不允许前面的指令排其后，acquire不允许其后面的指令排其前</strong>。</p>
+<h2 id="seq-cst-内存序"><a href="#seq-cst-内存序" class="headerlink" title="seq_cst 内存序"></a>seq_cst 内存序</h2><p>之前介绍的acq_rel内存序基本能解决2个线程之间的同步需求了。只有比较极端的逻辑场景可能需要全局内存序，全局内存序的性能相比其他内存序是很差的。</p>
+<p>参考stack_overflow的问题:<a target="_blank" rel="noopener" href="https://stackoverflow.com/questions/12340773/how-do-memory-order-seq-cst-and-memory-order-acq-rel-differ">https://stackoverflow.com/questions/12340773/how-do-memory-order-seq-cst-and-memory-order-acq-rel-differ</a></p>
+<p>知乎也有相关回答:<a target="_blank" rel="noopener" href="https://www.zhihu.com/question/8811713845/answer/75716283973?utm_psn=1874990550719004672">https://www.zhihu.com/question/8811713845/answer/75716283973?utm_psn=1874990550719004672</a></p>
+<p>这里直接摘抄c++官方的例子，该例子必须要全局序才能实现逻辑。如果用acq_rel的话<code>assert(z.load() != 0)</code>可能失败，z可能等于0。因为存在情况，C线程认为x先store再ystore，而D线程相反。</p>
+<figure class="highlight c++"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br><span class="line">27</span><br><span class="line">28</span><br><span class="line">29</span><br><span class="line">30</span><br><span class="line">31</span><br><span class="line">32</span><br><span class="line">33</span><br><span class="line">34</span><br><span class="line">35</span><br><span class="line">36</span><br><span class="line">37</span><br><span class="line">38</span><br><span class="line">39</span><br><span class="line">40</span><br><span class="line">41</span><br><span class="line">42</span><br><span class="line">43</span><br></pre></td><td class="code"><pre><span class="line"><span class="meta">#<span class="keyword">include</span> <span class="string">&lt;atomic&gt;</span></span></span><br><span class="line"><span class="meta">#<span class="keyword">include</span> <span class="string">&lt;cassert&gt;</span></span></span><br><span class="line"><span class="meta">#<span class="keyword">include</span> <span class="string">&lt;thread&gt;</span></span></span><br><span class="line"> </span><br><span class="line">std::atomic&lt;<span class="type">bool</span>&gt; x = &#123;<span class="literal">false</span>&#125;;</span><br><span class="line">std::atomic&lt;<span class="type">bool</span>&gt; y = &#123;<span class="literal">false</span>&#125;;</span><br><span class="line">std::atomic&lt;<span class="type">int</span>&gt; z = &#123;<span class="number">0</span>&#125;;</span><br><span class="line"> </span><br><span class="line"><span class="function"><span class="type">void</span> <span class="title">write_x</span><span class="params">()</span></span></span><br><span class="line"><span class="function"></span>&#123;</span><br><span class="line">    x.<span class="built_in">store</span>(<span class="literal">true</span>, std::memory_order_seq_cst);</span><br><span class="line">&#125;</span><br><span class="line"> </span><br><span class="line"><span class="function"><span class="type">void</span> <span class="title">write_y</span><span class="params">()</span></span></span><br><span class="line"><span class="function"></span>&#123;</span><br><span class="line">    y.<span class="built_in">store</span>(<span class="literal">true</span>, std::memory_order_seq_cst);</span><br><span class="line">&#125;</span><br><span class="line"> </span><br><span class="line"><span class="function"><span class="type">void</span> <span class="title">read_x_then_y</span><span class="params">()</span></span></span><br><span class="line"><span class="function"></span>&#123;</span><br><span class="line">    <span class="keyword">while</span> (!x.<span class="built_in">load</span>(std::memory_order_seq_cst))</span><br><span class="line">        ;</span><br><span class="line">    <span class="keyword">if</span> (y.<span class="built_in">load</span>(std::memory_order_seq_cst))</span><br><span class="line">        ++z;</span><br><span class="line">&#125;</span><br><span class="line"> </span><br><span class="line"><span class="function"><span class="type">void</span> <span class="title">read_y_then_x</span><span class="params">()</span></span></span><br><span class="line"><span class="function"></span>&#123;</span><br><span class="line">    <span class="keyword">while</span> (!y.<span class="built_in">load</span>(std::memory_order_seq_cst))</span><br><span class="line">        ;</span><br><span class="line">    <span class="keyword">if</span> (x.<span class="built_in">load</span>(std::memory_order_seq_cst))</span><br><span class="line">        ++z;</span><br><span class="line">&#125;</span><br><span class="line"> </span><br><span class="line"><span class="function"><span class="type">int</span> <span class="title">main</span><span class="params">()</span></span></span><br><span class="line"><span class="function"></span>&#123;</span><br><span class="line">    <span class="function">std::thread <span class="title">a</span><span class="params">(write_x)</span></span>;</span><br><span class="line">    <span class="function">std::thread <span class="title">b</span><span class="params">(write_y)</span></span>;</span><br><span class="line">    <span class="function">std::thread <span class="title">c</span><span class="params">(read_x_then_y)</span></span>;</span><br><span class="line">    <span class="function">std::thread <span class="title">d</span><span class="params">(read_y_then_x)</span></span>;</span><br><span class="line">    a.<span class="built_in">join</span>(); b.<span class="built_in">join</span>(); c.<span class="built_in">join</span>(); d.<span class="built_in">join</span>();</span><br><span class="line">    <span class="built_in">assert</span>(z.<span class="built_in">load</span>() != <span class="number">0</span>); <span class="comment">// will never happen</span></span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
 
       
     </div>
@@ -490,7 +263,7 @@
 
 
   <nav class="pagination">
-    <a class="extend prev" rel="prev" title="上一页" aria-label="上一页" href="/page/10/"><i class="fa fa-angle-left"></i></a><a class="page-number" href="/">1</a><span class="space">&hellip;</span><a class="page-number" href="/page/10/">10</a><span class="page-number current">11</span><a class="page-number" href="/page/12/">12</a><span class="space">&hellip;</span><a class="page-number" href="/page/24/">24</a><a class="extend next" rel="next" title="下一页" aria-label="下一页" href="/page/12/"><i class="fa fa-angle-right"></i></a>
+    <a class="extend prev" rel="prev" title="上一页" aria-label="上一页" href="/page/10/"><i class="fa fa-angle-left"></i></a><a class="page-number" href="/">1</a><span class="space">&hellip;</span><a class="page-number" href="/page/10/">10</a><span class="page-number current">11</span><a class="page-number" href="/page/12/">12</a><span class="space">&hellip;</span><a class="page-number" href="/page/26/">26</a><a class="extend next" rel="next" title="下一页" aria-label="下一页" href="/page/12/"><i class="fa fa-angle-right"></i></a>
   </nav>
 
 </div>
