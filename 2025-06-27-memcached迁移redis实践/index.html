@@ -1,0 +1,414 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+<meta name="viewport" content="width=device-width">
+<meta name="theme-color" content="#222"><meta name="generator" content="Hexo 7.3.0">
+
+  <link rel="apple-touch-icon" sizes="180x180" href="/images/apple-touch-icon-next.png">
+  <link rel="icon" type="image/png" sizes="32x32" href="/images/corgis.jpg">
+  <link rel="icon" type="image/png" sizes="16x16" href="/images/corgis.jpg">
+  <link rel="mask-icon" href="/images/logo.svg" color="#222">
+
+<link rel="stylesheet" href="/css/main.css">
+
+
+
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.2/css/all.min.css" integrity="sha256-XOqroi11tY4EFQMR9ZYwZWKj5ZXiftSx36RRuC3anlA=" crossorigin="anonymous">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/animate.css/3.1.1/animate.min.css" integrity="sha256-PR7ttpcvz8qrF57fur/yAx1qXMFJeJFiA6pSzWi0OIE=" crossorigin="anonymous">
+
+<script class="next-config" data-name="main" type="application/json">{"hostname":"scut-corgis.github.io","root":"/","images":"/images","scheme":"Muse","darkmode":false,"version":"8.20.0","exturl":false,"sidebar":{"position":"left","width_expanded":320,"width_dual_column":240,"display":"always","padding":18,"offset":12},"hljswrap":true,"copycode":{"enable":true,"style":null},"fold":{"enable":true,"height":500},"bookmark":{"enable":false,"color":"#222","save":"auto"},"mediumzoom":false,"lazyload":false,"pangu":false,"comments":{"style":"tabs","active":null,"storage":true,"lazyload":false,"nav":null},"stickytabs":false,"motion":{"enable":true,"async":false,"transition":{"menu_item":"fadeInDown","post_block":"fadeIn","post_header":"fadeInDown","post_body":"fadeInDown","coll_header":"fadeInLeft","sidebar":"fadeInUp"}},"prism":false,"i18n":{"placeholder":"搜索...","empty":"没有找到任何搜索结果：${query}","hits_time":"找到 ${hits} 个搜索结果（用时 ${time} 毫秒）","hits":"找到 ${hits} 个搜索结果"}}</script><script src="/js/config.js"></script>
+
+    <meta name="description" content="背景memcached作为历史上重要的缓存组件，以高qps著称，主要是以多线程的特性能做到抗热key，而这点redis无法做到。 除去抗热key以外，似乎memcached已经越来越丧失对redis的优势，即使在qps领域，经过个人测试，中小key的qps承载量甚至被redis远远甩开。 在加上memcached过于简单，只有简单string操作，没有高可用（主从），强依赖sdk做一致性哈希，难以">
+<meta property="og:type" content="article">
+<meta property="og:title" content="memcached迁移redis实践">
+<meta property="og:url" content="https://scut-corgis.github.io/2025-06-27-memcached%E8%BF%81%E7%A7%BBredis%E5%AE%9E%E8%B7%B5/index.html">
+<meta property="og:site_name" content="corgis的笔记">
+<meta property="og:description" content="背景memcached作为历史上重要的缓存组件，以高qps著称，主要是以多线程的特性能做到抗热key，而这点redis无法做到。 除去抗热key以外，似乎memcached已经越来越丧失对redis的优势，即使在qps领域，经过个人测试，中小key的qps承载量甚至被redis远远甩开。 在加上memcached过于简单，只有简单string操作，没有高可用（主从），强依赖sdk做一致性哈希，难以">
+<meta property="og:locale" content="zh_CN">
+<meta property="og:image" content="https://scut-corgis.github.io/2025-06-27-memcached%E8%BF%81%E7%A7%BBredis%E5%AE%9E%E8%B7%B5/%E5%9F%BA%E6%9C%AC%E5%8E%9F%E7%90%86.drawio.svg">
+<meta property="og:image" content="https://scut-corgis.github.io/2025-06-27-memcached%E8%BF%81%E7%A7%BBredis%E5%AE%9E%E8%B7%B5/%E5%9F%BA%E6%9C%AC%E5%A4%84%E7%90%86.png">
+<meta property="og:image" content="https://scut-corgis.github.io/2025-06-27-memcached%E8%BF%81%E7%A7%BBredis%E5%AE%9E%E8%B7%B5/%E5%91%BD%E4%BB%A4%E5%88%86%E6%AE%B5.drawio.svg">
+<meta property="og:image" content="https://scut-corgis.github.io/2025-06-27-memcached%E8%BF%81%E7%A7%BBredis%E5%AE%9E%E8%B7%B5/%E9%94%99%E8%AF%AF%E4%BF%A1%E6%81%AF.png">
+<meta property="og:image" content="https://scut-corgis.github.io/2025-06-27-memcached%E8%BF%81%E7%A7%BBredis%E5%AE%9E%E8%B7%B5/%E5%8F%8C%E5%8D%8F%E8%AE%AE%E6%94%AF%E6%8C%81.svg">
+<meta property="article:published_time" content="2025-06-27T15:02:05.000Z">
+<meta property="article:modified_time" content="2025-08-21T12:19:32.445Z">
+<meta property="article:author" content="Corgis">
+<meta name="twitter:card" content="summary">
+<meta name="twitter:image" content="https://scut-corgis.github.io/2025-06-27-memcached%E8%BF%81%E7%A7%BBredis%E5%AE%9E%E8%B7%B5/%E5%9F%BA%E6%9C%AC%E5%8E%9F%E7%90%86.drawio.svg">
+
+
+<link rel="canonical" href="https://scut-corgis.github.io/2025-06-27-memcached%E8%BF%81%E7%A7%BBredis%E5%AE%9E%E8%B7%B5/">
+
+
+
+<script class="next-config" data-name="page" type="application/json">{"sidebar":"","isHome":false,"isPost":true,"lang":"zh-CN","comments":true,"permalink":"https://scut-corgis.github.io/2025-06-27-memcached%E8%BF%81%E7%A7%BBredis%E5%AE%9E%E8%B7%B5/","path":"2025-06-27-memcached迁移redis实践/","title":"memcached迁移redis实践"}</script>
+
+<script class="next-config" data-name="calendar" type="application/json">""</script>
+<title>memcached迁移redis实践 | corgis的笔记</title>
+  
+
+
+
+
+
+
+
+
+  <noscript>
+    <link rel="stylesheet" href="/css/noscript.css">
+  </noscript>
+</head>
+
+<body itemscope itemtype="http://schema.org/WebPage" class="use-motion">
+  <div class="headband"></div>
+
+  <main class="main">
+    <div class="column">
+      <header class="header" itemscope itemtype="http://schema.org/WPHeader"><div class="site-brand-container">
+  <div class="site-nav-toggle">
+    <div class="toggle" aria-label="切换导航栏" role="button">
+        <span class="toggle-line"></span>
+        <span class="toggle-line"></span>
+        <span class="toggle-line"></span>
+    </div>
+  </div>
+
+  <div class="site-meta">
+
+    <a href="/" class="brand" rel="start">
+      <i class="logo-line"></i>
+      <p class="site-title">corgis的笔记</p>
+      <i class="logo-line"></i>
+    </a>
+  </div>
+
+  <div class="site-nav-right">
+    <div class="toggle popup-trigger" aria-label="搜索" role="button">
+    </div>
+  </div>
+</div>
+
+
+
+<nav class="site-nav">
+  <ul class="main-menu menu"><li class="menu-item menu-item-home"><a href="/" rel="section"><i class="fa fa-home fa-fw"></i>首页</a></li><li class="menu-item menu-item-about"><a href="/about/" rel="section"><i class="fa fa-user fa-fw"></i>关于</a></li><li class="menu-item menu-item-categories"><a href="/categories/" rel="section"><i class="fa fa-th fa-fw"></i>分类</a></li><li class="menu-item menu-item-archives"><a href="/archives/" rel="section"><i class="fa fa-archive fa-fw"></i>归档</a></li>
+  </ul>
+</nav>
+
+
+
+
+</header>
+        
+  
+  <aside class="sidebar">
+
+    <div class="sidebar-inner sidebar-nav-active sidebar-toc-active">
+      <ul class="sidebar-nav">
+        <li class="sidebar-nav-toc">
+          文章目录
+        </li>
+        <li class="sidebar-nav-overview">
+          站点概览
+        </li>
+      </ul>
+
+      <div class="sidebar-panel-container">
+        <!--noindex-->
+        <div class="post-toc-wrap sidebar-panel">
+            <div class="post-toc animated"><ol class="nav"><li class="nav-item nav-level-1"><a class="nav-link" href="#%E8%83%8C%E6%99%AF"><span class="nav-number">1.</span> <span class="nav-text">背景</span></a></li><li class="nav-item nav-level-1"><a class="nav-link" href="#%E8%AF%A6%E7%BB%86%E6%96%B9%E6%A1%88"><span class="nav-number">2.</span> <span class="nav-text">详细方案</span></a><ol class="nav-child"><li class="nav-item nav-level-2"><a class="nav-link" href="#%E5%9F%BA%E6%9C%AC%E5%8E%9F%E7%90%86"><span class="nav-number">2.1.</span> <span class="nav-text">基本原理</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#proxy%E5%AE%9E%E7%8E%B0"><span class="nav-number">2.2.</span> <span class="nav-text">proxy实现</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#%E5%9F%BA%E6%9C%AC%E5%A4%84%E7%90%86"><span class="nav-number">2.2.1.</span> <span class="nav-text">基本处理</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E5%91%BD%E4%BB%A4%E5%88%86%E6%AE%B5"><span class="nav-number">2.2.2.</span> <span class="nav-text">命令分段</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#mc-redis%E5%8F%8C%E5%8D%8F%E8%AE%AE%E6%94%AF%E6%8C%81"><span class="nav-number">2.2.3.</span> <span class="nav-text">mc+redis双协议支持</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#redis-module%E5%AE%9E%E7%8E%B0"><span class="nav-number">2.3.</span> <span class="nav-text">redis-module实现</span></a></li></ol></li><li class="nav-item nav-level-1"><a class="nav-link" href="#QA"><span class="nav-number">3.</span> <span class="nav-text">QA</span></a></li></ol></div>
+        </div>
+        <!--/noindex-->
+
+        <div class="site-overview-wrap sidebar-panel">
+          <div class="site-author animated" itemprop="author" itemscope itemtype="http://schema.org/Person">
+    <img class="site-author-image" itemprop="image" alt="Corgis"
+      src="/images/corgis.jpg">
+  <p class="site-author-name" itemprop="name">Corgis</p>
+  <div class="site-description" itemprop="description">用于成长过程中，记录值得对外分享的技术，如开源代码理解、国外课程项目，个人对一些领域的心得等</div>
+</div>
+<div class="site-state-wrap animated">
+  <nav class="site-state">
+      <div class="site-state-item site-state-posts">
+        <a href="/archives/">
+          <span class="site-state-item-count">28</span>
+          <span class="site-state-item-name">日志</span>
+        </a>
+      </div>
+      <div class="site-state-item site-state-categories">
+          <a href="/categories/">
+        <span class="site-state-item-count">13</span>
+        <span class="site-state-item-name">分类</span></a>
+      </div>
+  </nav>
+</div>
+
+        </div>
+      </div>
+        <div class="back-to-top animated" role="button" aria-label="返回顶部">
+          <i class="fa fa-arrow-up"></i>
+          <span>0%</span>
+        </div>
+    </div>
+
+    
+  </aside>
+
+
+    </div>
+
+    <div class="main-inner post posts-expand">
+
+
+  
+
+
+<div class="post-block">
+  
+  
+
+  <article itemscope itemtype="http://schema.org/Article" class="post-content" lang="zh-CN">
+    <link itemprop="mainEntityOfPage" href="https://scut-corgis.github.io/2025-06-27-memcached%E8%BF%81%E7%A7%BBredis%E5%AE%9E%E8%B7%B5/">
+
+    <span hidden itemprop="author" itemscope itemtype="http://schema.org/Person">
+      <meta itemprop="image" content="/images/corgis.jpg">
+      <meta itemprop="name" content="Corgis">
+    </span>
+
+    <span hidden itemprop="publisher" itemscope itemtype="http://schema.org/Organization">
+      <meta itemprop="name" content="corgis的笔记">
+      <meta itemprop="description" content="用于成长过程中，记录值得对外分享的技术，如开源代码理解、国外课程项目，个人对一些领域的心得等">
+    </span>
+
+    <span hidden itemprop="post" itemscope itemtype="http://schema.org/CreativeWork">
+      <meta itemprop="name" content="memcached迁移redis实践 | corgis的笔记">
+      <meta itemprop="description" content="">
+    </span>
+      <header class="post-header">
+        <h1 class="post-title" itemprop="name headline">
+          memcached迁移redis实践
+        </h1>
+
+        <div class="post-meta-container">
+          <div class="post-meta">
+    <span class="post-meta-item">
+      <span class="post-meta-item-icon">
+        <i class="far fa-calendar"></i>
+      </span>
+      <span class="post-meta-item-text">发表于</span>
+
+      <time title="创建时间：2025-06-27 23:02:05" itemprop="dateCreated datePublished" datetime="2025-06-27T23:02:05+08:00">2025-06-27</time>
+    </span>
+    <span class="post-meta-item">
+      <span class="post-meta-item-icon">
+        <i class="far fa-folder"></i>
+      </span>
+      <span class="post-meta-item-text">分类于</span>
+        <span itemprop="about" itemscope itemtype="http://schema.org/Thing">
+          <a href="/categories/redis/" itemprop="url" rel="index"><span itemprop="name">redis</span></a>
+        </span>
+    </span>
+
+  
+</div>
+
+        </div>
+      </header>
+
+    
+    
+    
+    <div class="post-body" itemprop="articleBody"><h1 id="背景"><a href="#背景" class="headerlink" title="背景"></a>背景</h1><p>memcached作为历史上重要的缓存组件，以高qps著称，主要是以多线程的特性能做到抗热key，而这点redis无法做到。</p>
+<p>除去抗热key以外，似乎memcached已经越来越丧失对redis的优势，即使在qps领域，经过个人测试，中小key的qps承载量甚至被redis远远甩开。</p>
+<p>在加上memcached过于简单，只有简单string操作，没有高可用（主从），强依赖sdk做一致性哈希，难以水平扩容，以及在企业级能力如逃生、单元化等方面都难以建设。</p>
+<p>并考虑到redis8的展现的多线程能力已经可以抗超大并发的qps，据测试，redis8抗热key qps的量已经是redis6开单工作线程的3倍了。</p>
+<p>因此将memcached迁移到redis提上了日程，在笔者公司，有几千个memcached集群，业务代码历史悠久繁重，因此业务需求是不改一行代码，自身无需重新做任何发布部署便能成迁移成功。</p>
+<h1 id="详细方案"><a href="#详细方案" class="headerlink" title="详细方案"></a>详细方案</h1><p>笔者最终了选择twemproxy + redis-server到组合替换掉memcached集群。在改造过程中有两种路线</p>
+<ul>
+<li>让redis支持memcached协议，使得可以直接用memcached协议访问redis，用可配配置来作为开关，学习阿里云某个开源项目的做法（该项目已经无人维护）。</li>
+<li>改造twemproxy，使其做memcached到redis的协议转换，并在redis上实现一套memcached命令</li>
+</ul>
+<p>最终选择了改造twemproxy，并使用redis-module的方式实现以上迁移需求。</p>
+<h2 id="基本原理"><a href="#基本原理" class="headerlink" title="基本原理"></a>基本原理</h2><p><img src="/2025-06-27-memcached%E8%BF%81%E7%A7%BBredis%E5%AE%9E%E8%B7%B5/%E5%9F%BA%E6%9C%AC%E5%8E%9F%E7%90%86.drawio.svg"></p>
+<p>每一个mc命令均对应一个相同前缀的redis命令</p>
+<figure class="highlight shell"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br></pre></td><td class="code"><pre><span class="line">get -&gt; kcc_mc.get</span><br><span class="line">add -&gt; kcc_mc.add</span><br><span class="line">replace -&gt; kcc_mc.replace</span><br><span class="line">...</span><br></pre></td></tr></table></figure>
+
+<p>除了多key命令，每一个mc命令解析后都会原样的按resp协议转发给redis</p>
+<figure class="highlight shell"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br></pre></td><td class="code"><pre><span class="line">set key 0 0 3\r\n</span><br><span class="line">val\r\n </span><br><span class="line"><span class="meta prompt_"></span></span><br><span class="line"><span class="meta prompt_">------&gt;</span><span class="language-bash"></span></span><br><span class="line"><span class="language-bash"></span></span><br><span class="line">*6\r\n</span><br><span class="line"><span class="meta prompt_">$</span><span class="language-bash">10\r\n</span></span><br><span class="line">kcc_mc.set\r\n</span><br><span class="line"><span class="meta prompt_">$</span><span class="language-bash">3\r\n</span></span><br><span class="line">key\r\n</span><br><span class="line"><span class="meta prompt_">$</span><span class="language-bash">1\r\n</span></span><br><span class="line">0\r\n</span><br><span class="line"><span class="meta prompt_">$</span><span class="language-bash">1\r\n</span></span><br><span class="line">0\r\n</span><br><span class="line"><span class="meta prompt_">$</span><span class="language-bash">1\r\n</span></span><br><span class="line">3\r\n</span><br><span class="line"><span class="meta prompt_">$</span><span class="language-bash">3\r\n</span></span><br><span class="line">val\r\n</span><br></pre></td></tr></table></figure>
+
+<p>而redis-module处理的返回，只会有两种情况，即redis自身错误-ERR或字符串回复。</p>
+<figure class="highlight shell"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br></pre></td><td class="code"><pre><span class="line">-ERR xxxx\r\n</span><br><span class="line">或者</span><br><span class="line"><span class="meta prompt_">$</span><span class="language-bash">5\r\n</span></span><br><span class="line">xxxxx\r\n</span><br></pre></td></tr></table></figure>
+
+<p>redis module的实现为，对于每一个mc的命令，其生成回复为resp的字符串回复，中间嵌套mc回复，如mc的get命令回复如下</p>
+<figure class="highlight shell"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br></pre></td><td class="code"><pre><span class="line"><span class="meta prompt_">$</span><span class="language-bash">25\r\n</span></span><br><span class="line">VALUE 0 0 5\r\n</span><br><span class="line">hello\r\n</span><br><span class="line">END\r\n</span><br><span class="line">\r\n</span><br></pre></td></tr></table></figure>
+
+<p>对于应该返回mc的错误场景，同样用字符串回复嵌套</p>
+<figure class="highlight shell"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br></pre></td><td class="code"><pre><span class="line"><span class="meta prompt_">$</span><span class="language-bash">22\r\n</span></span><br><span class="line">SERVER_ERROR unknown\r\n</span><br><span class="line">\r\n</span><br></pre></td></tr></table></figure>
+
+<h2 id="proxy实现"><a href="#proxy实现" class="headerlink" title="proxy实现"></a>proxy实现</h2><p>以下说明皆基于最新twemproxy开源版本0.5.0release</p>
+<h3 id="基本处理"><a href="#基本处理" class="headerlink" title="基本处理"></a>基本处理</h3><p>在配置文件中引入新的配置项，该配置为bool值，一旦该值置为1，原先proxy的决定工况(redis or mc)的变量将失效。</p>
+<p><img src="/2025-06-27-memcached%E8%BF%81%E7%A7%BBredis%E5%AE%9E%E8%B7%B5/%E5%9F%BA%E6%9C%AC%E5%A4%84%E7%90%86.png"></p>
+<p>对于每一个发送过来的mc命令，在命令完全解析完毕后，确定要往redis一侧发送前，做协议转换。具体操作为</p>
+<ol>
+<li>确定参数个数n，生成*n\r\n</li>
+<li>根据原mc的命令字符串，生成增加前缀“kcc_mc.”的字符串，并以resp协议的方式追加到缓冲区中</li>
+<li>每一个mc的参数逐个追加到缓冲区中</li>
+<li>对于写命令的value字段，考虑其长度可能会超过一个缓冲区，直接将原缓冲区mbuf整体移动赋予目标。</li>
+</ol>
+<p>在收到redis的回复命令后，在回包给客户端之前，做协议转换，具体操作为</p>
+<ol>
+<li>对于-ERR xxx的redis错误，直接去除前4个字节”-ERR”, 并在缓冲区前追加”SERVER_ERROR”,以符合mc的错误格式</li>
+<li>对于约定好的字符串回复（$xx\r\n），去除第一行，以及最后的”\r\n”字符。</li>
+</ol>
+<h3 id="命令分段"><a href="#命令分段" class="headerlink" title="命令分段"></a>命令分段</h3><p>mc的多key命令只有两种，即get和gets。</p>
+<p>需要在协议转换后，做预处理和后处理。</p>
+<p>整体流程如下</p>
+<p><img src="/2025-06-27-memcached%E8%BF%81%E7%A7%BBredis%E5%AE%9E%E8%B7%B5/%E5%91%BD%E4%BB%A4%E5%88%86%E6%AE%B5.drawio.svg"></p>
+<p>错误处理</p>
+<p>我们将错误归为两类</p>
+<ul>
+<li>redis原生错误，即”-ERR xxx”</li>
+<li>mc格式的错误，即用resp协议的字符串套用的mc错误，如”$18\r\nSERVER_ERROR xxx\r\n\r\n”</li>
+</ul>
+<p>对于非分段命令，只要是redis一侧成功发回来的回复，我们均在协议处理后直接返回给客户端</p>
+<p>对于分段命令，只要出现了其中一个sub_msg错误，我们将返回给客户端</p>
+<p><img src="/2025-06-27-memcached%E8%BF%81%E7%A7%BBredis%E5%AE%9E%E8%B7%B5/%E9%94%99%E8%AF%AF%E4%BF%A1%E6%81%AF.png"></p>
+<h3 id="mc-redis双协议支持"><a href="#mc-redis双协议支持" class="headerlink" title="mc+redis双协议支持"></a>mc+redis双协议支持</h3><p>实际上，笔者最终在twemproxy上实现了同时支持redis协议和mc协议的方案。主要思路是通过请求的第一个字节是否为<code>*</code>或<code>+</code>来更换处理协议函数集。</p>
+<p>对于不转发到redis-server的命令可以无条件直接处理，而对于需要转发到redis-server的命令集可以设置一个拦截函数，规定哪些命令可以通过proxy转发，如可以允许scan命令转发用于集群扫表。</p>
+<p>总体目标:</p>
+<ol>
+<li>proxy实现支持redis和memcached的协议包混合，即一个客户端连接，既可以发送redis命令，又可以发送mc命令。</li>
+<li>需要对redis透传命令实现拦截器，即从稳定性考虑，必须能够支持选择性的透传redis命令，如当前只需要透传kcc_scan命令即可。</li>
+</ol>
+<p>难点:</p>
+<ol>
+<li>对于一个新的命令请求，我们无法判断使用哪种协议解析函数对其解析</li>
+<li>对于s_conn(proxy与redis-server的连接)，两种命令请求都在同一条tcp上，收到redis-server的回包时难以判断该回包是哪种类型。对于mc的命令需要做redis2mc的协议转换，而redis的回复可直接透传或多key命令聚合后再透传。</li>
+</ol>
+<p>实现方案:</p>
+<ol>
+<li>对于mc2redis的proxy集群，收到一个命令包时先默认使用mc的解析函数解析，在状态机初始处判断该命令包的第一个字符是否为“*”或”+”，如果是，完全替换该msg的所有处理函数，并重入命令解析函数。</li>
+<li>彻底区分redis与mc命令集，并提供拦截函数用于判断可透传的redis命令集，在请求向redis-server发送前进行判断，若不能进行转发，返回客户端错误。<br>对于s_conn的回包，利用tcp的有序性，取出挂在等待其回复队列的第一条msg作为对端请求msg，通过对端msg的”mc2redis”标识判断其是否需要做redis到memcached的协议转换。</li>
+</ol>
+<p><img src="/2025-06-27-memcached%E8%BF%81%E7%A7%BBredis%E5%AE%9E%E8%B7%B5/%E5%8F%8C%E5%8D%8F%E8%AE%AE%E6%94%AF%E6%8C%81.svg"></p>
+<h2 id="redis-module实现"><a href="#redis-module实现" class="headerlink" title="redis-module实现"></a>redis-module实现</h2><p>对应每一个mc命令，我们需要调研清楚其语义，如参数范围和对应的返回值表现。</p>
+<p>这里不叙述任何的语义细节。主要阐述一下跟架构设计相关的实现思想。</p>
+<ol>
+<li>维护cas_id的全局递增</li>
+</ol>
+<p>对于每一个module的object，很显然可以跟随RdbSave将其flag和cas_id存放到到rdb中，但是全局cas_id如何维护递增？比如主从复制，从节点是需要拿到主节点的全局cas_id大小的。</p>
+<p>实际上可以放到<code>aux_save()</code>里面，将这个全局id存进去，在<code>aux_load()</code>时再取出来。</p>
+<ol start="2">
+<li>AOF重写怎么处理？</li>
+</ol>
+<p>如果我们是用原命令来做aof重写，势必会丢失该对象的cas_id。实际上，我们可以实现一个新命令如<code>mc.restore</code>。用这个新命令把flag、对象的cas_id，和全局cas_id一起存进去。</p>
+<h1 id="QA"><a href="#QA" class="headerlink" title="QA"></a>QA</h1><ol>
+<li>二进制协议怎么处理？</li>
+</ol>
+<p>proxy后续可以处理两种命令，但转化为相同的文本redis命令，即redis命令只给出文本回复。据分析，所有的命令的文本回复在原理上，可以转换为二进制回复。只是实现问题。<br>附录(协议):<br><a target="_blank" rel="noopener" href="https://github.com/memcached/memcached/blob/master/doc/protocol.txt">https://github.com/memcached/memcached/blob/master/doc/protocol.txt</a><br><a target="_blank" rel="noopener" href="https://github.com/memcached/memcached/blob/master/doc/protocol-binary.txt">https://github.com/memcached/memcached/blob/master/doc/protocol-binary.txt</a></p>
+<ol start="2">
+<li>为什么采用redis-module？</li>
+</ol>
+<p>答：考虑到mc每一个命令都需要开发对应的redis命令，为了代码集中统一管理迭代，也符合redis官方的推荐实现。</p>
+<ol start="3">
+<li>为什么不采用哈希表实现？</li>
+</ol>
+<p>这样每一个mc的key都会变成哈希表，无论从性能开销还是内存开销上来说，都是完全没有经过测试和难以估量的。</p>
+<ol start="4">
+<li>为什么不在module中直接用原生字符串，而是引入了新类型？</li>
+</ol>
+<p>假如未来redis-sdk可以直接访问该redis，如果业务用string的get、set命令访问了mc的key，会有安全性风险。而引入新类型保证了原生string命令无法访问mc迁移过来的key，会返回类型错误。</p>
+<ol start="5">
+<li>为什么采用proxy做协议转换，而不是redis内核直接处理mc协议的方式，仿造ApsaraCache？</li>
+</ol>
+<ul>
+<li>redis内核侵入大，影响范围大。比如将引入新的redis配置参数。</li>
+<li>后续每次跟随开源社区升级redis版本都需要搬运迁移，有额外工作量且有稳定性风险。</li>
+<li>当前twemproxy开源社区已不维护，可以完全自研修改，无升级后顾之忧。</li>
+</ul>
+
+    </div>
+
+    
+    
+    
+
+    <footer class="post-footer">
+
+        
+
+          <div class="post-nav">
+            <div class="post-nav-item">
+                <a href="/2025-05-06-hash%E5%AD%98%E5%82%A8%E5%BC%95%E6%93%8E-%E5%BA%94%E7%94%A8%E5%9B%B0%E5%A2%83/" rel="prev" title="hash存储引擎-应用困境">
+                  <i class="fa fa-angle-left"></i> hash存储引擎-应用困境
+                </a>
+            </div>
+            <div class="post-nav-item">
+                <a href="/2025-07-20-redis%E5%93%A8%E5%85%B5-%E6%BA%90%E7%A0%81%E7%AC%94%E8%AE%B0/" rel="next" title="redis哨兵笔记">
+                  redis哨兵笔记 <i class="fa fa-angle-right"></i>
+                </a>
+            </div>
+          </div>
+    </footer>
+  </article>
+</div>
+
+
+
+
+
+
+</div>
+  </main>
+
+  <footer class="footer">
+    <div class="footer-inner">
+
+  <div class="copyright">
+    &copy; 
+    <span itemprop="copyrightYear">2025</span>
+    <span class="with-love">
+      <i class="fa fa-heart"></i>
+    </span>
+    <span class="author" itemprop="copyrightHolder">Corgis</span>
+  </div>
+  <div class="powered-by">由 <a href="https://hexo.io/" rel="noopener" target="_blank">Hexo</a> & <a href="https://theme-next.js.org/muse/" rel="noopener" target="_blank">NexT.Muse</a> 强力驱动
+  </div>
+
+    </div>
+  </footer>
+
+  
+  <div class="toggle sidebar-toggle" role="button">
+    <span class="toggle-line"></span>
+    <span class="toggle-line"></span>
+    <span class="toggle-line"></span>
+  </div>
+  <div class="sidebar-dimmer"></div>
+  <div class="reading-progress-bar"></div>
+
+<noscript>
+  <div class="noscript-warning">Theme NexT works best with JavaScript enabled</div>
+</noscript>
+
+
+  
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/animejs/3.2.1/anime.min.js" integrity="sha256-XL2inqUJaslATFnHdJOi9GfQ60on8Wx1C2H8DYiN1xY=" crossorigin="anonymous"></script>
+<script src="/js/comments.js"></script><script src="/js/utils.js"></script><script src="/js/motion.js"></script><script src="/js/sidebar.js"></script><script src="/js/next-boot.js"></script>
+
+  
+
+
+
+
+
+
+  
+
+
+
+
+
+</body>
+</html>
