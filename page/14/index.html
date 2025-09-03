@@ -123,7 +123,7 @@
   <nav class="site-state">
       <div class="site-state-item site-state-posts">
         <a href="/archives/">
-          <span class="site-state-item-count">28</span>
+          <span class="site-state-item-count">30</span>
           <span class="site-state-item-name">日志</span>
         </a>
       </div>
@@ -159,7 +159,7 @@
   
 
   <article itemscope itemtype="http://schema.org/Article" class="post-content" lang="">
-    <link itemprop="mainEntityOfPage" href="https://scut-corgis.github.io/2025-02-17-%E5%88%86%E5%B8%83%E5%BC%8F%E6%95%B0%E6%8D%AE%E5%BA%93-%E6%97%B6%E9%92%9F/">
+    <link itemprop="mainEntityOfPage" href="https://scut-corgis.github.io/2025-03-07-redis%E6%95%B0%E6%8D%AE%E7%BB%93%E6%9E%84%E8%BD%ACkv%E5%AD%98%E5%82%A8/">
 
     <span hidden itemprop="author" itemscope itemtype="http://schema.org/Person">
       <meta itemprop="image" content="/images/corgis.jpg">
@@ -177,7 +177,7 @@
     </span>
       <header class="post-header">
         <h2 class="post-title" itemprop="name headline">
-          <a href="/2025-02-17-%E5%88%86%E5%B8%83%E5%BC%8F%E6%95%B0%E6%8D%AE%E5%BA%93-%E6%97%B6%E9%92%9F/" class="post-title-link" itemprop="url">分布式数据库-时钟</a>
+          <a href="/2025-03-07-redis%E6%95%B0%E6%8D%AE%E7%BB%93%E6%9E%84%E8%BD%ACkv%E5%AD%98%E5%82%A8/" class="post-title-link" itemprop="url">redis数据结构转kv存储</a>
         </h2>
 
         <div class="post-meta-container">
@@ -188,7 +188,7 @@
       </span>
       <span class="post-meta-item-text">发表于</span>
 
-      <time title="创建时间：2025-02-17 14:55:05" itemprop="dateCreated datePublished" datetime="2025-02-17T14:55:05+08:00">2025-02-17</time>
+      <time title="创建时间：2025-03-07 17:23:01" itemprop="dateCreated datePublished" datetime="2025-03-07T17:23:01+08:00">2025-03-07</time>
     </span>
     <span class="post-meta-item">
       <span class="post-meta-item-icon">
@@ -196,7 +196,7 @@
       </span>
       <span class="post-meta-item-text">分类于</span>
         <span itemprop="about" itemscope itemtype="http://schema.org/Thing">
-          <a href="/categories/%E5%88%86%E5%B8%83%E5%BC%8F%E6%95%B0%E6%8D%AE%E5%BA%93/" itemprop="url" rel="index"><span itemprop="name">分布式数据库</span></a>
+          <a href="/categories/kuaishou/" itemprop="url" rel="index"><span itemprop="name">kuaishou</span></a>
         </span>
     </span>
 
@@ -210,368 +210,144 @@
     
     
     <div class="post-body" itemprop="articleBody">
-          <h1 id="时钟"><a href="#时钟" class="headerlink" title="时钟"></a>时钟</h1><blockquote>
-<p>该篇主要通过网上文章和deepseek问答的方式学习与记录</p>
+          <h1 id="目的"><a href="#目的" class="headerlink" title="目的"></a>目的</h1><p>类似kvrocks这类的以磁盘ssd作为底层冷数据，并且存储引擎（如rocksdb）只支持kv的场景，又需要支持redis协议，提供五类数据模型，即string、hash、set、zset、list。那么必须找到一种高效的方式将此类数据结构转化到kv存储中，并利用底层存储引擎的gc能力（如rocksdb的compaction）来过滤旧数据。</p>
+<p>在快手，有多种此类数据库，如以本地rocksdb为存储引擎的，靠主从同步和数据分片的容量型存储kiwi，以及使用分布式存储底座的kwaikv两种数据库，本文用于学习与记录其具体实现思路。</p>
+<blockquote>
+<p>实际上跟kvrocks区别不大，新版本的kvrocks看上去已经更加先进了</p>
 </blockquote>
-<ol>
-<li>必要性，即为什么需要时钟系统</li>
-</ol>
-<ul>
-<li>mvcc中区别可见性（用时间戳搜版本链）</li>
-<li>保证事务的全局顺序，至少是因果一致性，用于确定某个事务是否可以提交或回滚</li>
-</ul>
-<ol start="2">
-<li>时钟系统的选择</li>
-</ol>
-<ul>
-<li>中心化的时钟分配方案</li>
-<li>HLC时钟方案</li>
-</ul>
-<h2 id="HLC时钟与中心化时钟的区别"><a href="#HLC时钟与中心化时钟的区别" class="headerlink" title="HLC时钟与中心化时钟的区别"></a>HLC时钟与中心化时钟的区别</h2><p>在分布式系统中，时间戳分配对事务的顺序和一致性至关重要。<strong>HLC（Hybrid Logical Clock，混合逻辑时钟）</strong>和<strong>中心化时间戳分配</strong>是两种不同的时间戳管理机制，它们的核心区别体现在架构、依赖关系和适用场景上。以下从多个维度对比两者的差异：</p>
-<hr>
-<h3 id="1-架构设计"><a href="#1-架构设计" class="headerlink" title="1. 架构设计"></a>1. <strong>架构设计</strong></h3><table>
-<thead>
-<tr>
-<th><strong>维度</strong></th>
-<th><strong>HLC</strong></th>
-<th><strong>中心化时间戳分配</strong></th>
-</tr>
-</thead>
-<tbody><tr>
-<td><strong>架构模式</strong></td>
-<td>分布式（无中心节点）</td>
-<td>中心化（依赖单点或集群）</td>
-</tr>
-<tr>
-<td><strong>时间戳生成</strong></td>
-<td>每个节点独立维护本地HLC</td>
-<td>由中心服务统一分配（如TSO服务）</td>
-</tr>
-<tr>
-<td><strong>通信开销</strong></td>
-<td>低（仅需少量同步）</td>
-<td>高（每次事务需请求中心节点）</td>
-</tr>
-<tr>
-<td><strong>可用性</strong></td>
-<td>高（无单点故障）</td>
-<td>低（中心节点宕机影响全局）</td>
-</tr>
-</tbody></table>
-<ul>
-<li><strong>HLC</strong>：每个节点独立维护一个混合逻辑时钟（物理时间 + 逻辑计数器），无需全局协调。</li>
-<li><strong>中心化分配</strong>：依赖中心服务（如Google Spanner的TrueTime、TiDB的TSO）分配全局唯一时间戳。</li>
-</ul>
-<hr>
-<h3 id="2-时间戳依赖"><a href="#2-时间戳依赖" class="headerlink" title="2. 时间戳依赖"></a>2. <strong>时间戳依赖</strong></h3><table>
-<thead>
-<tr>
-<th><strong>维度</strong></th>
-<th><strong>HLC</strong></th>
-<th><strong>中心化时间戳分配</strong></th>
-</tr>
-</thead>
-<tbody><tr>
-<td><strong>物理时钟依赖</strong></td>
-<td>依赖本地物理时钟，允许一定偏差</td>
-<td>通常依赖高精度时钟（如原子钟、GPS）</td>
-</tr>
-<tr>
-<td><strong>逻辑组件</strong></td>
-<td>需要逻辑计数器补偿物理时钟偏差</td>
-<td>仅依赖物理时间（或逻辑单调递增）</td>
-</tr>
-<tr>
-<td><strong>时间戳精度</strong></td>
-<td>受限于本地时钟精度和NTP同步</td>
-<td>由中心服务保证全局严格单调</td>
-</tr>
-</tbody></table>
-<ul>
-<li><strong>HLC</strong>：通过逻辑计数器（<code>l</code>）补偿物理时钟偏差（<code>pt</code>），保证因果一致性。</li>
-<li><strong>中心化分配</strong>：通过中心服务的原子操作（如TrueTime API）生成全局单调递增时间戳。</li>
-</ul>
-<hr>
-<h3 id="3-一致性与性能"><a href="#3-一致性与性能" class="headerlink" title="3. 一致性与性能"></a>3. <strong>一致性与性能</strong></h3><table>
-<thead>
-<tr>
-<th><strong>维度</strong></th>
-<th><strong>HLC</strong></th>
-<th><strong>中心化时间戳分配</strong></th>
-</tr>
-</thead>
-<tbody><tr>
-<td><strong>全局一致性</strong></td>
-<td>最终一致（依赖物理时钟同步）</td>
-<td>强一致（中心服务保证）</td>
-</tr>
-<tr>
-<td><strong>延迟敏感度</strong></td>
-<td>低（本地生成时间戳）</td>
-<td>高（需等待中心响应）</td>
-</tr>
-<tr>
-<td><strong>适用场景</strong></td>
-<td>高吞吐、弱网络环境（如边缘计算）</td>
-<td>强一致需求场景（如金融交易）</td>
-</tr>
-</tbody></table>
-<ul>
-<li><strong>HLC</strong>：适用于对延迟敏感但对全局一致性要求较宽松的场景（如IoT、边缘数据库）。</li>
-<li><strong>中心化分配</strong>：适用于需要严格全局事务顺序的场景（如跨区域数据库事务）。</li>
-</ul>
-<hr>
-<h3 id="4-典型实现案例"><a href="#4-典型实现案例" class="headerlink" title="4. 典型实现案例"></a>4. <strong>典型实现案例</strong></h3><ul>
-<li><strong>HLC</strong>：<ul>
-<li><strong>CockroachDB</strong>：使用HLC实现分布式事务的MVCC（多版本并发控制）。</li>
-<li><strong>Amazon Aurora</strong>：在跨分区事务中结合HLC与物理时钟。</li>
-</ul>
-</li>
-<li><strong>中心化时间戳分配</strong>：<ul>
-<li><strong>Google Spanner</strong>：依赖TrueTime API分配时间戳，误差范围可控。</li>
-<li><strong>TiDB</strong>：通过TSO（Timestamp Oracle）服务集中分配时间戳。</li>
-</ul>
-</li>
-</ul>
-<hr>
-<h3 id="5-核心问题与权衡"><a href="#5-核心问题与权衡" class="headerlink" title="5. 核心问题与权衡"></a>5. <strong>核心问题与权衡</strong></h3><ul>
-<li><p><strong>HLC的优势</strong>：</p>
-<ul>
-<li><strong>去中心化</strong>：无单点故障，适合大规模分布式系统。</li>
-<li><strong>低延迟</strong>：本地生成时间戳，避免网络往返开销。</li>
-<li><strong>因果一致性</strong>：通过逻辑计数器维护事件顺序。</li>
-</ul>
-</li>
-<li><p><strong>HLC的挑战</strong>：</p>
-<ul>
-<li><strong>时钟漂移</strong>：依赖NTP同步物理时钟，可能引入偏差。</li>
-<li><strong>逻辑计数器膨胀</strong>：高并发场景下逻辑部分可能快速增长。</li>
-</ul>
-</li>
-<li><p><strong>中心化分配的优势</strong>：</p>
-<ul>
-<li><strong>强一致性</strong>：全局严格单调的时间戳保证事务顺序。</li>
-<li><strong>简化设计</strong>：无需处理分布式时钟同步问题。</li>
-</ul>
-</li>
-<li><p><strong>中心化分配的挑战</strong>：</p>
-<ul>
-<li><strong>单点瓶颈</strong>：中心服务可能成为性能瓶颈或单点故障。</li>
-<li><strong>网络依赖</strong>：跨地域部署时延迟显著增加。</li>
-</ul>
-</li>
-</ul>
-<hr>
-<h3 id="6-选择建议"><a href="#6-选择建议" class="headerlink" title="6. 选择建议"></a>6. <strong>选择建议</strong></h3><ul>
-<li><strong>选择HLC</strong>：<ul>
-<li>系统需要高可用性和分区容忍性（如跨地域部署）。</li>
-<li>可接受一定的时间戳偏差（如最终一致性场景）。</li>
-</ul>
-</li>
-<li><strong>选择中心化分配</strong>：<ul>
-<li>需要严格的事务全局顺序（如金融系统）。</li>
-<li>物理时钟同步精度高（如部署原子钟或GPS时钟）。</li>
-</ul>
-</li>
-</ul>
-<hr>
-<h3 id="总结"><a href="#总结" class="headerlink" title="总结"></a>总结</h3><p>HLC和中心化时间戳分配的本质区别在于<strong>如何权衡一致性、可用性和性能</strong>。HLC通过分布式逻辑时钟降低对中心服务的依赖，适合大规模、高可用的场景；中心化分配通过集中式权威保证强一致性，适合对事务顺序要求严格的场景。</p>
-<h2 id="HLC时钟的设计"><a href="#HLC时钟的设计" class="headerlink" title="HLC时钟的设计"></a>HLC时钟的设计</h2><h3 id="HLC-的设计理念"><a href="#HLC-的设计理念" class="headerlink" title="HLC 的设计理念"></a><strong>HLC 的设计理念</strong></h3><p>HLC 的核心目标是在分布式系统中实现 <strong>因果一致性</strong>，同时 <strong>避免完全依赖物理时钟</strong>（物理时钟可能不同步或存在误差）。HLC 通过以下设计理念达成这一目标：</p>
-<ol>
-<li><strong>混合时间戳</strong>：结合物理时钟（Physical Time, PT）和逻辑时钟（Logical Clock, LC），物理时间用于近似真实时间，逻辑时间用于在物理时间相同或回退时保证顺序。</li>
-<li><strong>无中心化依赖</strong>：每个节点独立维护自己的HLC，无需全局协调服务。</li>
-<li><strong>容忍时钟偏差</strong>：允许物理时钟存在一定偏差（例如通过NTP同步），但通过逻辑计数器补偿偏差。</li>
-</ol>
-<hr>
-<h3 id="HLC-的组成"><a href="#HLC-的组成" class="headerlink" title="HLC 的组成"></a><strong>HLC 的组成</strong></h3><p>每个HLC时间戳是一个二元组 <code>(pt, l)</code>：</p>
-<ul>
-<li>**<code>pt</code>**（物理时间）：节点的本地物理时钟时间（如Unix时间戳，单位毫秒），可能因NTP调整发生跳跃或回退。</li>
-<li>**<code>l</code>**（逻辑计数器）：一个整数，用于在<code>pt</code>相同或回退时保证时间戳的唯一性和单调递增性。</li>
-</ul>
-<hr>
-<h3 id="HLC-的实现规则"><a href="#HLC-的实现规则" class="headerlink" title="HLC 的实现规则"></a><strong>HLC 的实现规则</strong></h3><p>HLC的更新规则是核心，以下是伪代码实现逻辑：</p>
-<h4 id="1-初始化"><a href="#1-初始化" class="headerlink" title="1. 初始化"></a><strong>1. 初始化</strong></h4><p>每个节点维护本地HLC值 <code>c = (pt, l)</code>：</p>
-<figure class="highlight python"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">class</span> <span class="title class_">HLC</span>:</span><br><span class="line">    <span class="keyword">def</span> <span class="title function_">__init__</span>(<span class="params">self</span>):</span><br><span class="line">        <span class="variable language_">self</span>.pt = get_local_physical_time()  <span class="comment"># 当前物理时间</span></span><br><span class="line">        <span class="variable language_">self</span>.l = <span class="number">0</span>                           <span class="comment"># 逻辑计数器</span></span><br></pre></td></tr></table></figure>
+<p>为了方便理解，以下过程均以rocksdb为例来讨论，其实hash存储引擎也可以。</p>
+<h1 id="总览"><a href="#总览" class="headerlink" title="总览"></a>总览</h1><h2 id="gc过程"><a href="#gc过程" class="headerlink" title="gc过程"></a>gc过程</h2><p>像rocksdb的gc的接口，会告诉你当前key和value的值。当前的key设计都是有某种格式，可以取出key的类型，如是string还是hash元数据或是hash子field的数据等等，对于非string的数据的key还会记录本key的版本号，过期时间等，通过以上信息来做gc处理.</p>
+<h2 id="key排序"><a href="#key排序" class="headerlink" title="key排序"></a>key排序</h2><p>对于rocksdb，其在level1之后的sst中会按key直接排序，为了让hashtag一致的key尽量放在一起，便于前缀搜索（删除）等能力，所以的redis请求的key都会处理为</p>
+<figure class="highlight plaintext"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br></pre></td><td class="code"><pre><span class="line">+---------+-----+</span><br><span class="line">| hashtag | key |</span><br><span class="line">+---------+-----+</span><br></pre></td></tr></table></figure>
+<h1 id="string类型"><a href="#string类型" class="headerlink" title="string类型"></a>string类型</h1><h2 id="写过程（set）"><a href="#写过程（set）" class="headerlink" title="写过程（set）"></a>写过程（set）</h2><p>转换后整体key结构如下：</p>
+<figure class="highlight plaintext"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br></pre></td><td class="code"><pre><span class="line">+-----+--------------------+</span><br><span class="line">| key | type(如String是&#x27;S&#x27;) |</span><br><span class="line">+-----+--------------------+</span><br></pre></td></tr></table></figure>
 
-<h4 id="2-生成新时间戳（本地事件）"><a href="#2-生成新时间戳（本地事件）" class="headerlink" title="2. 生成新时间戳（本地事件）"></a><strong>2. 生成新时间戳（本地事件）</strong></h4><p>当节点本地发生事件时（如事务开始）：</p>
-<figure class="highlight python"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">def</span> <span class="title function_">new_event</span>(<span class="params">self</span>):</span><br><span class="line">    <span class="comment"># 更新物理时间为当前时间</span></span><br><span class="line">    new_pt = get_local_physical_time()</span><br><span class="line">    </span><br><span class="line">    <span class="comment"># 规则1：pt必须非递减</span></span><br><span class="line">    <span class="keyword">if</span> new_pt &gt; <span class="variable language_">self</span>.pt:</span><br><span class="line">        <span class="variable language_">self</span>.pt = new_pt</span><br><span class="line">        <span class="variable language_">self</span>.l = <span class="number">0</span>          <span class="comment"># 物理时间前进，重置逻辑计数器</span></span><br><span class="line">    <span class="keyword">else</span>:</span><br><span class="line">        <span class="variable language_">self</span>.l += <span class="number">1</span>         <span class="comment"># 物理时间未变，逻辑计数器递增</span></span><br><span class="line">    </span><br><span class="line">    <span class="keyword">return</span> (<span class="variable language_">self</span>.pt, <span class="variable language_">self</span>.l)</span><br></pre></td></tr></table></figure>
+<p>即找出hashtag，将key转换为<code>hashtag+key+类型号</code>，而value使用pb来表达</p>
+<figure class="highlight pb"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br></pre></td><td class="code"><pre><span class="line">message StringValue &#123;</span><br><span class="line">    uint64 expire_at      = 1<span class="comment">; //过期时间</span></span><br><span class="line">    bytes  user_value     = 2<span class="comment">; //实际的值</span></span><br><span class="line">    uint64 user_value_len = 3<span class="comment">; //值长度</span></span><br><span class="line">    uint64 seq            = 4<span class="comment">; //数据版本，每次修改后单调递增</span></span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+<p>其中seq是单调递增的，比如使用<strong>hlc时钟</strong>的值来做。</p>
+<p>那么set过程很简单，就将以上键值直接调存储引擎的kv存储写进去即可。对于rocksdb，它后续会自己gc掉旧值。</p>
+<h2 id="读过程-get"><a href="#读过程-get" class="headerlink" title="读过程(get)"></a>读过程(get)</h2><p>同样直接get就行。只不过get完之后，多判断一个是否过期，若过期，直接返回<code>nil</code>。</p>
+<h2 id="gc过程-1"><a href="#gc过程-1" class="headerlink" title="gc过程"></a>gc过程</h2><p>过程很简单，gc时取出值，pb解码，获取过期时间，判断是否过期来决定是否gc。</p>
+<h1 id="hash类型"><a href="#hash类型" class="headerlink" title="hash类型"></a>hash类型</h1><h2 id="元数据结构"><a href="#元数据结构" class="headerlink" title="元数据结构"></a>元数据结构</h2><p>会将整个hash结构，分为元数据以及实际field两种kv存储。</p>
+<p>其元数据的key结构如下，其中用<code>&#39;&#39;</code>包括的就是实际字符，表示一种标识而已</p>
+<figure class="highlight pb"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br></pre></td><td class="code"><pre><span class="line"></span><br><span class="line">+-----+-----+-----+----------+-----+</span><br><span class="line">| key | &#x27;H&#x27; | &#x27;_&#x27; | key_size | &#x27;H&#x27; |</span><br><span class="line">+-----+-----+-----+----------+-----+</span><br></pre></td></tr></table></figure>
 
-<h4 id="3-接收消息时间戳（跨节点事件）"><a href="#3-接收消息时间戳（跨节点事件）" class="headerlink" title="3. 接收消息时间戳（跨节点事件）"></a><strong>3. 接收消息时间戳（跨节点事件）</strong></h4><p>当节点收到来自其他节点的消息时，消息携带对方的HLC时间戳 <code>c&#39; = (pt&#39;, l&#39;)</code>：</p>
-<figure class="highlight python"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">def</span> <span class="title function_">receive_message</span>(<span class="params">self, c_remote</span>):</span><br><span class="line">    remote_pt, remote_l = c_remote</span><br><span class="line">    new_pt = <span class="built_in">max</span>(get_local_physical_time(), remote_pt, <span class="variable language_">self</span>.pt)</span><br><span class="line">    </span><br><span class="line">    <span class="keyword">if</span> new_pt == <span class="variable language_">self</span>.pt:</span><br><span class="line">        <span class="comment"># 物理时间未变，逻辑计数器取最大值+1</span></span><br><span class="line">        <span class="variable language_">self</span>.l = <span class="built_in">max</span>(<span class="variable language_">self</span>.l, remote_l) + <span class="number">1</span></span><br><span class="line">    <span class="keyword">elif</span> new_pt == remote_pt:</span><br><span class="line">        <span class="comment"># 远程时间更大，逻辑计数器继承remote_l+1</span></span><br><span class="line">        <span class="variable language_">self</span>.pt = new_pt</span><br><span class="line">        <span class="variable language_">self</span>.l = remote_l + <span class="number">1</span></span><br><span class="line">    <span class="keyword">else</span>:</span><br><span class="line">        <span class="comment"># 本地物理时间更大，重置逻辑计数器</span></span><br><span class="line">        <span class="variable language_">self</span>.pt = new_pt</span><br><span class="line">        <span class="variable language_">self</span>.l = <span class="number">0</span></span><br><span class="line">    </span><br><span class="line">    <span class="keyword">return</span> (<span class="variable language_">self</span>.pt, <span class="variable language_">self</span>.l)</span><br></pre></td></tr></table></figure>
+<p>可以看到有一个key_size。倒数第一位的’H’表示该为hash结构的key。</p>
+<p>元数据的value表示为pb如下</p>
+<figure class="highlight pb"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br></pre></td><td class="code"><pre><span class="line">message HashMetadata &#123;</span><br><span class="line">    uint64 version             = 1<span class="comment">; //sub key版本，用于异步删除</span></span><br><span class="line">    uint64 expire_at           = 2<span class="comment">;</span></span><br><span class="line">    uint32 count               = 3<span class="comment">;</span></span><br><span class="line">    uint32 slot_num            = 4<span class="comment">;</span></span><br><span class="line">    repeated bytes user_fields = 9<span class="comment">;</span></span><br><span class="line">    bytes data                 = 10<span class="comment">; // inline data</span></span><br><span class="line">    uint64 seq                 = 11<span class="comment">; // 数据版本</span></span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
 
-<hr>
-<h3 id="HLC-如何保证因果一致性？"><a href="#HLC-如何保证因果一致性？" class="headerlink" title="HLC 如何保证因果一致性？"></a><strong>HLC 如何保证因果一致性？</strong></h3><p>因果一致性要求：如果事件A因果先于事件B，则A的HLC时间戳必须小于B的时间戳。HLC通过以下规则保证这一点：</p>
+<p>这里对pb一些字段重点解释一下：</p>
+<ul>
+<li><code>bytes data</code>如果有值，表示元数据和实际的全部数据放在了一起存储，对于超大hash结构而言，这是不可接受的。所以也提供配置可以让两者分开成kv存储。</li>
+<li><code>slot_num</code>，理解为hash字段所有的field的分片数。如果该值不设置。那么每一个hash的field都会作为一个kv存储到底层引擎中。如果该值设置了，假如为10，那么底层存储最多，该hash的key对应的field只会有10个kv存储，因此可以理解为将多个field聚合在了一起，减少访问底层存储的次数，但同样的缺点是无法控制每个slot的对应field数量的大小，最终可能会变得非常大。</li>
+<li><code>version</code>，递增的版本号，可以用hlc时钟。实际表示一种存在的先后顺序，只要hash这个key创建了，在删除之前该字段都不会改变。直到删除再创建。</li>
+<li><code>count</code>, field的数量</li>
+<li><code>user_fields</code>,存储所有field的键，这个实际作为一种优化，作为field数量少时，能快速判断某些键是否存在。当field数量太大时该值会被置为空，走正常逻辑。</li>
+<li><code>seq</code>，表示真正的读写版本号，每次进行hash的写操作，该值递增。同样可以使用hlc时钟。<blockquote>
+<p>seq实际上没什么用，用来数据库看信息的而已</p>
+</blockquote>
+</li>
+</ul>
+<h2 id="field数据结构"><a href="#field数据结构" class="headerlink" title="field数据结构"></a>field数据结构</h2><p>key结构如下</p>
+<figure class="highlight pb"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br></pre></td><td class="code"><pre><span class="line">+-----+-----+-----+--------------+-----+-----------------+-------+----------+-----+</span><br><span class="line">| key | &#x27;H&#x27; | &#x27;_&#x27; | meta:version | &#x27;_&#x27; | &#x27;F&#x27;(hash-field) | field | key_size | &#x27;H&#x27; |</span><br><span class="line">+-----+-----+-----+--------------+-----+-----------------+-------+----------+-----+</span><br><span class="line"></span><br></pre></td></tr></table></figure>
+
+<ul>
+<li>‘F’表示该为hash的field</li>
+<li>key_size不是field这个长度，而是hash-key长度</li>
+<li>注意里面包含了元数据版本号</li>
+</ul>
+<p>value没有特殊结构，直接采用的原value的string值。</p>
+<h2 id="写过程-hmset"><a href="#写过程-hmset" class="headerlink" title="写过程(hmset)"></a>写过程(hmset)</h2><p>以下不解释以上数据结构对应的优化路径，如slot_num、user_fields、bytes_data等等，用正常的路径解释全过程。</p>
+<p>所有的写操作都聚合成一个原子操作<code>write_batch</code>，底层存储引擎保证了同时成功或同时失败。</p>
+<p>以命令举例：<code>hmset key filed1 1 filed 2</code></p>
 <ol>
-<li><strong>本地事件顺序</strong>：同一节点内的事件，HLC时间戳严格递增（通过<code>l</code>递增）。</li>
-<li><strong>跨节点事件顺序</strong>：如果节点A发送消息给节点B，则B在接收消息时会将自己的HLC更新为 <code>max(A.pt, B.pt)</code>，并递增逻辑计数器，确保后续事件的时间戳更大。</li>
-<li><strong>物理时间的单调性</strong>：即使物理时钟回退（如NTP调整），HLC的<code>pt</code>部分只会取当前时间或消息中更大的时间，避免回退。</li>
+<li>获取key对应的meta元数据信息，若没有，则创建一个。若原来存在，查询field1和field2的值，如果原来该值若不存在，往底层存储新增该值。</li>
+<li>根据第一步得到的新增field数量，更新meta元数据的count值，后续也需要返回新增field的数量给用户</li>
+<li>meta的seq增加，最终写入新的元数据</li>
 </ol>
-<hr>
-<h3 id="HLC-与-NTP-的依赖关系"><a href="#HLC-与-NTP-的依赖关系" class="headerlink" title="HLC 与 NTP 的依赖关系"></a><strong>HLC 与 NTP 的依赖关系</strong></h3><p>HLC <strong>不完全依赖NTP的严格同步</strong>，但需要NTP将物理时钟误差控制在合理范围内：</p>
+<h2 id="读过程-hget"><a href="#读过程-hget" class="headerlink" title="读过程(hget)"></a>读过程(hget)</h2><ol>
+<li>获取meta信息，主要是获取version，来拼接field的对应key前缀</li>
+<li>直接get对应field的值即可</li>
+</ol>
+<blockquote>
+<p>meta的version太老了（还未gc），或者过期了，代码会表现为获取不到meta信息，则可以直接返回get不到对应的field的值</p>
+</blockquote>
+<h2 id="gc过程-2"><a href="#gc过程-2" class="headerlink" title="gc过程"></a>gc过程</h2><p>对于meta数据kv，只需要检查是否过期，或者其count数量是否为0即可。如果满足以上，那么可以直接gc掉。</p>
+<p>对于field数据,回查meta版本信息，如果meta版本大于当前field版本，或者meta已经过期了，都可以gc。</p>
+<blockquote>
+<p>实际回查meta太重了，因此用了一个缓存存了起来，缓存1秒钟更新一次，防止短期compaction产生大量回查db的操作。</p>
+</blockquote>
+<h1 id="set类型"><a href="#set类型" class="headerlink" title="set类型"></a>set类型</h1><p>和hash类型几乎一模一样，只有value为空的区别。</p>
+<h1 id="list类型"><a href="#list类型" class="headerlink" title="list类型"></a>list类型</h1><h2 id="元数据结构-1"><a href="#元数据结构-1" class="headerlink" title="元数据结构"></a>元数据结构</h2><p>key的结构和hash基本一致</p>
+<figure class="highlight pb"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br></pre></td><td class="code"><pre><span class="line"></span><br><span class="line">+-----+-----+-----+----------+-----+</span><br><span class="line">| key | &#x27;L&#x27; | &#x27;_&#x27; | key_size | &#x27;L&#x27; |</span><br><span class="line">+-----+-----+-----+----------+-----+</span><br></pre></td></tr></table></figure>
+
+<p>value的pb结构如下</p>
+<figure class="highlight pb"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br></pre></td><td class="code"><pre><span class="line">message ListMetadata &#123;</span><br><span class="line">    uint64 version     = 1<span class="comment">;</span></span><br><span class="line">    uint64 expire_at   = 2<span class="comment">;</span></span><br><span class="line">    uint32 count       = 3<span class="comment">;</span></span><br><span class="line">    uint64 left_index  = 4<span class="comment">;</span></span><br><span class="line">    uint64 right_index = 5<span class="comment">;</span></span><br><span class="line">    uint64 seq         = 6<span class="comment">;</span></span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+<p>注意，meta值初始化时，left_index并非为0，right_idx（开区间）并非为1，具体实现是取了uint64的最大值的一半，从而可以往两边扩容。即lpush时能减少left_index，rpush时增加right_index。</p>
+<h2 id="field数据结构-1"><a href="#field数据结构-1" class="headerlink" title="field数据结构"></a>field数据结构</h2><p>key结构如下，其实和hash差不多，field换成了当前item所在的index而已</p>
+<figure class="highlight pb"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br></pre></td><td class="code"><pre><span class="line">+-----+-----+-----+--------------+-----+-----------------+-------+----------+-----+</span><br><span class="line">| key | &#x27;L&#x27; | &#x27;_&#x27; | meta:version | &#x27;_&#x27; | &#x27;I&#x27;(list-field) | index | key_size | &#x27;L&#x27; |</span><br><span class="line">+-----+-----+-----+--------------+-----+-----------------+-------+----------+-----+</span><br><span class="line"></span><br></pre></td></tr></table></figure>
+
+<p>value值就是list这个item的值</p>
+<h2 id="写过程-lpush与lpop"><a href="#写过程-lpush与lpop" class="headerlink" title="写过程(lpush与lpop)"></a>写过程(lpush与lpop)</h2><p>lpush如下：</p>
 <ol>
-<li><strong>物理时钟同步</strong>：NTP用于校准节点的本地物理时钟，减少不同节点之间的物理时间偏差（例如误差在几百毫秒内）。</li>
-<li><strong>容忍时钟回退</strong>：当NTP调整导致本地物理时间回退时，HLC通过逻辑计数器补偿：<ul>
-<li>如果本地物理时间回退（例如从 <code>t=100</code> 回退到 <code>t=90</code>），HLC的<code>pt</code>仍然保持之前的值（<code>pt=100</code>），直到本地物理时间再次超过当前<code>pt</code>。</li>
-<li>逻辑计数器<code>l</code>会在<code>pt</code>未更新时递增，确保时间戳不重复且单调递增。</li>
-</ul>
-</li>
+<li>查meta</li>
+<li>改meta，即lpush改left_index，count&#x3D;count+1等</li>
+<li>写具体item的kv值。</li>
 </ol>
-<hr>
-<h3 id="HLC-的伪代码流程示例"><a href="#HLC-的伪代码流程示例" class="headerlink" title="HLC 的伪代码流程示例"></a><strong>HLC 的伪代码流程示例</strong></h3><p>假设两个节点A和B，物理时钟初始同步，但之后B的时钟因NTP调整回退：</p>
-<table>
-<thead>
-<tr>
-<th>步骤</th>
-<th>事件</th>
-<th>节点A的HLC <code>(pt, l)</code></th>
-<th>节点B的HLC <code>(pt, l)</code></th>
-</tr>
-</thead>
-<tbody><tr>
-<td>1</td>
-<td>初始状态</td>
-<td>(100, 0)</td>
-<td>(100, 0)</td>
-</tr>
-<tr>
-<td>2</td>
-<td>A发生本地事件</td>
-<td>(100, 1)</td>
-<td>-</td>
-</tr>
-<tr>
-<td>3</td>
-<td>A发送消息给B，携带 <code>(100, 1)</code></td>
-<td>-</td>
-<td>B收到消息后更新为 <code>(100, 2)</code></td>
-</tr>
-<tr>
-<td>4</td>
-<td>B的物理时钟因NTP回退到90</td>
-<td>-</td>
-<td>B本地事件生成 <code>(100, 3)</code>（物理时间未更新，逻辑计数器递增）</td>
-</tr>
-<tr>
-<td>5</td>
-<td>B物理时钟恢复后达到101</td>
-<td>-</td>
-<td>B本地事件生成 <code>(101, 0)</code>（物理时间前进，重置逻辑计数器）</td>
-</tr>
-</tbody></table>
-<hr>
-<h3 id="HLC-的优势与限制"><a href="#HLC-的优势与限制" class="headerlink" title="HLC 的优势与限制"></a><strong>HLC 的优势与限制</strong></h3><ul>
-<li><strong>优势</strong>：<ul>
-<li>无单点故障，适用于分布式系统。</li>
-<li>容忍物理时钟偏差，同时保证因果一致性。</li>
-<li>时间戳空间占用小（仅需存储<code>pt</code>和<code>l</code>）。</li>
-</ul>
-</li>
-<li><strong>限制</strong>：<ul>
-<li>逻辑计数器可能因高并发快速递增（需优化存储）。</li>
-<li>依赖NTP将物理时钟误差控制在合理范围内。</li>
-</ul>
-</li>
-</ul>
-<hr>
-<h3 id="实际应用案例"><a href="#实际应用案例" class="headerlink" title="实际应用案例"></a><strong>实际应用案例</strong></h3><ul>
-<li><strong>CockroachDB</strong>：使用HLC实现多版本并发控制（MVCC），确保事务的全局顺序。</li>
-<li><strong>分布式日志系统</strong>：通过HLC标记日志顺序，避免跨节点时钟偏差问题。</li>
-</ul>
-<hr>
-<h3 id="总结-1"><a href="#总结-1" class="headerlink" title="总结"></a><strong>总结</strong></h3><p>HLC通过 <strong>混合物理时间和逻辑计数器</strong>，在容忍物理时钟偏差的同时保证了因果一致性。其核心实现规则是：  </p>
+<p>lpop如下：</p>
 <ol>
-<li>本地事件时优先使用物理时间，逻辑计数器仅在物理时间不变时递增。  </li>
-<li>跨节点通信时，通过比较远程和本地时间戳，更新为更大的物理时间，并重置或递增逻辑计数器。</li>
+<li>查meta，获得left_index，其+1则为当前最左边的key的index</li>
+<li>db-&gt;Get()获取对应的key，然后db-&gt;Delete()</li>
 </ol>
-<p>这种设计使得HLC在分布式系统中既能避免中心化时间戳服务的性能瓶颈，又能提供足够的一致性保证。</p>
-<h2 id="HLC实现的两阶段提交"><a href="#HLC实现的两阶段提交" class="headerlink" title="HLC实现的两阶段提交"></a>HLC实现的两阶段提交</h2><h3 id="1-两阶段提交流程（基于HLC）"><a href="#1-两阶段提交流程（基于HLC）" class="headerlink" title="1. 两阶段提交流程（基于HLC）"></a><strong>1. 两阶段提交流程（基于HLC）</strong></h3><h4 id="事务T1的执行"><a href="#事务T1的执行" class="headerlink" title="事务T1的执行"></a><strong>事务T1的执行</strong></h4><p><strong>1. 事务开始</strong></p>
-<ul>
-<li><strong>协调者C</strong> 生成事务T1的<code>start_ts = (100, 1)</code>（HLC初始为<code>(100, 0)</code>，调用<code>new_event()</code>后递增为<code>(100, 1)</code>）。</li>
-</ul>
-<p><strong>2. 准备阶段（Phase 1）</strong></p>
-<ul>
-<li><strong>协调者C</strong> 发送准备请求（携带<code>start_ts=(100, 1)</code>）给P1和P2。</li>
-<li><strong>参与者P1</strong>：<ul>
-<li>收到消息后更新HLC：<code>P1.receive_message(100, 1)</code> → HLC&#x3D;<code>(100, 2)</code>。</li>
-<li>锁定数据X，回复“YES”并返回当前HLC&#x3D;<code>(100, 2)</code>。</li>
-</ul>
+<h2 id="读过程-lrange"><a href="#读过程-lrange" class="headerlink" title="读过程(lrange)"></a>读过程(lrange)</h2><ol>
+<li>查meta，得到left_index和right_index，通过和lrange传入的start与end计算实际底层存储key对于的index范围</li>
+<li>获取upper_bound位置（查找右边界对应的key）对应的底层db迭代器，然后一路向左扫</li>
+<li>扫的时候检查所以key的前缀是否满足对应格式<code>(key+&#39;L&#39;+meta:version等等)</code>，满足则加入返回数组中，一直扫到足够的数据为止。<blockquote>
+<p>rocksdb会用类似于归并的方法，level0多个sst+level1-&gt;level10多路扫描。</p>
+</blockquote>
 </li>
-<li><strong>参与者P2</strong>：<ul>
-<li>收到消息时本地HLC&#x3D;<code>(90, 5)</code>（物理时钟滞后）。</li>
-<li>更新HLC：<code>P2.receive_message(100, 1)</code> → <code>pt=max(90, 100)=100</code>，<code>l=max(5,1)+1=6</code> → HLC&#x3D;<code>(100, 6)</code>。</li>
-<li>锁定数据Y，回复“YES”并返回当前HLC&#x3D;<code>(100, 6)</code>。</li>
-</ul>
-</li>
-</ul>
-<p><strong>3. 生成提交时间戳</strong></p>
-<ul>
-<li><strong>协调者C</strong> 收到P1和P2的“YES”及它们的HLC&#x3D;<code>(100,2)</code>和<code>(100,6)</code>。</li>
-<li><strong>协调者C</strong> 生成<code>commit_ts = max((100,2), (100,6)) = (100,6)</code>，确保其大于所有参与者的HLC。</li>
-</ul>
-<p><strong>4. 提交阶段（Phase 2）</strong></p>
-<ul>
-<li><strong>协调者C</strong> 发送提交请求（携带<code>commit_ts=(100,6)</code>）给P1和P2。</li>
-<li><strong>参与者P1</strong>：<ul>
-<li>收到<code>commit_ts=(100,6)</code>，更新HLC：<code>P1.receive_message(100,6)</code> → <code>pt=100</code>，<code>l=max(2,6)+1=7</code> → HLC&#x3D;<code>(100,7)</code>。</li>
-<li>将数据X的提交时间戳设为<code>(100,6)</code>，释放锁。</li>
-</ul>
-</li>
-<li><strong>参与者P2</strong>：<ul>
-<li>当前HLC&#x3D;<code>(100,6)</code>，收到<code>commit_ts=(100,6)</code>后更新HLC：<code>l=max(6,6)+1=7</code> → HLC&#x3D;<code>(100,7)</code>。</li>
-<li>将数据Y的提交时间戳设为<code>(100,6)</code>，释放锁。</li>
-</ul>
-</li>
-</ul>
-<p><strong>结果</strong>：事务T1成功提交，无冲突。</p>
-<hr>
-<h3 id="2-关键点说明"><a href="#2-关键点说明" class="headerlink" title="2. 关键点说明"></a><strong>2. 关键点说明</strong></h3><h4 id="提交时间戳的生成逻辑"><a href="#提交时间戳的生成逻辑" class="headerlink" title="提交时间戳的生成逻辑"></a><strong>提交时间戳的生成逻辑</strong></h4><ul>
-<li><strong>逻辑</strong>：协调者必须收集所有参与者在准备阶段返回的HLC，取最大值作为<code>commit_ts</code>，确保其足够大。</li>
-</ul>
-<h4 id="HLC的更新规则"><a href="#HLC的更新规则" class="headerlink" title="HLC的更新规则"></a><strong>HLC的更新规则</strong></h4><ul>
-<li>在提交阶段，参与者收到<code>commit_ts</code>后，需根据HLC规则更新本地时钟：<figure class="highlight python"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">def</span> <span class="title function_">receive_commit</span>(<span class="params">self, commit_pt, commit_l</span>):</span><br><span class="line">    new_pt = <span class="built_in">max</span>(get_local_physical_time(), commit_pt, <span class="variable language_">self</span>.pt)</span><br><span class="line">    <span class="keyword">if</span> new_pt == <span class="variable language_">self</span>.pt:</span><br><span class="line">        <span class="variable language_">self</span>.l = <span class="built_in">max</span>(<span class="variable language_">self</span>.l, commit_l) + <span class="number">1</span></span><br><span class="line">    <span class="keyword">elif</span> new_pt == commit_pt:</span><br><span class="line">        <span class="variable language_">self</span>.l = commit_l + <span class="number">1</span></span><br><span class="line">    <span class="keyword">else</span>:</span><br><span class="line">        <span class="variable language_">self</span>.l = <span class="number">0</span></span><br><span class="line">    <span class="variable language_">self</span>.pt = new_pt</span><br></pre></td></tr></table></figure>
-<ul>
-<li>参与者接受<code>commit_ts</code>后，其HLC会更新至更大值，避免后续事务因时间戳冲突回滚。</li>
-</ul>
-</li>
-</ul>
-<hr>
-<h3 id="3-并发事务示例（事务T2）"><a href="#3-并发事务示例（事务T2）" class="headerlink" title="3. 并发事务示例（事务T2）"></a><strong>3. 并发事务示例（事务T2）</strong></h3><p>假设事务T2在T1提交后发起，由另一个协调者C’处理：</p>
-<p><strong>1. 事务开始</strong></p>
-<ul>
-<li><strong>协调者C’</strong> 生成<code>start_ts=(100,7)</code>（基于本地HLC）。</li>
-</ul>
-<p><strong>2. 准备阶段</strong></p>
-<ul>
-<li><strong>参与者P1</strong>：<ul>
-<li>当前HLC&#x3D;<code>(100,7)</code>，数据X已提交（版本<code>X@(100,6)</code>）。</li>
-<li>检查无写冲突，锁定X的新版本，回复“YES”并返回HLC&#x3D;<code>(100,8)</code>。</li>
-</ul>
-</li>
-<li><strong>参与者P2</strong>：<ul>
-<li>当前HLC&#x3D;<code>(100,7)</code>，数据Y已提交（版本<code>Y@(100,6)</code>）。</li>
-<li>检查无冲突，锁定Y的新版本，回复“YES”并返回HLC&#x3D;<code>(100,8)</code>。</li>
-</ul>
-</li>
-</ul>
-<p><strong>3. 提交阶段</strong></p>
-<ul>
-<li><strong>协调者C’</strong> 生成<code>commit_ts=max((100,8), (100,8)) = (100,8)</code>。</li>
-<li>参与者更新数据版本至<code>(100,8)</code>，事务T2成功提交。</li>
-</ul>
-<hr>
-<h3 id="4-协调者并发处理的可行性"><a href="#4-协调者并发处理的可行性" class="headerlink" title="4. 协调者并发处理的可行性"></a><strong>4. 协调者并发处理的可行性</strong></h3><h4 id="多协调者并发"><a href="#多协调者并发" class="headerlink" title="多协调者并发"></a><strong>多协调者并发</strong></h4><ul>
-<li><strong>无锁设计</strong>：每个协调者独立生成<code>start_ts</code>和<code>commit_ts</code>，只要按HLC规则生成时间戳，事务顺序由时间戳自然决定。</li>
-<li><strong>冲突解决</strong>：<ul>
-<li>若两个事务操作同一数据，参与者会根据<code>commit_ts</code>大小决定哪个事务优先提交。</li>
-<li>例如，若T1的<code>commit_ts=(100,6)</code>，T2的<code>commit_ts=(100,8)</code>，T2的写入会覆盖T1。</li>
-</ul>
-</li>
-</ul>
-<h4 id="示例场景"><a href="#示例场景" class="headerlink" title="示例场景"></a><strong>示例场景</strong></h4><ul>
-<li><strong>协调者C处理T1</strong>，协调者C’处理T2。</li>
-<li>T1的<code>commit_ts=(100,6)</code>，T2的<code>commit_ts=(100,8)</code>。</li>
-<li>数据版本按时间戳排序，T2的更新对后续事务可见。</li>
-</ul>
+</ol>
+<p>以上还有一个注意点，扫的过程应该是快照扫，否则扫到非预期的结果，比如扫着扫着，compaction给gc掉了。所以严格来说需要上层给key加锁，要不就确保快照读(rocksdb快照读其实也跟gc冲突，无解)，不能改其meta数据。</p>
+<blockquote>
+<p>一种做法是，gc时在版本校验的基础上，增加时间检查，不准gc 30分钟内的旧版本数据。（version实际是hlc时钟）</p>
+</blockquote>
+<h2 id="gc过程-3"><a href="#gc过程-3" class="headerlink" title="gc过程"></a>gc过程</h2><p>跟hash一模一样。</p>
+<h1 id="zset类型"><a href="#zset类型" class="headerlink" title="zset类型"></a>zset类型</h1><h2 id="元数据结构-2"><a href="#元数据结构-2" class="headerlink" title="元数据结构"></a>元数据结构</h2><p>key的结构和hash基本一致</p>
+<figure class="highlight pb"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br></pre></td><td class="code"><pre><span class="line"></span><br><span class="line">+-----+-----+-----+----------+-----+</span><br><span class="line">| key | &#x27;Z&#x27; | &#x27;_&#x27; | key_size | &#x27;Z&#x27; |</span><br><span class="line">+-----+-----+-----+----------+-----+</span><br></pre></td></tr></table></figure>
+
+<p>value的pb结构如下</p>
+<figure class="highlight pb"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br></pre></td><td class="code"><pre><span class="line">message ZSetMetadata &#123;</span><br><span class="line">    uint64 version     = 1<span class="comment">;</span></span><br><span class="line">    uint64 expire_at   = 2<span class="comment">;</span></span><br><span class="line">    uint32 count       = 3<span class="comment">;</span></span><br><span class="line">    uint64 seq         = 4<span class="comment">;`</span></span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+
+<h2 id="field数据结构-2"><a href="#field数据结构-2" class="headerlink" title="field数据结构"></a>field数据结构</h2><p>有两种field，即一个field会在rocksdb中有两种kv同时存在</p>
+<h3 id="只有member"><a href="#只有member" class="headerlink" title="只有member"></a>只有member</h3><p>：</p>
+<p>key结构如下，其实和hash差不多，field换成了当前member的名字而已(非score)</p>
+<figure class="highlight pb"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br></pre></td><td class="code"><pre><span class="line">+-----+-----+-----+--------------+-----+------------------+-------+----------+-----+</span><br><span class="line">| key | &#x27;Z&#x27; | &#x27;_&#x27; | meta:version | &#x27;_&#x27; | &#x27;M&#x27;(zset-member) | member | key_size | &#x27;Z&#x27; |</span><br><span class="line">+-----+-----+-----+--------------+-----+------------------+-------+----------+-----+</span><br><span class="line"></span><br></pre></td></tr></table></figure>
+
+<p>value值就是这个member的score值</p>
+<h3 id="member和score都有"><a href="#member和score都有" class="headerlink" title="member和score都有"></a>member和score都有</h3><figure class="highlight pb"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br></pre></td><td class="code"><pre><span class="line">+-----+-----+-----+--------------+-----+------------------------+-------+--------+----------+-----+</span><br><span class="line">| key | &#x27;Z&#x27; | &#x27;_&#x27; | meta:version | &#x27;_&#x27; | &#x27;S&#x27;(zset-score-member) | score | member | key_size | &#x27;Z&#x27; |</span><br><span class="line">+-----+-----+-----+--------------+-----+------------------------+-------+--------+----------+-----+</span><br><span class="line"></span><br></pre></td></tr></table></figure>
+<blockquote>
+<p>之所以score放前面，是利用了rocksdb的排序能力，score是特殊处理的一种uint64格式，可以让rocksdb直接按大于排序</p>
+</blockquote>
+<p>value值为空</p>
+<h2 id="写过程-zadd"><a href="#写过程-zadd" class="headerlink" title="写过程(zadd)"></a>写过程(zadd)</h2><p>如<code>zdd key score1 member1 score2 member2</code></p>
+<p>过程如下，注意若第2步查member不存在，那么直接跳到第3步：</p>
+<ol>
+<li>查元数据，得到version</li>
+<li>查member1的只带member的field的值，得到old-score，如果和新插入的score相等直接返回，如果不相等，记录删除命令-&gt;带member和旧score的field。</li>
+<li>往db中put更新只带member的field对应的新值，同时也put，member和score都有的field的新值。<br>å<br>若是zrem，直接删除两个field即可。</li>
+</ol>
+<h2 id="读过程-zrangebyscore"><a href="#读过程-zrangebyscore" class="headerlink" title="读过程(zrangebyscore)"></a>读过程(zrangebyscore)</h2><p>如<code>zrangebyscore key 200 221 withscores</code></p>
+<ol>
+<li>查元数据，得到version</li>
+<li>获取db的迭代器，将其seek定位到最低分数200处，即定位到如下，注意member直接为空，因为rocksdb会保证按前缀排序，因此大于200分数的，必定在其右侧。<figure class="highlight pb"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br></pre></td><td class="code"><pre><span class="line">+-----+-----+-----+--------------+-----+------------------------+-------+--------+----------+-----+</span><br><span class="line">| key | &#x27;Z&#x27; | &#x27;_&#x27; | meta:version | &#x27;_&#x27; | &#x27;S&#x27;(zset-score-member) | 200 | <span class="string">&quot;&quot;</span> | key_size | &#x27;Z&#x27; |</span><br><span class="line">+-----+-----+-----+--------------+-----+------------------------+-------+--------+----------+-----+</span><br><span class="line"></span><br></pre></td></tr></table></figure></li>
+<li>将迭代器调用<code>Next()</code>,逐步获取后面的key，校验其key格式是否满足以上前缀，若满足，取出score值，判断分熟是否在range范围内，如果在，直接添加到返回列表即可</li>
+</ol>
+<blockquote>
+<p>注：zrange（非byscore）的实现比redis差很多，迭代器会从头扫到尾，直到满足返回数量，没法用二分查找定位到start_index的位置。</p>
+</blockquote>
+<h2 id="gc过程-4"><a href="#gc过程-4" class="headerlink" title="gc过程"></a>gc过程</h2><p>跟hash一模一样。</p>
 
       
     </div>
@@ -591,7 +367,7 @@
 
 
   <nav class="pagination">
-    <a class="extend prev" rel="prev" title="上一页" aria-label="上一页" href="/page/13/"><i class="fa fa-angle-left"></i></a><a class="page-number" href="/">1</a><span class="space">&hellip;</span><a class="page-number" href="/page/13/">13</a><span class="page-number current">14</span><a class="page-number" href="/page/15/">15</a><span class="space">&hellip;</span><a class="page-number" href="/page/28/">28</a><a class="extend next" rel="next" title="下一页" aria-label="下一页" href="/page/15/"><i class="fa fa-angle-right"></i></a>
+    <a class="extend prev" rel="prev" title="上一页" aria-label="上一页" href="/page/13/"><i class="fa fa-angle-left"></i></a><a class="page-number" href="/">1</a><span class="space">&hellip;</span><a class="page-number" href="/page/13/">13</a><span class="page-number current">14</span><a class="page-number" href="/page/15/">15</a><span class="space">&hellip;</span><a class="page-number" href="/page/30/">30</a><a class="extend next" rel="next" title="下一页" aria-label="下一页" href="/page/15/"><i class="fa fa-angle-right"></i></a>
   </nav>
 
 </div>
