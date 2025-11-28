@@ -27,7 +27,7 @@
 <meta property="og:description" content="引言经过学习的哈希引擎深入，并开始接手公司哈希引擎开发，逐渐意识到哈希引擎的一些设计难点。本文主要针对非原子性读写这个难点谈谈。 hash引擎可以最简单的抽象为两大部份：  存储的读写操作。即从ssd中读出来数据，或将内存修改好的buffer数据落盘。 内存索引的修改操作。  这两大部份无法做到原子性，因为你不可能全程加大锁，对ssd的写操作假如需要sync，那耗费的时间难以接受。那么这个不能原子">
 <meta property="og:locale" content="zh_CN">
 <meta property="article:published_time" content="2025-04-28T02:15:51.000Z">
-<meta property="article:modified_time" content="2025-09-03T11:47:52.875Z">
+<meta property="article:modified_time" content="2025-11-28T09:46:56.418Z">
 <meta property="article:author" content="Corgis">
 <meta name="twitter:card" content="summary">
 
@@ -126,13 +126,13 @@
   <nav class="site-state">
       <div class="site-state-item site-state-posts">
         <a href="/archives/">
-          <span class="site-state-item-count">30</span>
+          <span class="site-state-item-count">34</span>
           <span class="site-state-item-name">日志</span>
         </a>
       </div>
       <div class="site-state-item site-state-categories">
           <a href="/categories/">
-        <span class="site-state-item-count">13</span>
+        <span class="site-state-item-count">14</span>
         <span class="site-state-item-name">分类</span></a>
       </div>
   </nav>

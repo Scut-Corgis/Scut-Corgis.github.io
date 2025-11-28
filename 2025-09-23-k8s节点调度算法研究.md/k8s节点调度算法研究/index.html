@@ -1,0 +1,442 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+<meta name="viewport" content="width=device-width">
+<meta name="theme-color" content="#222"><meta name="generator" content="Hexo 7.3.0">
+
+  <link rel="apple-touch-icon" sizes="180x180" href="/images/apple-touch-icon-next.png">
+  <link rel="icon" type="image/png" sizes="32x32" href="/images/corgis.jpg">
+  <link rel="icon" type="image/png" sizes="16x16" href="/images/corgis.jpg">
+  <link rel="mask-icon" href="/images/logo.svg" color="#222">
+
+<link rel="stylesheet" href="/css/main.css">
+
+
+
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.2/css/all.min.css" integrity="sha256-XOqroi11tY4EFQMR9ZYwZWKj5ZXiftSx36RRuC3anlA=" crossorigin="anonymous">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/animate.css/3.1.1/animate.min.css" integrity="sha256-PR7ttpcvz8qrF57fur/yAx1qXMFJeJFiA6pSzWi0OIE=" crossorigin="anonymous">
+
+<script class="next-config" data-name="main" type="application/json">{"hostname":"scut-corgis.github.io","root":"/","images":"/images","scheme":"Muse","darkmode":false,"version":"8.20.0","exturl":false,"sidebar":{"position":"left","width_expanded":320,"width_dual_column":240,"display":"always","padding":18,"offset":12},"hljswrap":true,"copycode":{"enable":true,"style":null},"fold":{"enable":true,"height":500},"bookmark":{"enable":false,"color":"#222","save":"auto"},"mediumzoom":false,"lazyload":false,"pangu":false,"comments":{"style":"tabs","active":null,"storage":true,"lazyload":false,"nav":null},"stickytabs":false,"motion":{"enable":true,"async":false,"transition":{"menu_item":"fadeInDown","post_block":"fadeIn","post_header":"fadeInDown","post_body":"fadeInDown","coll_header":"fadeInLeft","sidebar":"fadeInUp"}},"prism":false,"i18n":{"placeholder":"搜索...","empty":"没有找到任何搜索结果：${query}","hits_time":"找到 ${hits} 个搜索结果（用时 ${time} 毫秒）","hits":"找到 ${hits} 个搜索结果"}}</script><script src="/js/config.js"></script>
+
+    <meta name="description" content="背景当前的运维平台节点选机器算法比较简陋，如cpu、内存够用的情况下选内存最小的，过滤算法也比较粗暴，只考虑内存、cpu和实例节点数小于某个阈值。最终造成了较大的资源浪费和不均衡，也经常选不出机器。 当前目标是优化当前的总体机器资源利用率，防止选不出机器部署节点。 本文调研了节点scheduler算法，或者称为装箱算法，需要找出一种适合我们管控平台的装箱算法，用于优化资源利用率。 总的来说，主要参">
+<meta property="og:type" content="article">
+<meta property="og:title" content="k8s节点调度算法研究">
+<meta property="og:url" content="https://scut-corgis.github.io/2025-09-23-k8s%E8%8A%82%E7%82%B9%E8%B0%83%E5%BA%A6%E7%AE%97%E6%B3%95%E7%A0%94%E7%A9%B6.md/k8s%E8%8A%82%E7%82%B9%E8%B0%83%E5%BA%A6%E7%AE%97%E6%B3%95%E7%A0%94%E7%A9%B6/index.html">
+<meta property="og:site_name" content="corgis的笔记">
+<meta property="og:description" content="背景当前的运维平台节点选机器算法比较简陋，如cpu、内存够用的情况下选内存最小的，过滤算法也比较粗暴，只考虑内存、cpu和实例节点数小于某个阈值。最终造成了较大的资源浪费和不均衡，也经常选不出机器。 当前目标是优化当前的总体机器资源利用率，防止选不出机器部署节点。 本文调研了节点scheduler算法，或者称为装箱算法，需要找出一种适合我们管控平台的装箱算法，用于优化资源利用率。 总的来说，主要参">
+<meta property="og:locale" content="zh_CN">
+<meta property="og:image" content="https://scut-corgis.github.io/tlp-graph.png">
+<meta property="og:image" content="https://scut-corgis.github.io/image6.png">
+<meta property="og:image" content="https://scut-corgis.github.io/image9.png">
+<meta property="og:image" content="https://scut-corgis.github.io/image1.png">
+<meta property="article:published_time" content="2025-09-23T03:55:05.000Z">
+<meta property="article:modified_time" content="2025-11-28T09:46:56.428Z">
+<meta property="article:author" content="Corgis">
+<meta name="twitter:card" content="summary">
+<meta name="twitter:image" content="https://scut-corgis.github.io/tlp-graph.png">
+
+
+<link rel="canonical" href="https://scut-corgis.github.io/2025-09-23-k8s%E8%8A%82%E7%82%B9%E8%B0%83%E5%BA%A6%E7%AE%97%E6%B3%95%E7%A0%94%E7%A9%B6.md/k8s%E8%8A%82%E7%82%B9%E8%B0%83%E5%BA%A6%E7%AE%97%E6%B3%95%E7%A0%94%E7%A9%B6/">
+
+
+
+<script class="next-config" data-name="page" type="application/json">{"sidebar":"","isHome":false,"isPost":true,"lang":"zh-CN","comments":true,"permalink":"https://scut-corgis.github.io/2025-09-23-k8s%E8%8A%82%E7%82%B9%E8%B0%83%E5%BA%A6%E7%AE%97%E6%B3%95%E7%A0%94%E7%A9%B6.md/k8s%E8%8A%82%E7%82%B9%E8%B0%83%E5%BA%A6%E7%AE%97%E6%B3%95%E7%A0%94%E7%A9%B6/","path":"2025-09-23-k8s节点调度算法研究.md/k8s节点调度算法研究/","title":"k8s节点调度算法研究"}</script>
+
+<script class="next-config" data-name="calendar" type="application/json">""</script>
+<title>k8s节点调度算法研究 | corgis的笔记</title>
+  
+
+
+
+
+
+
+
+
+  <noscript>
+    <link rel="stylesheet" href="/css/noscript.css">
+  </noscript>
+</head>
+
+<body itemscope itemtype="http://schema.org/WebPage" class="use-motion">
+  <div class="headband"></div>
+
+  <main class="main">
+    <div class="column">
+      <header class="header" itemscope itemtype="http://schema.org/WPHeader"><div class="site-brand-container">
+  <div class="site-nav-toggle">
+    <div class="toggle" aria-label="切换导航栏" role="button">
+        <span class="toggle-line"></span>
+        <span class="toggle-line"></span>
+        <span class="toggle-line"></span>
+    </div>
+  </div>
+
+  <div class="site-meta">
+
+    <a href="/" class="brand" rel="start">
+      <i class="logo-line"></i>
+      <p class="site-title">corgis的笔记</p>
+      <i class="logo-line"></i>
+    </a>
+  </div>
+
+  <div class="site-nav-right">
+    <div class="toggle popup-trigger" aria-label="搜索" role="button">
+    </div>
+  </div>
+</div>
+
+
+
+<nav class="site-nav">
+  <ul class="main-menu menu"><li class="menu-item menu-item-home"><a href="/" rel="section"><i class="fa fa-home fa-fw"></i>首页</a></li><li class="menu-item menu-item-about"><a href="/about/" rel="section"><i class="fa fa-user fa-fw"></i>关于</a></li><li class="menu-item menu-item-categories"><a href="/categories/" rel="section"><i class="fa fa-th fa-fw"></i>分类</a></li><li class="menu-item menu-item-archives"><a href="/archives/" rel="section"><i class="fa fa-archive fa-fw"></i>归档</a></li>
+  </ul>
+</nav>
+
+
+
+
+</header>
+        
+  
+  <aside class="sidebar">
+
+    <div class="sidebar-inner sidebar-nav-active sidebar-toc-active">
+      <ul class="sidebar-nav">
+        <li class="sidebar-nav-toc">
+          文章目录
+        </li>
+        <li class="sidebar-nav-overview">
+          站点概览
+        </li>
+      </ul>
+
+      <div class="sidebar-panel-container">
+        <!--noindex-->
+        <div class="post-toc-wrap sidebar-panel">
+            <div class="post-toc animated"><ol class="nav"><li class="nav-item nav-level-1"><a class="nav-link" href="#%E8%83%8C%E6%99%AF"><span class="nav-number">1.</span> <span class="nav-text">背景</span></a></li><li class="nav-item nav-level-1"><a class="nav-link" href="#filter"><span class="nav-number">2.</span> <span class="nav-text">filter</span></a></li><li class="nav-item nav-level-1"><a class="nav-link" href="#score"><span class="nav-number">3.</span> <span class="nav-text">score</span></a><ol class="nav-child"><li class="nav-item nav-level-2"><a class="nav-link" href="#%E6%9C%80%E5%B0%8F%E8%B5%84%E6%BA%90%E5%88%A9%E7%94%A8%E7%8E%87-%E8%B5%84%E6%BA%90%E6%AF%94%E4%BE%8B%E5%9D%87%E8%A1%A1-default"><span class="nav-number">3.1.</span> <span class="nav-text">最小资源利用率&amp;资源比例均衡 (default)</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#%E6%9C%80%E5%B0%8F%E8%B5%84%E6%BA%90%E5%88%A9%E7%94%A8%E7%8E%87"><span class="nav-number">3.1.1.</span> <span class="nav-text">最小资源利用率</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E8%B5%84%E6%BA%90%E6%AF%94%E4%BE%8B%E5%9D%87%E8%A1%A1"><span class="nav-number">3.1.2.</span> <span class="nav-text">资源比例均衡</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E4%B8%BE%E4%BE%8B%E8%AF%B4%E6%98%8E"><span class="nav-number">3.1.3.</span> <span class="nav-text">举例说明</span></a><ol class="nav-child"><li class="nav-item nav-level-4"><a class="nav-link" href="#%E5%88%86%E9%85%8D%E7%AC%AC%E4%B8%80%E4%B8%AA%E8%8A%82%E7%82%B9"><span class="nav-number">3.1.3.1.</span> <span class="nav-text">分配第一个节点</span></a></li><li class="nav-item nav-level-4"><a class="nav-link" href="#%E5%88%86%E9%85%8D%E7%AC%AC%E4%BA%8C%E4%B8%AA%E8%8A%82%E7%82%B9"><span class="nav-number">3.1.3.2.</span> <span class="nav-text">分配第二个节点</span></a></li></ol></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#Trimaran-%E7%9B%AE%E6%A0%87%E8%B5%84%E6%BA%90%E5%88%A9%E7%94%A8%E7%8E%87-%E8%B4%9F%E8%BD%BD%E9%A3%8E%E9%99%A9%E5%9D%87%E8%A1%A1"><span class="nav-number">3.2.</span> <span class="nav-text">Trimaran-目标资源利用率&amp;负载风险均衡</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#%E7%9B%AE%E6%A0%87%E8%B5%84%E6%BA%90%E5%88%A9%E7%94%A8%E7%8E%87"><span class="nav-number">3.2.1.</span> <span class="nav-text">目标资源利用率</span></a><ol class="nav-child"><li class="nav-item nav-level-4"><a class="nav-link" href="#%E7%AE%97%E6%B3%95"><span class="nav-number">3.2.1.1.</span> <span class="nav-text">算法</span></a></li><li class="nav-item nav-level-4"><a class="nav-link" href="#%E7%A4%BA%E4%BE%8B"><span class="nav-number">3.2.1.2.</span> <span class="nav-text">示例</span></a></li><li class="nav-item nav-level-4"><a class="nav-link" href="#%E7%AE%97%E6%B3%95%E5%88%86%E6%9E%90"><span class="nav-number">3.2.1.3.</span> <span class="nav-text">算法分析</span></a></li></ol></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E8%B4%9F%E8%BD%BD%E9%A3%8E%E9%99%A9%E5%9D%87%E8%A1%A1"><span class="nav-number">3.2.2.</span> <span class="nav-text">负载风险均衡</span></a><ol class="nav-child"><li class="nav-item nav-level-4"><a class="nav-link" href="#%E7%AE%97%E6%B3%95-1"><span class="nav-number">3.2.2.1.</span> <span class="nav-text">算法</span></a></li><li class="nav-item nav-level-4"><a class="nav-link" href="#%E7%A4%BA%E4%BE%8B-1"><span class="nav-number">3.2.2.2.</span> <span class="nav-text">示例</span></a></li></ol></li></ol></li></ol></li><li class="nav-item nav-level-1"><a class="nav-link" href="#%E5%90%8E%E7%BB%AD"><span class="nav-number">4.</span> <span class="nav-text">后续</span></a></li><li class="nav-item nav-level-1"><a class="nav-link" href="#%E5%8F%82%E8%80%83%E6%96%87%E7%8C%AE"><span class="nav-number">5.</span> <span class="nav-text">参考文献</span></a></li></ol></div>
+        </div>
+        <!--/noindex-->
+
+        <div class="site-overview-wrap sidebar-panel">
+          <div class="site-author animated" itemprop="author" itemscope itemtype="http://schema.org/Person">
+    <img class="site-author-image" itemprop="image" alt="Corgis"
+      src="/images/corgis.jpg">
+  <p class="site-author-name" itemprop="name">Corgis</p>
+  <div class="site-description" itemprop="description">用于成长过程中，记录值得对外分享的技术，如开源代码理解、国外课程项目，个人对一些领域的心得等</div>
+</div>
+<div class="site-state-wrap animated">
+  <nav class="site-state">
+      <div class="site-state-item site-state-posts">
+        <a href="/archives/">
+          <span class="site-state-item-count">34</span>
+          <span class="site-state-item-name">日志</span>
+        </a>
+      </div>
+      <div class="site-state-item site-state-categories">
+          <a href="/categories/">
+        <span class="site-state-item-count">14</span>
+        <span class="site-state-item-name">分类</span></a>
+      </div>
+  </nav>
+</div>
+
+        </div>
+      </div>
+        <div class="back-to-top animated" role="button" aria-label="返回顶部">
+          <i class="fa fa-arrow-up"></i>
+          <span>0%</span>
+        </div>
+    </div>
+
+    
+  </aside>
+
+
+    </div>
+
+    <div class="main-inner post posts-expand">
+
+
+  
+
+
+<div class="post-block">
+  
+  
+
+  <article itemscope itemtype="http://schema.org/Article" class="post-content" lang="zh-CN">
+    <link itemprop="mainEntityOfPage" href="https://scut-corgis.github.io/2025-09-23-k8s%E8%8A%82%E7%82%B9%E8%B0%83%E5%BA%A6%E7%AE%97%E6%B3%95%E7%A0%94%E7%A9%B6.md/k8s%E8%8A%82%E7%82%B9%E8%B0%83%E5%BA%A6%E7%AE%97%E6%B3%95%E7%A0%94%E7%A9%B6/">
+
+    <span hidden itemprop="author" itemscope itemtype="http://schema.org/Person">
+      <meta itemprop="image" content="/images/corgis.jpg">
+      <meta itemprop="name" content="Corgis">
+    </span>
+
+    <span hidden itemprop="publisher" itemscope itemtype="http://schema.org/Organization">
+      <meta itemprop="name" content="corgis的笔记">
+      <meta itemprop="description" content="用于成长过程中，记录值得对外分享的技术，如开源代码理解、国外课程项目，个人对一些领域的心得等">
+    </span>
+
+    <span hidden itemprop="post" itemscope itemtype="http://schema.org/CreativeWork">
+      <meta itemprop="name" content="k8s节点调度算法研究 | corgis的笔记">
+      <meta itemprop="description" content="">
+    </span>
+      <header class="post-header">
+        <h1 class="post-title" itemprop="name headline">
+          k8s节点调度算法研究
+        </h1>
+
+        <div class="post-meta-container">
+          <div class="post-meta">
+    <span class="post-meta-item">
+      <span class="post-meta-item-icon">
+        <i class="far fa-calendar"></i>
+      </span>
+      <span class="post-meta-item-text">发表于</span>
+
+      <time title="创建时间：2025-09-23 11:55:05" itemprop="dateCreated datePublished" datetime="2025-09-23T11:55:05+08:00">2025-09-23</time>
+    </span>
+    <span class="post-meta-item">
+      <span class="post-meta-item-icon">
+        <i class="far fa-folder"></i>
+      </span>
+      <span class="post-meta-item-text">分类于</span>
+        <span itemprop="about" itemscope itemtype="http://schema.org/Thing">
+          <a href="/categories/%E6%95%B0%E6%8D%AE%E5%BA%93%E7%AE%A1%E6%8E%A7/" itemprop="url" rel="index"><span itemprop="name">数据库管控</span></a>
+        </span>
+    </span>
+
+  
+</div>
+
+        </div>
+      </header>
+
+    
+    
+    
+    <div class="post-body" itemprop="articleBody"><h1 id="背景"><a href="#背景" class="headerlink" title="背景"></a>背景</h1><p>当前的运维平台节点选机器算法比较简陋，如cpu、内存够用的情况下选内存最小的，过滤算法也比较粗暴，只考虑内存、cpu和实例节点数小于某个阈值。最终造成了较大的资源浪费和不均衡，也经常选不出机器。</p>
+<p>当前目标是优化当前的总体机器资源利用率，防止选不出机器部署节点。</p>
+<p>本文调研了节点scheduler算法，或者称为装箱算法，需要找出一种适合我们管控平台的装箱算法，用于优化资源利用率。</p>
+<p>总的来说，主要参考k8s的思想，装箱算法可以简化为两个阶段，即filter和score。对于filter来说，相对简单很多，即过滤掉无法使用的机器，这里无需调研业界做法，按自身情况定义即可。</p>
+<p>通过filter阶段的机器，我们认为都是可以使用的机器，那么需要对这批机器做score打分，最终分数最高的机器选出。</p>
+<h1 id="filter"><a href="#filter" class="headerlink" title="filter"></a>filter</h1><p>暂不叙述，后续用自己的方法</p>
+<ul>
+<li>机器cpu阈值</li>
+<li>机器内存阈值</li>
+<li>机器网卡阈值</li>
+<li>端口号不重复</li>
+<li>maxmemory的和小于总内存的百分比</li>
+<li>同集群的master在某个机器上的个数小于总master个数的百分比</li>
+<li>昨天一天的最高点参考等。</li>
+</ul>
+<h1 id="score"><a href="#score" class="headerlink" title="score"></a>score</h1><h2 id="最小资源利用率-资源比例均衡-default"><a href="#最小资源利用率-资源比例均衡-default" class="headerlink" title="最小资源利用率&amp;资源比例均衡 (default)"></a>最小资源利用率&amp;资源比例均衡 (default)</h2><p>该算法插件是k8s提供的<strong>默认方法</strong>，其中最小资源利用率和资源比例均衡的权重相同。</p>
+<blockquote>
+<p>直接阅读的源码<code>/kubernetes/pkg/scheduler/framework/plugins/noderesources</code>。</p>
+</blockquote>
+<p>强调一点，k8s默认只使用内存和cpu作为score的参考资源resources。若要加入gpu、rdma等资源，是需要用户自定义的。</p>
+<p>该算法只使用了两个采集参数</p>
+<ul>
+<li>资源的可分配值<code>allocatable</code>，该值是静态值，在机器启动时则保持固定。比如内存资源可定义为<code>内存总量</code>*0.9。</li>
+<li>当前总的申请值<code>requested</code>，定义为已经绑定的所有节点累积的已经<strong>申请的</strong>资源总和，注意既包括了已经部署的节点也包含假定绑定的节点。该值在多节点选机器时是动态变化的。</li>
+</ul>
+<p>值得注意，<code>requested</code>在k8s的场景下很容易计算出来，因为每个pod会声明自己需要的内存和cpu。但是在当前运维平台场景，我们无法预先知道每个redis节点或者proxy节点到底需要多少cpu。假如按单核来算，或者直接按maxmemory来算，可能会有很大的分配误差。</p>
+<p>因此若需要使用该方案，建议把<code>requested</code>当成机器已经占用的资源，加上分配过程中已绑定节点预估的资源值。</p>
+<h3 id="最小资源利用率"><a href="#最小资源利用率" class="headerlink" title="最小资源利用率"></a>最小资源利用率</h3><p>公式如下，注意默认cpuWeight和memoryWeight均为1。</p>
+<p>意义为选出资源利用率最低的机器。</p>
+<figure class="highlight c"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">score = (cpu((allocatable-requested)*<span class="number">100</span>*cpuWeight/allocatable) + memory((allocatable-requested)*<span class="number">100</span>*memoryWeight/allocatable) + ...)/weightSum</span><br></pre></td></tr></table></figure>
+<h3 id="资源比例均衡"><a href="#资源比例均衡" class="headerlink" title="资源比例均衡"></a>资源比例均衡</h3><p>公式为</p>
+<p>意义为选出各资源利用率标准差最小的</p>
+<figure class="highlight c"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br></pre></td><td class="code"><pre><span class="line">fraction = requested/allocable</span><br><span class="line">mean = Σ(fraction(i))/len(fractions)</span><br><span class="line"><span class="built_in">std</span> = <span class="built_in">sqrt</span>( Σ((fraction(i)-mean)^<span class="number">2</span>)/len(fractions) )</span><br><span class="line">score = (<span class="number">1</span> - <span class="built_in">std</span>) * <span class="number">100</span></span><br><span class="line"></span><br><span class="line">当只有两种资源时</span><br><span class="line"><span class="built_in">std</span> = math.Abs((fraction[<span class="number">0</span>] - fraction[<span class="number">1</span>]) / <span class="number">2</span>)</span><br></pre></td></tr></table></figure>
+
+<h3 id="举例说明"><a href="#举例说明" class="headerlink" title="举例说明"></a>举例说明</h3><p>此时有3台机器</p>
+<ul>
+<li>总cpu和内存均为64核心、64G</li>
+<li>已分配cpu分别为50核、30核、10核心</li>
+<li>已分配内存分别为10G、30G、50G</li>
+</ul>
+<p>我们需要依次分配2个节点，其信息分配为</p>
+<ul>
+<li>2核10G</li>
+<li>5核5G</li>
+</ul>
+<h4 id="分配第一个节点"><a href="#分配第一个节点" class="headerlink" title="分配第一个节点"></a>分配第一个节点</h4><p>当分配第一个节点2核心10G时，分数计算如下</p>
+<p>3台机器的最小资源利用率得分</p>
+<ul>
+<li>(（64-50-2）* 100 &#x2F; 64 +（64-10-10）* 100&#x2F;64）&#x2F;2 &#x3D; 43.75分</li>
+<li>(（64-30-2）* 100 &#x2F; 64 +（64-30-10）* 100&#x2F;64）&#x2F;2 &#x3D; 43.75分</li>
+<li>(（64-10-2）* 100 &#x2F; 64 +（64-50-10）* 100&#x2F;64）&#x2F;2 &#x3D; 43.75分</li>
+</ul>
+<p>3台机器的资源比例均衡得分</p>
+<ul>
+<li>(1-abs(((2+50)&#x2F;64 - (10+10)&#x2F;64)&#x2F;2)) * 100 &#x3D; 75分</li>
+<li>(1-abs(((2+30)&#x2F;64 - (10+30)&#x2F;64)&#x2F;2)) * 100 &#x3D; 93.75分</li>
+<li>(1-abs(((2+10)&#x2F;64 - (10+50)&#x2F;64)&#x2F;2)) * 100 &#x3D; 25分</li>
+</ul>
+<p>因此我们选出第二台机器。</p>
+<h4 id="分配第二个节点"><a href="#分配第二个节点" class="headerlink" title="分配第二个节点"></a>分配第二个节点</h4><p>当分配第一个节点5核心5G时，分数计算如下，注意此时第三台机器已经分配了一个节点</p>
+<p>3台机器的最小资源利用率得分</p>
+<ul>
+<li>(（64-50-5）* 100 &#x2F; 64 +（64-10-5）* 100&#x2F;64）&#x2F;2 &#x3D; 45.3分</li>
+<li>(（64-30-2-5）* 100 &#x2F; 64 +（64-30-10-5）* 100&#x2F;64）&#x2F;2 &#x3D; 35.9分</li>
+<li>(（64-10-5）* 100 &#x2F; 64 +（64-50-5）* 100&#x2F;64）&#x2F;2 &#x3D; 45.3分</li>
+</ul>
+<p>3台机器的资源比例均衡得分</p>
+<ul>
+<li>(1-abs(((5+50)&#x2F;64 - (5+10)&#x2F;64)&#x2F;2)) * 100 &#x3D; 68.75分</li>
+<li>(1-abs(((2+5+30)&#x2F;64 - (10+5+30)&#x2F;64)&#x2F;2)) * 100 &#x3D; 93.75分</li>
+<li>(1-abs(((5+10)&#x2F;64 - (5+50)&#x2F;64)&#x2F;2)) * 100 &#x3D; 68.75分</li>
+</ul>
+<p>因此第二个节点选中第二台机器。</p>
+<h2 id="Trimaran-目标资源利用率-负载风险均衡"><a href="#Trimaran-目标资源利用率-负载风险均衡" class="headerlink" title="Trimaran-目标资源利用率&amp;负载风险均衡"></a>Trimaran-目标资源利用率&amp;负载风险均衡</h2><p>该方法是另一个笔者认为很棒的策略，在阅读完后，我觉得其比默认策略更容易直观的或者用数据评估收益，其主要使用的是机器在滑动时间窗口内的资源利用率和方差来做抉择。</p>
+<p>该时间窗口大小以我们线上的情况，我认为可以暂定义为1小时。</p>
+<p>该策略跟默认策略类似，一共有两个相同权重的插件相辅相成。</p>
+<ul>
+<li>目标资源利用率：即定义一个资源利用率百分比<code>X%</code>，该打分算法会将大于该百分比的机器的分数降的很低，而小于该百分比的机器会优先选出离该百分比最近的机器。</li>
+<li>负载风险均衡：该策略用于多种资源，其会计算出机器部署目标节点后的各资源利用率，取最小利用率的资源作为分数。即短板效应，短板越明显的机器越不会选出来，其本质上是防范风险，而<strong>不是跟默认策略一样使机器的各资源利用率平衡</strong>。</li>
+</ul>
+<p>但假设我们只考虑两种资源打分，按笔者线上情况建议使用内存资源利用率作为目标，如设置<code>X=50%</code>，那么累加<code>负载风险均衡</code>插件的分数实际上也不容易选出cpu太高的机器。</p>
+<h3 id="目标资源利用率"><a href="#目标资源利用率" class="headerlink" title="目标资源利用率"></a>目标资源利用率</h3><h4 id="算法"><a href="#算法" class="headerlink" title="算法"></a>算法</h4><ol>
+<li>获取待评分当前机器的利用率，记为 A。</li>
+<li>计算当前 待调度节点 的 单资源 总请求量与开销，记为 B。</li>
+<li>计算将该 节点 调度到该机器后的预期利用率（即 U &#x3D; A + B，通过叠加得出）。</li>
+<li>若 U ≤ X%，则返回评分：(100 - X)×U&#x2F;X + X</li>
+<li>若 X% &lt;U ≤ 100%，则返回评分：X×(100 - U)&#x2F;(100 - X)</li>
+<li>若 U &gt; 100%，则返回评分：0</li>
+</ol>
+<h4 id="示例"><a href="#示例" class="headerlink" title="示例"></a>示例</h4><p>假设有 3 个节点 X、Y、Z，每个节点均为 4 核，当前利用率分别为 1 核、2 核、3 核。为简化计算，假设待调度 Pod 的 CPU 请求量与开销均为 0 核，目标利用率 X &#x3D; 50%。</p>
+<p>各节点利用率计算</p>
+<figure class="highlight shell"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br></pre></td><td class="code"><pre><span class="line">Ux → (1/4)×100 = 25%</span><br><span class="line">Uy → (2/4)×100 = 50%</span><br><span class="line">Uz → (3/4)×100 = 75%</span><br></pre></td></tr></table></figure>
+<p>各节点评分计算</p>
+<figure class="highlight sh"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br></pre></td><td class="code"><pre><span class="line">X 节点 → (100 - 50)×25/50 + 50 = 75 分</span><br><span class="line">Y 节点 → (100 - 50)×50/50 + 50 = 100 分</span><br><span class="line">Z 节点 → 50×(100 - 75)/(100 - 50) = 25 分</span><br></pre></td></tr></table></figure>
+<p>在上述算法中，50% 是我们希望所有节点达到的目标利用率。若希望降低调度激进程度，可将其下调至 40%，从而大幅降低在负载峰值或意外负载下利用率超过 50% 的可能性。因此，实践中若要实现 X% 的利用率目标，建议将配置值设为 X-10。</p>
+<p>利用率阈值 X% 可配置。</p>
+<h4 id="算法分析"><a href="#算法分析" class="headerlink" title="算法分析"></a>算法分析</h4><p><img src="/tlp-graph.png"></p>
+<p>上述图像为算法中所述分段函数的可视化呈现(X&#x3D;50)，从中可得出以下几点关键结论：</p>
+<ol>
+<li>当利用率从 0 升至 50% 时，我们会优先选择这些节点进行 Pod 的打包调度。</li>
+<li>当利用率超过 50% 后，节点会受到线性惩罚，以此避免 Pod 过度集中在这些 “高负载节点” 上。</li>
+<li>正斜率从 50 分（而非 0 分）开始，原因在于评分范围为 0-100 分：我们希望让优先选择的节点得分最大化，使其评分更具分量，从而降低其他插件对该调度结果的干扰。</li>
+<li>由于上述 “惩罚机制” 的存在，图表中出现断点，对应评分会产生大幅下降</li>
+</ol>
+<p>后续调研发现：这个目标资源利用率其实效果不好，因为我们很多时候没法定义出目标资源利用率X%，比如增加机器或减少机器都会使这个抖动。</p>
+<h3 id="负载风险均衡"><a href="#负载风险均衡" class="headerlink" title="负载风险均衡"></a>负载风险均衡</h3><h4 id="算法-1"><a href="#算法-1" class="headerlink" title="算法"></a>算法</h4><ol>
+<li>获取待调度Pod的资源请求量，记为(r)。  </li>
+<li>获取待评分当前节点所有资源类型（CPU、内存、存储等）的资源利用率占比（范围0至1）的滑动窗口平均值(M)和标准差(V)。  </li>
+<li>计算当前节点每种资源类型的得分：<br>[<br>S_i &#x3D; M + r + V<br>]  </li>
+<li>对每种资源的得分进行处理，将其限制在[0,1]范围内：<br>[<br>S_i &#x3D; min(S_i, 1.0)<br>]  </li>
+<li>计算每种资源的节点优先级得分：<br>[<br>U_i &#x3D; (1 - S_i) x 100<br>]  </li>
+<li>计算最终节点得分：<br>[<br>U &#x3D; min(U_i)<br>]</li>
+</ol>
+<h4 id="示例-1"><a href="#示例-1" class="headerlink" title="示例"></a>示例</h4><p>假设存在3个机器N1、N2、N3，待调度节点的CPU请求量为500毫核，内存请求量为1GB。所有节点的容量均为4核CPU和8GB内存。  </p>
+<p>可计算得出节点的资源请求占比为：<br>(r_{cpu} &#x3D; 1&#x2F;8)，(r_{memory} &#x3D; 1&#x2F;8)。  </p>
+<p>（注：CPU请求占比计算：500毫核&#x3D;0.5核，0.5核÷4核&#x3D;1&#x2F;8；内存请求占比计算：1GB÷8GB&#x3D;1&#x2F;8）</p>
+<blockquote>
+<p>注意下面的图，因为用k8s的概念画的，请把pod理解为我们上文一直说的节点，node理解为机器</p>
+</blockquote>
+<p><img src="/image6.png"></p>
+<p>按照步骤2～4，可以算出各资源利用率的平均值和标准差见下表</p>
+<p><img src="/image9.png"></p>
+<p>按照步骤5～6，可以算出每个机器的得分如下：</p>
+<p><img src="/image1.png"></p>
+<p>因此选出机器3。</p>
+<h1 id="后续"><a href="#后续" class="headerlink" title="后续"></a>后续</h1><p>后续我们上面的算法全都试了试，核心算法都没有采用，因为跑出来的结果很难表现出是优越于当前的。</p>
+<p>我们最后采用的算法是，高权重的全局方差最小 + 低权重Trimaran算法。</p>
+<p>全局方差最小即：把节点放进机器后，计算某个指标的全局方差，最后全局最小方差的对应机器为结果。</p>
+<p>跑出来绘图效果很明显，绝大多数的机器在分配一轮后都集中在了均值处。</p>
+<h1 id="参考文献"><a href="#参考文献" class="headerlink" title="参考文献"></a>参考文献</h1><ul>
+<li>k8s源码，默认scheduler插件，即目录<code>pkg/scheduler/framework/noderesources</code></li>
+<li>k8s源码，每种计算参数的来源，目录<code>/kubernetes/pkg/scheduler/framework/types.go</code></li>
+<li>k8s官方文档1，介绍scheduler插件用法 <a target="_blank" rel="noopener" href="https://kubernetes.io/docs/reference/scheduling/config/">https://kubernetes.io/docs/reference/scheduling/config/</a></li>
+<li>k8s官方文档2，教开发者如何自定义自己的插件 <a target="_blank" rel="noopener" href="https://github.com/kubernetes/community/blob/master/contributors/devel/sig-scheduling/scheduler_framework_plugins.md">https://github.com/kubernetes/community/blob/master/contributors/devel/sig-scheduling/scheduler_framework_plugins.md</a></li>
+<li>k8s-sig代码仓库，给出了一系列业界比较好的自定义插件 <a target="_blank" rel="noopener" href="https://github.com/kubernetes-sigs/scheduler-plugins">https://github.com/kubernetes-sigs/scheduler-plugins</a></li>
+<li>trimaran算法 <a target="_blank" rel="noopener" href="https://github.com/kubernetes-sigs/scheduler-plugins/blob/master/kep/61-Trimaran-real-load-aware-scheduling/README.md">https://github.com/kubernetes-sigs/scheduler-plugins/blob/master/kep/61-Trimaran-real-load-aware-scheduling/README.md</a></li>
+</ul>
+
+    </div>
+
+    
+    
+    
+
+    <footer class="post-footer">
+
+        
+
+          <div class="post-nav">
+            <div class="post-nav-item">
+                <a href="/2025-09-02-%E6%A2%B3%E7%90%86redis%E5%A4%9A%E7%BA%BF%E7%A8%8B%EF%BC%88%E5%8C%85%E6%8B%ACredis8%EF%BC%89/" rel="prev" title="梳理redis多线程（包括redis8）">
+                  <i class="fa fa-angle-left"></i> 梳理redis多线程（包括redis8）
+                </a>
+            </div>
+            <div class="post-nav-item">
+                <a href="/2025-11-24-%E7%94%A8CMS%E5%AE%9E%E7%8E%B0redis%E7%83%ADkey%E9%87%87%E9%9B%86.md/%E7%94%A8CMS%E5%AE%9E%E7%8E%B0redis%E7%83%ADkey%E9%87%87%E9%9B%86/" rel="next" title="用CMS实现redis热key采集">
+                  用CMS实现redis热key采集 <i class="fa fa-angle-right"></i>
+                </a>
+            </div>
+          </div>
+    </footer>
+  </article>
+</div>
+
+
+
+
+
+
+</div>
+  </main>
+
+  <footer class="footer">
+    <div class="footer-inner">
+
+  <div class="copyright">
+    &copy; 
+    <span itemprop="copyrightYear">2025</span>
+    <span class="with-love">
+      <i class="fa fa-heart"></i>
+    </span>
+    <span class="author" itemprop="copyrightHolder">Corgis</span>
+  </div>
+  <div class="powered-by">由 <a href="https://hexo.io/" rel="noopener" target="_blank">Hexo</a> & <a href="https://theme-next.js.org/muse/" rel="noopener" target="_blank">NexT.Muse</a> 强力驱动
+  </div>
+
+    </div>
+  </footer>
+
+  
+  <div class="toggle sidebar-toggle" role="button">
+    <span class="toggle-line"></span>
+    <span class="toggle-line"></span>
+    <span class="toggle-line"></span>
+  </div>
+  <div class="sidebar-dimmer"></div>
+  <div class="reading-progress-bar"></div>
+
+<noscript>
+  <div class="noscript-warning">Theme NexT works best with JavaScript enabled</div>
+</noscript>
+
+
+  
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/animejs/3.2.1/anime.min.js" integrity="sha256-XL2inqUJaslATFnHdJOi9GfQ60on8Wx1C2H8DYiN1xY=" crossorigin="anonymous"></script>
+<script src="/js/comments.js"></script><script src="/js/utils.js"></script><script src="/js/motion.js"></script><script src="/js/sidebar.js"></script><script src="/js/next-boot.js"></script>
+
+  
+
+
+
+
+
+
+  
+
+
+
+
+
+</body>
+</html>

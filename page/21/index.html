@@ -123,13 +123,13 @@
   <nav class="site-state">
       <div class="site-state-item site-state-posts">
         <a href="/archives/">
-          <span class="site-state-item-count">30</span>
+          <span class="site-state-item-count">34</span>
           <span class="site-state-item-name">日志</span>
         </a>
       </div>
       <div class="site-state-item site-state-categories">
           <a href="/categories/">
-        <span class="site-state-item-count">13</span>
+        <span class="site-state-item-count">14</span>
         <span class="site-state-item-name">分类</span></a>
       </div>
   </nav>
@@ -159,7 +159,7 @@
   
 
   <article itemscope itemtype="http://schema.org/Article" class="post-content" lang="">
-    <link itemprop="mainEntityOfPage" href="https://scut-corgis.github.io/2024-10-20-%E6%95%B0%E6%8D%AE%E5%BA%93%E7%AE%A1%E6%8E%A7%E5%B9%B3%E5%8F%B0%E8%AE%BE%E8%AE%A1%E4%B8%8E%E5%AE%9E%E7%8E%B0-%E6%9C%8D%E5%8A%A1%E7%AB%AF/">
+    <link itemprop="mainEntityOfPage" href="https://scut-corgis.github.io/2025-02-16-Rocksdb%E5%AD%A6%E4%B9%A0-%E4%BA%8B%E5%8A%A1.md/Rocksdb%E5%AD%A6%E4%B9%A0-%E4%BA%8B%E5%8A%A1/">
 
     <span hidden itemprop="author" itemscope itemtype="http://schema.org/Person">
       <meta itemprop="image" content="/images/corgis.jpg">
@@ -177,7 +177,7 @@
     </span>
       <header class="post-header">
         <h2 class="post-title" itemprop="name headline">
-          <a href="/2024-10-20-%E6%95%B0%E6%8D%AE%E5%BA%93%E7%AE%A1%E6%8E%A7%E5%B9%B3%E5%8F%B0%E8%AE%BE%E8%AE%A1%E4%B8%8E%E5%AE%9E%E7%8E%B0-%E6%9C%8D%E5%8A%A1%E7%AB%AF/" class="post-title-link" itemprop="url">数据库管控平台设计与实现-服务端</a>
+          <a href="/2025-02-16-Rocksdb%E5%AD%A6%E4%B9%A0-%E4%BA%8B%E5%8A%A1.md/Rocksdb%E5%AD%A6%E4%B9%A0-%E4%BA%8B%E5%8A%A1/" class="post-title-link" itemprop="url">Rocksdb事务</a>
         </h2>
 
         <div class="post-meta-container">
@@ -188,7 +188,7 @@
       </span>
       <span class="post-meta-item-text">发表于</span>
 
-      <time title="创建时间：2024-10-20 21:10:05" itemprop="dateCreated datePublished" datetime="2024-10-20T21:10:05+08:00">2024-10-20</time>
+      <time title="创建时间：2025-02-16 19:52:15" itemprop="dateCreated datePublished" datetime="2025-02-16T19:52:15+08:00">2025-02-16</time>
     </span>
     <span class="post-meta-item">
       <span class="post-meta-item-icon">
@@ -196,7 +196,7 @@
       </span>
       <span class="post-meta-item-text">分类于</span>
         <span itemprop="about" itemscope itemtype="http://schema.org/Thing">
-          <a href="/categories/%E6%95%B0%E6%8D%AE%E5%BA%93%E7%AE%A1%E6%8E%A7/" itemprop="url" rel="index"><span itemprop="name">数据库管控</span></a>
+          <a href="/categories/Rocksdb/" itemprop="url" rel="index"><span itemprop="name">Rocksdb</span></a>
         </span>
     </span>
 
@@ -210,59 +210,267 @@
     
     
     <div class="post-body" itemprop="articleBody">
-          <h1 id="引言"><a href="#引言" class="headerlink" title="引言"></a>引言</h1><p>各大公司都有庞大的数据库资源，涉及机器轻则上千，基本都是以万计。几乎每天都有机器宕机，或者发生网络延迟，或者发生机房故障。稍有不慎便容易出现管控缺失，数据库不稳定的问题。而数据库稳定性一般都是最重要的一环。</p>
-<p>一般数据库管控维度为分数据库种类，再细分对应的业务集群。如何设计一个数据库管控系统，其具备一些公共能力，能够对各种数据库集群进行相应的具体的管控逻辑的开发，具有一定的挑战。</p>
-<p>首先，当前业界通用的做法是如下图所示，通过在数据库机器中内嵌相应的agent进程，该agent负责管理当前机器上的数据库进程，上报与采集内核信息，以实现相应的管控逻辑。</p>
-<p><img src="/2024-10-20-%E6%95%B0%E6%8D%AE%E5%BA%93%E7%AE%A1%E6%8E%A7%E5%B9%B3%E5%8F%B0%E8%AE%BE%E8%AE%A1%E4%B8%8E%E5%AE%9E%E7%8E%B0-%E6%9C%8D%E5%8A%A1%E7%AB%AF/mgr-agent%E6%9E%B6%E6%9E%84.drawio.svg"></p>
-<p>当然一个好的平台不仅需要强大的后端组件支持，还需要前端项目用于展示和运维人员操作的，在本文中着重讨论后端部分。</p>
-<h1 id="运维模块"><a href="#运维模块" class="headerlink" title="运维模块"></a>运维模块</h1><h2 id="插件系统"><a href="#插件系统" class="headerlink" title="插件系统"></a>插件系统</h2><p>一些数据库，对应运维操作相当复杂，即运维管控代码庞大。若以脚本语言如python完全去写起管控逻辑，到后期几乎无法维护，因此管控平台需要能够提供原生语言的编写能力，一般管控平台以golang编写，则应当允许数据库运维开发方能够直接使用golang编写运维逻辑。</p>
-<p>一种实现方法是，提供某种代码生成器，将业务golang的接口代码直接生成与管控平台黏合的代码，并编译成<code>.so</code>文件，供动态链接，这种方法的好处是，一个mgr可以链接多个插件系统，即服务多种数据库。</p>
-<h2 id="任务执行"><a href="#任务执行" class="headerlink" title="任务执行"></a>任务执行</h2><p>负责任务的创建、管理、下发、agent回复处理等工作</p>
-<p>该模块是数据库管控平台最重要的模块。每一个管控逻辑，都是由一个或多个任务组成。而强大的管控平台可以提供多种任务编写方式，如shell、python、甚至是直接的golang语言。</p>
-<p>任务必须具备可取消的能力，即超时关闭，若直接在线程中运行任务显然无法取消。一种简单的方式是，执行任务的线程，再起一个任务线程并记录pid，并不断观测任务线程结果，必要时直接杀死对应线程。</p>
-<p>任务必须具备提取返回值的能力，这对于golang来说实现简单，因为管控平台原生语言即为golang。而对于python而言捕获返回值相当困难。一种可行的实现是python返回结果直接json化后写到某个临时文件，供golang代码后续读并解码(python任务日志也可以如此实现)。</p>
-<p>对于shell执行器，为了记录中间的<code>echo xxx</code>输出，需要捕获相应的stdout并于日志文件中。需要关心shell脚本的退出码以判断任务的成功与否。</p>
-<p>对于python执行器，python执行器应该能够只执行某个<code>.py</code>文件的某个类中的一个成员函数。一种实现是可以用shell执行器作为中间方，以shell执行器启动<code>python_control.sh args</code>，将任务入参放在<code>args</code>，在里面执行<code>python control.py options=args</code>，再以<code>control.py</code>去调用相应具体python任务。</p>
-<p>为了持续的观测任务的执行过程，供前端展示任务的执行情况，任务创建时应该往管控数据库中插入任务信息和状态信息，任务执行完后需要修改对应任务的状态。</p>
-<p>任务执行需要区别mgr本地执行与agent远端执行，对于agent远端执行，需要区分同步与异步两种方式。实际两种方法本质一样，均向agent调用执行任务接口，agent执行完后会调用mgr的上报接口。同步的话，mgr要hold住请求不返回即可，直到agent回复。</p>
-<h2 id="定时调度"><a href="#定时调度" class="headerlink" title="定时调度"></a>定时调度</h2><p>定时调度在数据库管控中相当常见，比如机器宕机检测与恢复。我们可以很方便的在任务执行模块上实现定时调度。</p>
-<p>只需要将定时调度信息存于管控数据库中。使用某种<code>cron</code>包进行调度即可。</p>
-<h2 id="流程引擎"><a href="#流程引擎" class="headerlink" title="流程引擎"></a>流程引擎</h2><p>有的运维操作相当冗长，如数据中心级别的故障转移。若以代码硬编码将无法维护，一般是以编写多个任务以类似流水线的方式串接起来，应该管控平台需要具备流程引擎的能力。</p>
-<p>一般实现是，前端画流程图，并将对应流程图结构化插入到管控数据库中，后端mgr只需要取出管控数据库中已经结构化的流程定义即可。</p>
-<p>使用方式：前端画流程图，生成流程定义到数据库中。后端从数据库中取流程定义，然后执行流程，将执行结果记录到数据库中。</p>
-<h3 id="前端实现"><a href="#前端实现" class="headerlink" title="前端实现"></a>前端实现</h3><p><img src="/2024-10-20-%E6%95%B0%E6%8D%AE%E5%BA%93%E7%AE%A1%E6%8E%A7%E5%B9%B3%E5%8F%B0%E8%AE%BE%E8%AE%A1%E4%B8%8E%E5%AE%9E%E7%8E%B0-%E6%9C%8D%E5%8A%A1%E7%AB%AF/%E5%89%8D%E7%AB%AF%E7%95%8C%E9%9D%A2.png"></p>
-<h3 id="后端实现"><a href="#后端实现" class="headerlink" title="后端实现"></a>后端实现</h3><h4 id="数据结构"><a href="#数据结构" class="headerlink" title="数据结构"></a>数据结构</h4><h5 id="process"><a href="#process" class="headerlink" title="process"></a>process</h5><p>当前端编辑完，保存后，会将流程的数据结构放于mongo表<code>process</code>中</p>
-<p><img src="/2024-10-20-%E6%95%B0%E6%8D%AE%E5%BA%93%E7%AE%A1%E6%8E%A7%E5%B9%B3%E5%8F%B0%E8%AE%BE%E8%AE%A1%E4%B8%8E%E5%AE%9E%E7%8E%B0-%E6%9C%8D%E5%8A%A1%E7%AB%AF/process.png"></p>
-<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br></pre></td><td class="code"><pre><span class="line"><span class="comment">// Process 流程</span></span><br><span class="line"><span class="keyword">type</span> Process <span class="keyword">struct</span> &#123;</span><br><span class="line">    <span class="comment">// 基础信息</span></span><br><span class="line">    Name   <span class="type">string</span> <span class="string">`json:&quot;name&quot; bson:&quot;name&quot;`</span>       <span class="comment">// 流程名</span></span><br><span class="line">    ChName <span class="type">string</span> <span class="string">`json:&quot;ch_name&quot; bson:&quot;ch_name&quot;`</span> <span class="comment">// 流程中文名</span></span><br><span class="line">    <span class="comment">// 属性信息</span></span><br><span class="line">    ParamList      []ValueDefinition <span class="string">`json:&quot;param_list&quot; bson:&quot;param_list&quot;`</span>           <span class="comment">// 全局入参</span></span><br><span class="line">    ResultList     []ValueDefinition <span class="string">`json:&quot;result_list&quot; bson:&quot;result_list&quot;`</span>         <span class="comment">// 全局结果</span></span><br><span class="line">    <span class="comment">// 节点信息，记录了流程图一个节点的全部信息，如task，其入参信息等等</span></span><br><span class="line">    ActivityList   []Activity        <span class="string">`json:&quot;activity_list&quot; bson:&quot;activity_list&quot;`</span>    </span><br><span class="line">    SequenceList   []Sequence        <span class="string">`json:&quot;sequence_list&quot; bson:&quot;sequence_list&quot;`</span>     <span class="comment">// activity连线列表</span></span><br><span class="line">    Author         <span class="type">string</span>            <span class="string">`json:&quot;author&quot; bson:&quot;author&quot;`</span>                   <span class="comment">// 创建人</span></span><br><span class="line">    CreatedAt      <span class="type">int64</span>             <span class="string">`json:&quot;created_at&quot; bson:&quot;created_at&quot;`</span>           <span class="comment">// 创建时间</span></span><br><span class="line">    UpdatedAt      <span class="type">int64</span>             <span class="string">`json:&quot;updated_at&quot; bson:&quot;updated_at&quot;`</span>           <span class="comment">// 更新时间</span></span><br><span class="line">    Position       <span class="keyword">map</span>[<span class="type">string</span>]<span class="type">string</span> <span class="string">`json:&quot;position&quot; bson:&quot;position&quot;`</span>               <span class="comment">// activity的位置信息，&#123;node_1: &quot;top:xx;left:xx&quot;&#125;</span></span><br><span class="line">    ConnectionDire <span class="keyword">map</span>[<span class="type">string</span>]<span class="type">string</span> <span class="string">`json:&quot;connection_dire&quot; bson:&quot;connection_dire&quot;`</span> <span class="comment">// 连线的方向信息,&#123;node_1-node_2: &quot;rig-left&quot;&#125;</span></span><br><span class="line">    Labels         []ValueDefinition <span class="string">`json:&quot;labels&quot; json:&quot;labels&quot;`</span>                   <span class="comment">// 流程拥有标签</span></span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
-
-<p><img src="/2024-10-20-%E6%95%B0%E6%8D%AE%E5%BA%93%E7%AE%A1%E6%8E%A7%E5%B9%B3%E5%8F%B0%E8%AE%BE%E8%AE%A1%E4%B8%8E%E5%AE%9E%E7%8E%B0-%E6%9C%8D%E5%8A%A1%E7%AB%AF/activity_list.png"></p>
-<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br></pre></td><td class="code"><pre><span class="line"><span class="comment">// Activity 活动节点的定义</span></span><br><span class="line"><span class="keyword">type</span> Activity <span class="keyword">struct</span> &#123;</span><br><span class="line">    <span class="comment">// 基础信息</span></span><br><span class="line">    Name   <span class="type">string</span>       <span class="string">`json:&quot;name&quot; bson:&quot;name&quot;`</span>       <span class="comment">// 名称，自动生成</span></span><br><span class="line">    ChName <span class="type">string</span>       <span class="string">`json:&quot;ch_name&quot; bson:&quot;ch_name&quot;`</span> <span class="comment">// 中文名称，选填，为空时按如下顺序赋值：任务/process</span></span><br><span class="line">    Type   ActivityType <span class="string">`json:&quot;type&quot; bson:&quot;type&quot;`</span>       <span class="comment">// 类型，对应ActivityType。比如为task或者start</span></span><br><span class="line">    <span class="comment">// 属性信息</span></span><br><span class="line">    ParamList    []ValueDefinition <span class="string">`json:&quot;param_list&quot; bson:&quot;param_list&quot;`</span>       <span class="comment">// 节点入参</span></span><br><span class="line">    ResultList   []ValueDefinition <span class="string">`json:&quot;result_list&quot; bson:&quot;result_list&quot;`</span>     <span class="comment">// 输出结果</span></span><br><span class="line">    InputAnchor  <span class="type">string</span>            <span class="string">`json:&quot;input_anchor&quot; bson:&quot;input_anchor&quot;`</span>   <span class="comment">// 入参锚点</span></span><br><span class="line">    OutputAnchor <span class="type">string</span>            <span class="string">`json:&quot;output_anchor&quot; bson:&quot;output_anchor&quot;`</span> <span class="comment">// 出参锚点</span></span><br><span class="line">    Timeout      <span class="type">int64</span>             <span class="string">`json:&quot;timeout&quot; bson:&quot;timeout&quot;`</span>             <span class="comment">// 超时时间，单位秒</span></span><br><span class="line">    LoopUntil    <span class="type">string</span>            <span class="string">`json:&quot;loop_until&quot; bson:&quot;loop_until&quot;`</span>       <span class="comment">// 循环等待</span></span><br><span class="line">    LoopInterval <span class="type">int64</span>             <span class="string">`json:&quot;loop_interval&quot; bson:&quot;loop_interval&quot;`</span> <span class="comment">// 循环间隔，单位秒</span></span><br><span class="line">    SuccFlag     <span class="type">string</span>            <span class="string">`json:&quot;succ_flag&quot; bson:&quot;succ_flag&quot;`</span>         <span class="comment">// 任务执行成功与否的标识</span></span><br><span class="line">    <span class="comment">// 内容</span></span><br><span class="line">    Content <span class="type">string</span> <span class="string">`json:&quot;content&quot; bson:&quot;content&quot;`</span> <span class="comment">// 包含的任务或流程</span></span><br><span class="line">    Remote  <span class="type">bool</span>   <span class="string">`json:&quot;remote&quot; bson:&quot;remote&quot;`</span>   <span class="comment">// 针对作业平台任务，标识是否远程任务，默认false，如果为true，则入参默认增加target_hosts, 出参增加succ_hosts</span></span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
-
-<p><img src="/2024-10-20-%E6%95%B0%E6%8D%AE%E5%BA%93%E7%AE%A1%E6%8E%A7%E5%B9%B3%E5%8F%B0%E8%AE%BE%E8%AE%A1%E4%B8%8E%E5%AE%9E%E7%8E%B0-%E6%9C%8D%E5%8A%A1%E7%AB%AF/seq_list.png"></p>
-<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">type</span> Sequence <span class="keyword">struct</span> &#123;</span><br><span class="line">    Source    <span class="type">string</span> <span class="string">`json:&quot;source&quot; bson:&quot;source&quot;`</span>       <span class="comment">// 源activity name</span></span><br><span class="line">    Target    <span class="type">string</span> <span class="string">`json:&quot;target&quot; bson:&quot;target&quot;`</span>       <span class="comment">// 目标activity name</span></span><br><span class="line">    Condition <span class="type">string</span> <span class="string">`json:&quot;condition&quot; bson:&quot;condition&quot;`</span> <span class="comment">// 条件表达式</span></span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
-
-<h5 id="ProcessInstance"><a href="#ProcessInstance" class="headerlink" title="ProcessInstance"></a>ProcessInstance</h5><p>开始运行流程时，会根据全局传参和默认参数，合成一个最终流程全局入参，创建一个<code>processInstance</code>对象，并将该对象插入mongo中<code>process_instance</code>表内</p>
-<p><img src="/2024-10-20-%E6%95%B0%E6%8D%AE%E5%BA%93%E7%AE%A1%E6%8E%A7%E5%B9%B3%E5%8F%B0%E8%AE%BE%E8%AE%A1%E4%B8%8E%E5%AE%9E%E7%8E%B0-%E6%9C%8D%E5%8A%A1%E7%AB%AF/process_instance.png"></p>
-<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br></pre></td><td class="code"><pre><span class="line"><span class="comment">// ProcessInstance 流程实例</span></span><br><span class="line"><span class="keyword">type</span> ProcessInstance <span class="keyword">struct</span> &#123;</span><br><span class="line">    ID                 <span class="type">string</span>                 <span class="string">`json:&quot;id&quot; bson:&quot;_id&quot;`</span>                                      <span class="comment">// 流程实例ID</span></span><br><span class="line">    ParentID           <span class="type">string</span>                 <span class="string">`json:&quot;parent_id&quot; bson:&quot;parent_id&quot;`</span>                         <span class="comment">// 父流程实例ID</span></span><br><span class="line">    Name               <span class="type">string</span>                 <span class="string">`json:&quot;name&quot; bson:&quot;name&quot;`</span>                                   <span class="comment">// 流程名</span></span><br><span class="line">    Params             <span class="keyword">map</span>[<span class="type">string</span>]<span class="keyword">interface</span>&#123;&#125; <span class="string">`json:&quot;params&quot; bson:&quot;params&quot;`</span>                               <span class="comment">// 流程的入参</span></span><br><span class="line">    Result             <span class="keyword">map</span>[<span class="type">string</span>]<span class="keyword">interface</span>&#123;&#125; <span class="string">`json:&quot;result&quot; bson:&quot;result&quot;`</span>                               <span class="comment">// 流程从执行结果</span></span><br><span class="line">    Status             Status                 <span class="string">`json:&quot;status&quot; bson:&quot;status&quot;`</span>                               <span class="comment">// 状态</span></span><br><span class="line">    RunStack           []<span class="type">string</span>               <span class="string">`json:&quot;run_stack&quot; bson:&quot;run_stack&quot;`</span>                         <span class="comment">// 执行栈</span></span><br><span class="line">    RunIndex           <span class="type">int</span>                    <span class="string">`json:&quot;run_index&quot; bson:&quot;run_index&quot;`</span>                         <span class="comment">// 指向执行栈的索引，从0开始，譬如停留在3，表明0、1、2已经顺利执行，3未执行或未彻底完成</span></span><br><span class="line">    Runner             <span class="type">string</span>                 <span class="string">`json:&quot;runner&quot; bson:&quot;runner&quot;`</span>                               <span class="comment">// 执行人</span></span><br><span class="line">    CreatedAt          <span class="type">int64</span>                  <span class="string">`json:&quot;created_at&quot; bson:&quot;created_at&quot;`</span>                       <span class="comment">// 创建时间</span></span><br><span class="line">    UpdatedAt          <span class="type">int64</span>                  <span class="string">`json:&quot;updated_at&quot; bson:&quot;updated_at&quot;`</span>                       <span class="comment">// 更新时间</span></span><br><span class="line">    Labels             <span class="keyword">map</span>[<span class="type">string</span>]<span class="keyword">interface</span>&#123;&#125; <span class="string">`json:&quot;labels&quot; bson:&quot;labels&quot;`</span>                               <span class="comment">// 流程实例标签</span></span><br><span class="line">    Audit              <span class="type">bool</span>                   <span class="string">`json:&quot;audit&quot; bson:&quot;audit&quot;`</span>                                 <span class="comment">// 是否审计</span></span><br><span class="line">    StartEventStack    []<span class="type">string</span>               <span class="string">`json:&quot;start_event_stack&quot; bson:&quot;start_event_stack&quot;`</span>         <span class="comment">// 开始执行事件堆栈</span></span><br><span class="line">    StartEventRunIndex <span class="type">int</span>                    <span class="string">`json:&quot;start_event_run_index&quot; bson:&quot;start_event_run_index&quot;`</span> <span class="comment">// 开始事件执行栈的索引</span></span><br><span class="line">    ExitEventStack     []<span class="type">string</span>               <span class="string">`json:&quot;exit_event_stack&quot; bson:&quot;exit_event_stack&quot;`</span>           <span class="comment">// 退出事件执行栈</span></span><br><span class="line">    ExitEventRunIndex  <span class="type">int</span>                    <span class="string">`json:&quot;exit_event_run_index&quot; bson:&quot;exit_event_run_index&quot;`</span>   <span class="comment">// 退出执行栈索引</span></span><br><span class="line">    Event              <span class="type">bool</span>                   <span class="string">`json:&quot;event&quot; bson:&quot;event&quot;`</span>                                 <span class="comment">// 是否触发事件的开关</span></span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
-
-<h1 id="基础模块"><a href="#基础模块" class="headerlink" title="基础模块"></a>基础模块</h1><h2 id="选主与切换"><a href="#选主与切换" class="headerlink" title="选主与切换"></a>选主与切换</h2><p>manager作为管控中心，本身存在leader与follower，leader会遇到宕机的风险，有时也需要主动切主从使得leader部署到某个机房。因此必须具备选主的能力。</p>
-<p>为了实现manager某种程度的无状态，一般将集群信息与主从信息记录到外部分布式数据库中。agent可直接查询数据库获得通信的主manager。</p>
-<p>一般agent只需要与主mgr进行交流，若存在主mgr性能瓶颈，大多是因为数据库运维设置的定时调度运行过于频繁，经测试，一台manager管理数千台agent是没有压力的。</p>
-<h2 id="自身版本升级"><a href="#自身版本升级" class="headerlink" title="自身版本升级"></a>自身版本升级</h2><p>在数据库管控中，升级操作一般就是下掉原来的进程，上一个新的进程。对于mgr同样可以如此做，而对于agent，甚至只需要重启即可，当然重启前并不是直接杀死再启动进程，需要设计一种信号机制，让agent捕获该信号，在处理完当前任务后，平滑退出。如使用go的context管理上下文协程。</p>
-<blockquote>
-<p>在实际实现中，这里的设计较为复杂。</p>
+          <h1 id="Rocksdb事务"><a href="#Rocksdb事务" class="headerlink" title="Rocksdb事务"></a>Rocksdb事务</h1><blockquote>
+<p>该篇主要通过网上文章和deepseek问答的方式学习与记录</p>
 </blockquote>
-<h2 id="机器资源监控"><a href="#机器资源监控" class="headerlink" title="机器资源监控"></a>机器资源监控</h2><p>agent组件实现机器资源的定期探测和上报是必不可少的。这对后续部署数据库节点的判断具有决定性的意义，也能够给前端直接展示相应的资源使用会存量，以供运维人员或自动化运维工具判断。</p>
-<h2 id="日志模块"><a href="#日志模块" class="headerlink" title="日志模块"></a>日志模块</h2><p>需要设计与选型好日志组件，因为管控过程中有相当多不同的逻辑流，如执行任务，执行流程，定时调度，具体的数据库管控插件日志，为了方便后续定位位置，需要对不同的逻辑流写不同的滚动日志文件。</p>
-<h1 id="外部管理模块"><a href="#外部管理模块" class="headerlink" title="外部管理模块"></a>外部管理模块</h1><h2 id="文件管理"><a href="#文件管理" class="headerlink" title="文件管理"></a>文件管理</h2><p>为了方便管理，我们可让具体的数据库管控脚本在mgr和agent同步，这种好处在于我们写了一个新的管控脚本，只需要下发给对应的mgr，便可以直接使用，无需在手动分发给各个agent。</p>
-<p>这个模块实现文件夹同步，需要定期检测同步文件夹，具备压缩能力，具备md5计算能力防止重复发送。一般具体数据库管控版本不升级，这里只会调用发送md5检查的接口。</p>
-<blockquote>
-<p>文件下发底层具体实现，直接用gin或者http即可</p>
-</blockquote>
-<h2 id="配置下发"><a href="#配置下发" class="headerlink" title="配置下发"></a>配置下发</h2><p>数据库节点部署，配置文件的管理与下发是难点之一，一般是将当前集群的多版本配置文件存在管控数据库中，供前端展示和编写。前端负责管理相应的模版，和特异化的参数，负责渲染拼接，再存于数据库中，记录对应配置版本。mgr需要提供相应的接口将对应的配置文件下发到agent指定位置，供相应进程启动使用。</p>
-<p>其与文件管理不同的点在于，配置是mgr从数据库中拉下来下发给agent的，不经过磁盘。</p>
-<h1 id="公共功能"><a href="#公共功能" class="headerlink" title="公共功能"></a>公共功能</h1><h2 id="分布式锁"><a href="#分布式锁" class="headerlink" title="分布式锁"></a>分布式锁</h2><p>在写数据库运维逻辑时，必定面对多运维操作并发的风险，如同时发起了对一个集群做扩容和缩容的流程，这种长时间运行的较重量级的流程不会允许并行。因此需要在Manager实现分布式锁，该锁需要考虑容量，因为有的操作是允许同时进行多个，如节点部署。</p>
-<p>该锁的实现一种简单的方法是，将锁与其过期信息存于分布式数据库中（mongodb等，mysql主从强一致），加锁时检查数据库即可。</p>
+<p>总览</p>
+<ol>
+<li>提供了一系列的事务API，和快照api:<code>GetSnapshot()</code></li>
+<li>原理跟mysql类似，存在多版本mvcc，使用悲观锁，key级别锁，死锁回滚等</li>
+<li>无主动的死锁检测（图检测算法），而是通过获取key的锁超时（默认1秒）来回滚前一个事务。</li>
+</ol>
+<h2 id="与mysql的事务对比"><a href="#与mysql的事务对比" class="headerlink" title="与mysql的事务对比"></a>与mysql的事务对比</h2><p>首先，关于行级锁。RocksDB的事务确实在悲观模式下会对涉及的键加锁，类似于MySQL的行锁，防止其他事务修改相同的数据。但MySQL的InnoDB不仅有行锁，还有间隙锁等，而RocksDB的锁更简单，只是针对具体的键，没有间隙锁的概念。</p>
+<p>接下来是版本链。RocksDB使用MVCC，通过序列号来维护版本信息，但并不是每个键都有显式的版本链元数据。相反，它利用LSM-Tree的结构，旧版本的数据保留在SST文件中，直到被压缩清理。而MySQL的InnoDB则在行中存储版本信息，通过undo log构建版本链。两者的机制不同。</p>
+<p>然后是死锁检测。RocksDB的悲观事务确实有死锁检测，通过锁管理器和超时机制来处理。MySQL则使用等待图算法主动检测死锁，并回滚代价较小的事务。</p>
+<p>RocksDB 和 MySQL 在事务实现的核心机制上存在本质差异。以下从锁机制、版本管理、死锁检测三个维度详细对比：</p>
+<hr>
+<h3 id="一、锁机制对比"><a href="#一、锁机制对比" class="headerlink" title="一、锁机制对比"></a>一、锁机制对比</h3><table>
+<thead>
+<tr>
+<th><strong>特性</strong></th>
+<th><strong>RocksDB</strong></th>
+<th><strong>MySQL InnoDB</strong></th>
+</tr>
+</thead>
+<tbody><tr>
+<td><strong>锁粒度</strong></td>
+<td>Key 级别锁（仅悲观事务）</td>
+<td>行锁 + 间隙锁（Next-Key Locking）</td>
+</tr>
+<tr>
+<td><strong>锁类型</strong></td>
+<td>简单独占锁（写锁）</td>
+<td>共享锁(S)、排他锁(X)、意向锁</td>
+</tr>
+<tr>
+<td><strong>锁管理器</strong></td>
+<td>内置分片锁表（<code>TransactionLockMgr</code>）</td>
+<td>全局锁表 + 事务上下文</td>
+</tr>
+<tr>
+<td><strong>锁升级</strong></td>
+<td>不支持</td>
+<td>支持行锁升级为表锁</td>
+</tr>
+<tr>
+<td><strong>锁冲突检测</strong></td>
+<td>超时机制（<code>lock_timeout</code>）</td>
+<td>主动死锁检测（等待图算法）</td>
+</tr>
+</tbody></table>
+<p><strong>关键差异</strong>：</p>
+<ul>
+<li><strong>RocksDB</strong> 没有真正的行锁，只有键锁，且缺乏间隙锁，无法防止幻读。</li>
+<li><strong>MySQL</strong> 的锁机制更复杂，支持多粒度锁和锁升级策略。</li>
+</ul>
+<hr>
+<h3 id="二、版本管理对比"><a href="#二、版本管理对比" class="headerlink" title="二、版本管理对比"></a>二、版本管理对比</h3><table>
+<thead>
+<tr>
+<th><strong>特性</strong></th>
+<th><strong>RocksDB</strong></th>
+<th><strong>MySQL InnoDB</strong></th>
+</tr>
+</thead>
+<tbody><tr>
+<td><strong>MVCC 实现</strong></td>
+<td>全局序列号（Sequence Number）</td>
+<td>事务ID + 回滚段（Undo Log）</td>
+</tr>
+<tr>
+<td><strong>版本链存储</strong></td>
+<td>LSM-Tree 多版本数据物理保留</td>
+<td>行内隐藏字段（DB_TRX_ID, DB_ROLL_PTR）</td>
+</tr>
+<tr>
+<td><strong>可见性判断</strong></td>
+<td>基于快照的序列号范围过滤</td>
+<td>基于事务ID和Read View</td>
+</tr>
+<tr>
+<td><strong>旧数据清理</strong></td>
+<td>Compaction 时物理删除</td>
+<td>Purge 线程异步清理 Undo Log</td>
+</tr>
+</tbody></table>
+<p><strong>关键差异</strong>：</p>
+<ul>
+<li><strong>RocksDB</strong> 的版本是隐式的（由 LSM-Tree 的不可变性天然支持），而 <strong>MySQL</strong> 需要显式维护版本链。</li>
+<li><strong>RocksDB</strong> 的 MVCC 无法实现完整的快照隔离（Snapshot Isolation），而 MySQL 的 RR 级别通过间隙锁+MVCC 解决幻读。</li>
+</ul>
+<hr>
+<h3 id="三、死锁检测对比"><a href="#三、死锁检测对比" class="headerlink" title="三、死锁检测对比"></a>三、死锁检测对比</h3><table>
+<thead>
+<tr>
+<th><strong>特性</strong></th>
+<th><strong>RocksDB</strong></th>
+<th><strong>MySQL InnoDB</strong></th>
+</tr>
+</thead>
+<tbody><tr>
+<td><strong>检测方式</strong></td>
+<td>超时回滚（无主动检测）</td>
+<td>主动检测（等待图算法）</td>
+</tr>
+<tr>
+<td><strong>检测粒度</strong></td>
+<td>键锁等待链</td>
+<td>行锁等待关系</td>
+</tr>
+<tr>
+<td><strong>处理策略</strong></td>
+<td>超时后强制回滚</td>
+<td>选择代价小的事务回滚（<code>innodb_deadlock_detect</code>）</td>
+</tr>
+<tr>
+<td><strong>分布式扩展</strong></td>
+<td>无内置支持</td>
+<td>通过 XA 协议支持分布式死锁检测</td>
+</tr>
+</tbody></table>
+<p><strong>关键差异</strong>：</p>
+<ul>
+<li><strong>RocksDB</strong> 的死锁处理更简单粗暴，而 <strong>MySQL</strong> 有精细的主动检测和回滚策略。</li>
+<li><strong>RocksDB</strong> 的锁管理器设计更适合单机高并发，<strong>MySQL</strong> 的锁机制为分布式场景留有扩展性。</li>
+</ul>
+<hr>
+<h3 id="四、实现原理深度解析"><a href="#四、实现原理深度解析" class="headerlink" title="四、实现原理深度解析"></a>四、实现原理深度解析</h3><h4 id="1-RocksDB-事务实现"><a href="#1-RocksDB-事务实现" class="headerlink" title="1. RocksDB 事务实现"></a>1. <strong>RocksDB 事务实现</strong></h4><ul>
+<li><strong>版本管理</strong>：<ul>
+<li>每个写入操作分配全局递增的 <code>SequenceNumber</code></li>
+<li>读取时通过 <code>GetSnapshot()</code> 获取当前序列号，过滤掉更高版本的数据</li>
+<li>旧版本数据在 Compaction 时被物理删除</li>
+</ul>
+</li>
+</ul>
+<h4 id="2-MySQL-InnoDB-事务实现"><a href="#2-MySQL-InnoDB-事务实现" class="headerlink" title="2. MySQL InnoDB 事务实现"></a>2. <strong>MySQL InnoDB 事务实现</strong></h4><ul>
+<li><strong>Undo Log 管理</strong>：<ul>
+<li>每个行修改记录旧版本到 Undo Log</li>
+<li>Purge 线程根据最老活跃事务ID清理过期版本</li>
+</ul>
+</li>
+</ul>
+<h2 id="死锁回滚原理"><a href="#死锁回滚原理" class="headerlink" title="死锁回滚原理"></a>死锁回滚原理</h2><p>RocksDB <strong>默认的事务实现（悲观事务）没有内置的主动死锁检测机制</strong>，它主要依赖 <strong>锁超时（Lock Timeout）</strong> 策略来解除死锁。但可以通过一些扩展或自定义策略实现类似主动检测的功能。</p>
+<hr>
+<h3 id="一、RocksDB-默认的死锁处理机制"><a href="#一、RocksDB-默认的死锁处理机制" class="headerlink" title="一、RocksDB 默认的死锁处理机制"></a>一、RocksDB 默认的死锁处理机制</h3><h4 id="1-锁等待超时（Lock-Timeout）"><a href="#1-锁等待超时（Lock-Timeout）" class="headerlink" title="1. 锁等待超时（Lock Timeout）"></a>1. <strong>锁等待超时（Lock Timeout）</strong></h4><ul>
+<li><strong>参数</strong>：通过 <code>transaction_options.lock_timeout</code> 设置（默认值：1000ms）</li>
+<li><strong>触发条件</strong>：事务在等待锁时超过指定时间未获取到锁</li>
+<li><strong>行为</strong>：事务自动回滚并返回 <code>Status::TimedOut</code> 错误</li>
+<li><strong>示例配置</strong>：<figure class="highlight cpp"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br></pre></td><td class="code"><pre><span class="line">rocksdb::TransactionOptions txn_options;</span><br><span class="line">txn_options.lock_timeout = <span class="number">500</span>; <span class="comment">// 超时时间设为500ms</span></span><br><span class="line">rocksdb::Transaction* txn = db-&gt;<span class="built_in">BeginTransaction</span>(write_options, txn_options);</span><br></pre></td></tr></table></figure></li>
+</ul>
+<h4 id="2-锁重试机制（Retry-on-Conflict）"><a href="#2-锁重试机制（Retry-on-Conflict）" class="headerlink" title="2. 锁重试机制（Retry on Conflict）"></a>2. <strong>锁重试机制（Retry on Conflict）</strong></h4><ul>
+<li><strong>参数</strong>：通过 <code>transaction_options.deadlock_detect_retries</code> 控制重试次数（默认0次）</li>
+<li><strong>行为</strong>：在超时后自动重试获取锁，而非立即回滚</li>
+<li><strong>示例配置</strong>：<figure class="highlight cpp"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">txn_options.deadlock_detect_retries = <span class="number">3</span>; <span class="comment">// 最多重试3次</span></span><br></pre></td></tr></table></figure></li>
+</ul>
+<hr>
+<h3 id="二、RocksDB-无主动死锁检测的设计原因"><a href="#二、RocksDB-无主动死锁检测的设计原因" class="headerlink" title="二、RocksDB 无主动死锁检测的设计原因"></a>二、RocksDB 无主动死锁检测的设计原因</h3><ol>
+<li><p><strong>性能考量</strong>：</p>
+<ul>
+<li>主动死锁检测（如等待图算法）需要全局状态跟踪，对高并发场景性能影响较大。</li>
+<li>RocksDB 作为嵌入式存储引擎，更注重低延迟和高吞吐。</li>
+</ul>
+</li>
+<li><p><strong>锁管理器简化</strong>：</p>
+<ul>
+<li>RocksDB 的锁管理器（<code>TransactionLockMgr</code>）采用分片设计（<code>num_stripes</code>），无跨分片的全局锁信息。</li>
+<li>分片锁表难以高效构建全局等待图（Wait-for Graph）。</li>
+</ul>
+</li>
+<li><p><strong>适用场景假设</strong>：</p>
+<ul>
+<li>预期在键值存储中，事务冲突概率较低（尤其是宽列数据模型）。</li>
+<li>死锁主要由应用层逻辑错误导致，而非高频随机锁竞争。</li>
+</ul>
+</li>
+</ol>
+<hr>
+<h3 id="三、生产环境建议"><a href="#三、生产环境建议" class="headerlink" title="三、生产环境建议"></a>三、生产环境建议</h3><ol>
+<li><p><strong>优化锁竞争</strong>：</p>
+<ul>
+<li>对事务访问的键进行排序（避免交叉锁请求）。</li>
+<li>使用更细粒度的键设计减少冲突。</li>
+</ul>
+</li>
+<li><p><strong>参数调优</strong>：</p>
+<figure class="highlight cpp"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br></pre></td><td class="code"><pre><span class="line"><span class="comment">// 增加锁分片减少竞争</span></span><br><span class="line">rocksdb::TransactionDBOptions txn_db_options;</span><br><span class="line">txn_db_options.num_stripes = <span class="number">64</span>; <span class="comment">// 默认16</span></span><br><span class="line"></span><br><span class="line"><span class="comment">// 缩短超时时间 + 允许重试</span></span><br><span class="line">txn_options.lock_timeout = <span class="number">100</span>;  <span class="comment">// 100ms</span></span><br><span class="line">txn_options.deadlock_detect_retries = <span class="number">2</span>;</span><br></pre></td></tr></table></figure>
+</li>
+<li><p><strong>监控与告警</strong>：</p>
+<ul>
+<li>监控指标：<code>rocksdb.deadlock_retries</code>、<code>rocksdb.lock_timeouts</code></li>
+<li>日志分析：定期扫描 <code>LOG</code> 文件中的 <code>Timeout waiting for lock</code> 条目。</li>
+</ul>
+</li>
+</ol>
+<hr>
+<h3 id="四、锁分片设计（Lock-Sharding）详解"><a href="#四、锁分片设计（Lock-Sharding）详解" class="headerlink" title="四、锁分片设计（Lock Sharding）详解"></a>四、锁分片设计（Lock Sharding）详解</h3><hr>
+<h4 id="1-锁分片的核心思想"><a href="#1-锁分片的核心思想" class="headerlink" title="1. 锁分片的核心思想"></a><strong>1. 锁分片的核心思想</strong></h4><p>锁分片是一种 <strong>通过哈希将锁资源分散到多个独立组（分片）中以减少竞争</strong> 的并发控制技术。RocksDB 的锁管理器（<code>TransactionLockMgr</code>）通过分片设计，将所有的键（Key）分配到多个分片中，每个分片独立管理自己的锁集合。<br>这种设计的核心目标是 <strong>减少多线程访问锁时的竞争开销</strong>，从而提升高并发场景下的吞吐量。</p>
+<hr>
+<h4 id="2-分片设计的具体实现"><a href="#2-分片设计的具体实现" class="headerlink" title="2. 分片设计的具体实现"></a><strong>2. 分片设计的具体实现</strong></h4><h5 id="a-分片分配逻辑"><a href="#a-分片分配逻辑" class="headerlink" title="a. 分片分配逻辑"></a><strong>a. 分片分配逻辑</strong></h5><ul>
+<li><strong>分片数量</strong>：由 <code>TransactionDBOptions::num_stripes</code> 参数控制（默认值：16）。</li>
+<li><strong>哈希函数</strong>：对 Key 进行哈希运算，将结果模分片数（<code>hash(key) % num_stripes</code>），决定 Key 属于哪个分片。</li>
+<li><strong>示例</strong>：<figure class="highlight cpp"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br></pre></td><td class="code"><pre><span class="line"><span class="comment">// 初始化分片式锁管理器</span></span><br><span class="line">rocksdb::TransactionDBOptions txn_db_options;</span><br><span class="line">txn_db_options.num_stripes = <span class="number">64</span>; <span class="comment">// 分片数设为64</span></span><br><span class="line">rocksdb::TransactionDB* txn_db;</span><br><span class="line">rocksdb::TransactionDB::<span class="built_in">Open</span>(options, txn_db_options, <span class="string">&quot;/data&quot;</span>, &amp;txn_db);</span><br></pre></td></tr></table></figure></li>
+</ul>
+<h5 id="b-分片锁表结构"><a href="#b-分片锁表结构" class="headerlink" title="b. 分片锁表结构"></a><strong>b. 分片锁表结构</strong></h5><p>每个分片包含一个独立的锁表（<code>LockMap</code>），其数据结构如下：</p>
+<figure class="highlight cpp"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">struct</span> <span class="title class_">LockMapStripe</span> &#123;</span><br><span class="line">  std::mutex stripe_mutex;           <span class="comment">// 分片级互斥锁</span></span><br><span class="line">  std::unordered_map&lt;std::string, LockInfo&gt; keys; <span class="comment">// Key到锁信息的映射</span></span><br><span class="line">&#125;;</span><br></pre></td></tr></table></figure>
+<ul>
+<li><strong>锁表操作</strong>：<br>当一个事务尝试获取 Key 的锁时：<ol>
+<li>计算 Key 所属分片（<code>stripe_idx = hash(key) % num_stripes</code>）。</li>
+<li>获取对应分片的 <code>stripe_mutex</code>。</li>
+<li>在分片锁表中检查该 Key 的锁状态：<ul>
+<li>若未被锁定，则记录事务持有锁。</li>
+<li>若已被其他事务锁定，则进入等待队列或触发超时。</li>
+</ul>
+</li>
+</ol>
+</li>
+</ul>
+<hr>
+<h4 id="3-超时检测机制"><a href="#3-超时检测机制" class="headerlink" title="3. 超时检测机制"></a><strong>3. 超时检测机制</strong></h4><h5 id="a-分片级超时检测（非逐-Key-检测）"><a href="#a-分片级超时检测（非逐-Key-检测）" class="headerlink" title="a. 分片级超时检测（非逐 Key 检测）"></a><strong>a. 分片级超时检测（非逐 Key 检测）</strong></h5><p>RocksDB <strong>不会为每个 Key 单独维护超时检测槽</strong>，而是通过以下方式实现超时控制：</p>
+<ol>
+<li><strong>事务级超时计时</strong>：每个事务在请求锁时记录起始时间戳。</li>
+<li><strong>分片锁检查</strong>：当其他事务尝试获取同一分片中的锁时，若发现锁被占用且超时，则触发回滚。</li>
+<li><strong>被动超时触发</strong>：没有独立的后台线程主动扫描超时，依赖后续事务的锁请求驱动检测。</li>
+</ol>
+<h5 id="b-超时检测示例"><a href="#b-超时检测示例" class="headerlink" title="b. 超时检测示例"></a><strong>b. 超时检测示例</strong></h5><figure class="highlight cpp"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br></pre></td><td class="code"><pre><span class="line"><span class="comment">// 事务尝试获取 Key 的锁</span></span><br><span class="line"><span class="function">Status <span class="title">TransactionLockMgr::TryLock</span><span class="params">(Transaction* txn, <span class="type">const</span> std::string&amp; key)</span> </span>&#123;</span><br><span class="line">  <span class="type">int</span> stripe_idx = <span class="built_in">hash</span>(key) % num_stripes_;</span><br><span class="line">  LockMapStripe&amp; stripe = lock_map_[stripe_idx];</span><br><span class="line">  </span><br><span class="line">  <span class="function">std::lock_guard&lt;std::mutex&gt; <span class="title">lock</span><span class="params">(stripe.stripe_mutex)</span></span>;</span><br><span class="line">  <span class="keyword">auto</span> it = stripe.keys.<span class="built_in">find</span>(key);</span><br><span class="line">  <span class="keyword">if</span> (it != stripe.keys.<span class="built_in">end</span>()) &#123;</span><br><span class="line">    <span class="comment">// 检查锁是否超时</span></span><br><span class="line">    <span class="keyword">if</span> (<span class="built_in">Now</span>() - it-&gt;second.acquire_time &gt; txn_options_.lock_timeout) &#123;</span><br><span class="line">      <span class="comment">// 强制释放超时锁并回滚持有者事务</span></span><br><span class="line">      it-&gt;second.txn-&gt;<span class="built_in">Rollback</span>();</span><br><span class="line">      stripe.keys.<span class="built_in">erase</span>(it);</span><br><span class="line">    &#125; <span class="keyword">else</span> &#123;</span><br><span class="line">      <span class="keyword">return</span> Status::<span class="built_in">TimedOut</span>();</span><br><span class="line">    &#125;</span><br><span class="line">  &#125;</span><br><span class="line">  <span class="comment">// 授予锁</span></span><br><span class="line">  stripe.keys[key] = <span class="built_in">LockInfo</span>(txn, <span class="built_in">Now</span>());</span><br><span class="line">  <span class="keyword">return</span> Status::<span class="built_in">OK</span>();</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+<hr>
+<h4 id="4-分片设计的优势与不足"><a href="#4-分片设计的优势与不足" class="headerlink" title="4. 分片设计的优势与不足"></a><strong>4. 分片设计的优势与不足</strong></h4><h5 id="a-优势"><a href="#a-优势" class="headerlink" title="a. 优势"></a><strong>a. 优势</strong></h5><ul>
+<li><strong>减少锁竞争</strong>：将全局锁竞争分散到多个分片，提高并发性能。</li>
+<li><strong>内存高效</strong>：无需为每个 Key 单独维护锁结构，分片内哈希表按需扩展。</li>
+<li><strong>扩展性</strong>：通过调整 <code>num_stripes</code> 适应不同规模的硬件（CPU核心数、并发线程数）。</li>
+</ul>
+<h5 id="b-不足"><a href="#b-不足" class="headerlink" title="b. 不足"></a><strong>b. 不足</strong></h5><ul>
+<li><strong>哈希冲突</strong>：不同 Key 可能落入同一分片，仍可能引发竞争。</li>
+<li><strong>无全局死锁检测</strong>：分片隔离导致无法跨分片检测死锁环。</li>
+<li><strong>被动超时机制</strong>：依赖后续事务触发超时回滚，可能延迟死锁解除。</li>
+</ul>
+<hr>
+<h4 id="5-分片参数调优建议"><a href="#5-分片参数调优建议" class="headerlink" title="5. 分片参数调优建议"></a><strong>5. 分片参数调优建议</strong></h4><table>
+<thead>
+<tr>
+<th><strong>场景</strong></th>
+<th><strong>优化建议</strong></th>
+</tr>
+</thead>
+<tbody><tr>
+<td><strong>高并发写入</strong></td>
+<td>增大 <code>num_stripes</code>（如设为 CPU 核心数的 4 倍）以降低分片内竞争。</td>
+</tr>
+<tr>
+<td><strong>长事务占比高</strong></td>
+<td>增加 <code>lock_timeout</code> 避免误杀，但需权衡系统响应速度。</td>
+</tr>
+<tr>
+<td><strong>Key 分布不均匀</strong></td>
+<td>使用更均匀的哈希函数（如 <code>XXH3</code>）减少分片负载倾斜。</td>
+</tr>
+</tbody></table>
+<hr>
+<h4 id="6-总结"><a href="#6-总结" class="headerlink" title="6.总结"></a>6.总结</h4><ul>
+<li><strong>锁分片设计</strong>：通过哈希将锁资源分散到多个分片，是 RocksDB 实现高并发事务的核心优化，但并非为每个 Key 单独维护锁状态。</li>
+<li><strong>超时检测</strong>：依赖被动触发而非主动扫描，牺牲了死锁处理及时性以换取更高吞吐。</li>
+<li><strong>调优方向</strong>：合理配置 <code>num_stripes</code> 和 <code>lock_timeout</code>，结合业务负载特征平衡性能与可靠性。</li>
+</ul>
 
       
     </div>
@@ -282,7 +490,7 @@
 
 
   <nav class="pagination">
-    <a class="extend prev" rel="prev" title="上一页" aria-label="上一页" href="/page/20/"><i class="fa fa-angle-left"></i></a><a class="page-number" href="/">1</a><span class="space">&hellip;</span><a class="page-number" href="/page/20/">20</a><span class="page-number current">21</span><a class="page-number" href="/page/22/">22</a><span class="space">&hellip;</span><a class="page-number" href="/page/30/">30</a><a class="extend next" rel="next" title="下一页" aria-label="下一页" href="/page/22/"><i class="fa fa-angle-right"></i></a>
+    <a class="extend prev" rel="prev" title="上一页" aria-label="上一页" href="/page/20/"><i class="fa fa-angle-left"></i></a><a class="page-number" href="/">1</a><span class="space">&hellip;</span><a class="page-number" href="/page/20/">20</a><span class="page-number current">21</span><a class="page-number" href="/page/22/">22</a><span class="space">&hellip;</span><a class="page-number" href="/page/34/">34</a><a class="extend next" rel="next" title="下一页" aria-label="下一页" href="/page/22/"><i class="fa fa-angle-right"></i></a>
   </nav>
 
 </div>

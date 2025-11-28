@@ -123,13 +123,13 @@
   <nav class="site-state">
       <div class="site-state-item site-state-posts">
         <a href="/archives/">
-          <span class="site-state-item-count">30</span>
+          <span class="site-state-item-count">34</span>
           <span class="site-state-item-name">日志</span>
         </a>
       </div>
       <div class="site-state-item site-state-categories">
           <a href="/categories/">
-        <span class="site-state-item-count">13</span>
+        <span class="site-state-item-count">14</span>
         <span class="site-state-item-name">分类</span></a>
       </div>
   </nav>
@@ -159,7 +159,7 @@
   
 
   <article itemscope itemtype="http://schema.org/Article" class="post-content" lang="">
-    <link itemprop="mainEntityOfPage" href="https://scut-corgis.github.io/2025-08-24-redis%E5%8D%95%E5%85%83%E5%8C%96/">
+    <link itemprop="mainEntityOfPage" href="https://scut-corgis.github.io/2025-11-26-leveldb%E6%BA%90%E7%A0%81%E5%AD%A6%E4%B9%A0(1)-%E8%83%8C%E6%99%AF%E7%9F%A5%E8%AF%86/">
 
     <span hidden itemprop="author" itemscope itemtype="http://schema.org/Person">
       <meta itemprop="image" content="/images/corgis.jpg">
@@ -177,7 +177,7 @@
     </span>
       <header class="post-header">
         <h2 class="post-title" itemprop="name headline">
-          <a href="/2025-08-24-redis%E5%8D%95%E5%85%83%E5%8C%96/" class="post-title-link" itemprop="url">redis单元化</a>
+          <a href="/2025-11-26-leveldb%E6%BA%90%E7%A0%81%E5%AD%A6%E4%B9%A0(1)-%E8%83%8C%E6%99%AF%E7%9F%A5%E8%AF%86/" class="post-title-link" itemprop="url">leveldb源码学习(1)-背景知识</a>
         </h2>
 
         <div class="post-meta-container">
@@ -188,7 +188,7 @@
       </span>
       <span class="post-meta-item-text">发表于</span>
 
-      <time title="创建时间：2025-08-24 17:30:52" itemprop="dateCreated datePublished" datetime="2025-08-24T17:30:52+08:00">2025-08-24</time>
+      <time title="创建时间：2025-11-26 15:21:12" itemprop="dateCreated datePublished" datetime="2025-11-26T15:21:12+08:00">2025-11-26</time>
     </span>
     <span class="post-meta-item">
       <span class="post-meta-item-icon">
@@ -196,7 +196,7 @@
       </span>
       <span class="post-meta-item-text">分类于</span>
         <span itemprop="about" itemscope itemtype="http://schema.org/Thing">
-          <a href="/categories/redis/" itemprop="url" rel="index"><span itemprop="name">redis</span></a>
+          <a href="/categories/leveldb/" itemprop="url" rel="index"><span itemprop="name">leveldb</span></a>
         </span>
     </span>
 
@@ -210,75 +210,110 @@
     
     
     <div class="post-body" itemprop="articleBody">
-          <h1 id="背景"><a href="#背景" class="headerlink" title="背景"></a>背景</h1><p>单元化：指异地多活，比如两个相离很远的大区域，如北京与深圳两个副本，是两份相同的数据，业务上层保证指对自己本地的数据做写操作，可以读其他地数据。</p>
-<p>单元化主要有两个优势</p>
+          <h1 id="学习背景"><a href="#学习背景" class="headerlink" title="学习背景"></a>学习背景</h1><p>虽然我的工作内容是纯缓存redis，但是也经常跟做磁盘数据库的同学交流沟通，我发现深入的理解rocksdb这种十分常用的kv数据库是相当有必要的。它能补齐我磁盘数据库知识缺失的一块。</p>
+<p>并且，不能只从宏观原理上理解，比如只理解lsm-tree就可以了，我渴望从更深层的底层源码理解它的运作。</p>
+<p>考虑到rocksdb过于复杂以至于并不适合新手学习lsm-tree的kv引擎，加上有句话说：“跟leveldb学习c++”，我决定开始学习leveldb。</p>
+<p>几个链接：</p>
 <ul>
-<li>异地多活</li>
-<li>读写本地单元时，时延低。按常规的主从复制做的话，读写一个异地的idc时延会很高。</li>
+<li>文档与github链接：<a target="_blank" rel="noopener" href="https://github.com/google/leveldb/tree/main/doc">https://github.com/google/leveldb/tree/main/doc</a></li>
+<li>知乎一篇讲解lsm的文章，非常简单 <a target="_blank" rel="noopener" href="https://zhuanlan.zhihu.com/p/415799237">https://zhuanlan.zhihu.com/p/415799237</a></li>
+<li>某个大佬的学习笔记，但是我觉得写的太少了，不够深入和细致。<a target="_blank" rel="noopener" href="https://sf-zhou.github.io/#/LevelDB">https://sf-zhou.github.io/#/LevelDB</a></li>
 </ul>
-<p>本文不详细讨论单元化的优势、理念，主要讲解一种redis单元化的实现思路。</p>
-<p>方案总体如下</p>
+<h1 id="基础术语与宏观理解"><a href="#基础术语与宏观理解" class="headerlink" title="基础术语与宏观理解"></a>基础术语与宏观理解</h1><p>这里更多是翻译的其<code>doc/impl.md</code>的内容，并增加自己的一些理解。</p>
+<h2 id="核心文件类型（精简核心组件）"><a href="#核心文件类型（精简核心组件）" class="headerlink" title="核心文件类型（精简核心组件）"></a>核心文件类型（精简核心组件）</h2><h3 id="WAL-日志文件（Write-Ahead-Log，-log）"><a href="#WAL-日志文件（Write-Ahead-Log，-log）" class="headerlink" title="WAL 日志文件（Write-Ahead Log，*.log）"></a>WAL 日志文件（Write-Ahead Log，*.log）</h3><ul>
+<li>定义：LevelDB 的预写日志文件，是保障崩溃一致性的核心组件。</li>
+<li>核心机制：所有写操作（Put&#x2F;Delete）会先以追加方式写入当前 WAL 日志，再写入内存中的 MemTable。这种 “先写日志，后写内存” 的设计，确保崩溃后可通过日志恢复 MemTable 数据。</li>
+<li>触发切换：当日志文件达到预设阈值（默认 4MB）时，触发 MemTable 刷盘（生成 sstable），同时创建新 WAL 日志承接后续写操作。</li>
+<li>关键解析：WAL 日志与 MemTable 是 “逻辑绑定” 关系，同一时段内一个 WAL 对应一个活跃 MemTable，刷盘后旧 WAL 会被标记为过期，等待垃圾回收。</li>
+</ul>
+<h3 id="排序字符串表（SSTable，-ldb，-sst）"><a href="#排序字符串表（SSTable，-ldb，-sst）" class="headerlink" title="排序字符串表（SSTable，*.ldb，*.sst）"></a>排序字符串表（SSTable，*.ldb，*.sst）</h3><ul>
+<li>定义：LevelDB 的持久化存储核心，是按键有序排列的不可变数据文件。</li>
+<li>存储内容：每个条目包含 InternalKey（用户键 + 序列号 + 操作类型）与对应值，或键的删除标记（tombstone）—— 删除标记用于屏蔽旧 sstable 中已过时的键值对，避免读取时返回无效数据。</li>
+</ul>
+<p>层级组织规则：</p>
+<ul>
+<li>0 级（Level-0）：由 MemTable 刷盘直接生成，特点是文件可能存在键范围重叠（因 MemTable 刷盘是独立触发的），读取时需合并所有重叠文件。</li>
+<li>1 级及以上（Level-L，L≥1）：文件键范围互不重叠，层级越高，单文件数据量越大，Level-1 为 10MB，Level-2 为 100MB，以此类推。</li>
+</ul>
+<p>核心价值：不可变特性避免了写时冲突，用于只允许追加写，为磁盘高效写设计。</p>
+<h3 id="清单文件（MANIFEST）"><a href="#清单文件（MANIFEST）" class="headerlink" title="清单文件（MANIFEST）"></a>清单文件（MANIFEST）</h3><ul>
+<li>定义：数据库元数据的 “变更日志”，记录全量层级信息与文件元数据。</li>
+<li>存储内容：各层级包含的 sstable 列表、每个 sstable 的键范围（smallest_key&#x2F;largest_key）、当前 WAL 日志号（log_number）、最大序列号（last_sequence）等核心元数据。</li>
+<li>更新机制：采用追加写（Append-Only）模式，数据库重启或元数据变更（如 Compaction、sstable 增减）时，不会修改原有文件，而是生成新 MANIFEST 文件并更新 CURRENT 指向。</li>
+</ul>
+<p>manifest的内容实际上可以理解为<code>VersionEdit</code>数组，每次版本更替时（比如memtable刷盘成sst），会往文件里面追加写入一条<code>VersionEdit</code>。因此重放时，从头到尾依次读出<code>VersionEdit</code>，最后整合为当前的<code>Version</code>，涵盖了每个<code>level</code>的文件列表。</p>
+<h3 id="当前指针文件（CURRENT）"><a href="#当前指针文件（CURRENT）" class="headerlink" title="当前指针文件（CURRENT）"></a>当前指针文件（CURRENT）</h3><ul>
+<li>定义：轻量级文本文件，仅存储最新 MANIFEST 文件的文件名。</li>
+<li>核心作用：简化恢复流程 —— 数据库启动时无需遍历所有 MANIFEST 文件，只需读取 CURRENT 即可定位最新元数据文件，提升启动效率。</li>
+</ul>
+<h3 id="辅助文件"><a href="#辅助文件" class="headerlink" title="辅助文件"></a>辅助文件</h3><ul>
+<li>LOCK 文件：进程级排他锁，防止多个进程同时操作同一数据库目录，避免数据损坏。</li>
+<li>INFO 日志（LOG&#x2F;LOG.old）：记录系统运行日志（如 Compaction 触发、错误信息），用于问题排查。</li>
+<li>临时文件（*.dbtmp）：Compaction 或刷盘过程中生成的中间文件，操作成功后会重命名为正式 sstable，失败则直接删除，不影响数据一致性。</li>
+</ul>
+<h2 id="压实操作（Compaction）"><a href="#压实操作（Compaction）" class="headerlink" title="压实操作（Compaction）"></a>压实操作（Compaction）</h2><h3 id="MemTable-刷盘与-Level-0-生成"><a href="#MemTable-刷盘与-Level-0-生成" class="headerlink" title="MemTable 刷盘与 Level-0 生成"></a>MemTable 刷盘与 Level-0 生成</h3><ul>
+<li>触发条件：当前活跃 MemTable 对应的 WAL 日志达到 4MB 阈值。</li>
+</ul>
+<p>核心流程：</p>
 <ol>
-<li>通过一个<strong>同步工具</strong>将两个redis<strong>主节点</strong>构成一条单元化链接，该同步工具可以单向或双向的同步两者的写操作。</li>
-<li>将对端单元传过来的数据加上单元信息（如单元归属），本单元不允许对其他单元的key做任何的写操作（比如淘汰、过期本单元均不操作）。</li>
+<li>原子创建新 MemTable 与新 WAL 日志，后续写操作直接导向新组件；</li>
+<li>后台线程将旧 MemTable 数据有序写入磁盘，生成 Level-0 sstable；</li>
+<li>刷盘成功后，释放旧 MemTable 内存，标记旧 WAL 日志为过期；</li>
+<li>将新 sstable 加入 Level-0 层级。</li>
 </ol>
-<p><img src="/2025-08-24-redis%E5%8D%95%E5%85%83%E5%8C%96/%E5%8D%95%E5%85%83%E5%8C%96%E6%9E%B6%E6%9E%84.drawio.svg"></p>
-<h1 id="同步工具行为"><a href="#同步工具行为" class="headerlink" title="同步工具行为"></a>同步工具行为</h1><blockquote>
-<p>下文称单元1的redis-server为r1，同理单元2的为r2。以r1为源，r2为目标的情况下讲解。</p>
+<p>设计解析：刷盘过程采用 “后台异步 + 原子切换”，实际上在一个memtable写满后不会直接刷盘否则会阻塞前台写操作，而是变成immutable-memtable，等待后台线程刷盘和更新manifest，同时旧组件仅在刷盘成功后释放，确保崩溃时可通过旧 WAL 恢复数据。</p>
+<h3 id="核心流程"><a href="#核心流程" class="headerlink" title="核心流程"></a>核心流程</h3><p>定义：LevelDB 核心后台任务，用于解决 sstable 累积导致的读取性能下降，核心目标是 “合并数据、清理过期条目、维持层级结构”。</p>
+<p>触发条件：</p>
+<ul>
+<li>Level-0：文件数量超过 4 个（因文件重叠，数量过多会导致读取时需合并大量文件）；</li>
+<li>Level-L（L≥1）：总数据量超过10^L MB 阈值。</li>
+</ul>
+<p>核心逻辑：</p>
+<ol>
+<li>选文件：Level-0 压实会选取所有含有重叠key范围的文件，Level-L（L≥1）仅选取一个文件及 Level-L+1 中所有有key范围重叠的文件；</li>
+<li>归并排序：将选中文件的键值对按 InternalKey 重新排序，过滤过期值（被覆盖的键）与无效删除标记（无更高层级文件包含该键范围）；</li>
+<li>生成新文件：按 2MB 分片生成 Level-L+1 新 sstable，确保新文件键范围不重叠；</li>
+<li>原子替换：新文件写入成功后，将旧文件标记为过期，更新 MANIFEST 元数据。</li>
+</ol>
+<p>特定层级的压实操作会按键空间（key space）循环执行。具体来说，对于每个层级 L，系统会记录该层级上一次压实操作的结束键；下一次 L 层级的压实操作会选取第一个起始键位于该结束键之后的文件（若不存在此类文件，则循环回到键空间的起始位置）。</p>
+<p>压实操作会丢弃被覆盖的值（overwritten values）；若不存在更高编号的层级包含与当前键范围重叠的文件，则会一并丢弃该键的删除标记（deletion markers）。</p>
+<h3 id="时间开销-Timing"><a href="#时间开销-Timing" class="headerlink" title="时间开销 Timing"></a>时间开销 Timing</h3><p>Level-0 压实操作最多会从 Level-0 读取 4 个 1MB 大小的文件，最坏情况下需读取所有 Level-1 文件（总计 10MB）。即，压实过程需读取 14MB 数据并写入 14MB 数据。</p>
+<p>除特殊的 Level-0 压实外，会从 L 层级选取 1 个 2MB 大小的文件。最坏情况下，该文件会与 L+1 层级的约 12 个文件重叠（其中 10 个源于 L+1 层级的总大小是 L 层级的 10 倍，另外 2 个源于 L 层级与 L+1 层级的文件键范围通常无法对齐，导致边界处额外重叠）。因此，压实操作需读取 26MB 数据并写入 26MB 数据。假设现代硬盘的 I&#x2F;O 速率为 100MB&#x2F;s（常规水平），最坏情况下压实耗时约 0.5 秒。</p>
+<p>若将后台写入速率限制在较低水平（例如，硬盘峰值速率 100MB&#x2F;s 的 10%），一次压实操作可能耗时长达 5 秒。若用户写入速率为 10MB&#x2F;s，Level-0 可能会累积大量文件（约 50 个文件，用于存储 5 秒内写入的 50MB 数据）。这会导致读取时需合并更多文件，显著增加读取开销。</p>
+<blockquote>
+<p>26MB&#x2F;(10MB&#x2F;s) &#x3D; 2.6秒，但这是最理想的情况，文档写5秒估计是测试结果。</p>
 </blockquote>
-<h2 id="理念"><a href="#理念" class="headerlink" title="理念"></a>理念</h2><p>首先redis引入单元化同步的进度结构，相当于在常规的repl_offset增加了一个单元化的unit_repl_offset。</p>
-<p>同步工具在配置文件中配置好两个单元的同步节点，规定好一条同步链路，比如源节点和目标节点的信息。</p>
-<p>同步工具有一个设计理念： 一条命令永远不会经过同步工具两次以防止命令回环。<br>其通过以下方法实现</p>
+<p>解决方案 </p>
 <ol>
-<li>每一个真实命令通过其前，会先追加一条自定义的<code>unit_xx</code>命令，该命令被规定为写命令</li>
-<li>因此回环时，会先收到<code>UNIT_SYNC_BINLOG</code>命令，那么意味着后续跟着的真实命令是回环命令，可以直接丢弃不予通过。</li>
+<li>当 Level-0 文件数量较多时，可提高日志切换阈值（即 WAL 日志触发刷盘的大小阈值）。但该方案的缺点是，阈值越大，对应的 MemTable 所需占用的内存就越多。</li>
+<li>当 Level-0 文件数量增加时，可人工降低写入速率。</li>
+<li>优化大范围合并的开销。实际上就是增加block_cache的大小，让level0的大部份文件的原始数据在内存中存在，就不用去磁盘读了。</li>
 </ol>
-<p>这里说一个重要思想，针对同步缓存区：</p>
+<h2 id="恢复流程（Recovery）"><a href="#恢复流程（Recovery）" class="headerlink" title="恢复流程（Recovery）"></a>恢复流程（Recovery）</h2><ol>
+<li>读取 CURRENT 文件，获取最新已提交的 MANIFEST 文件名称；</li>
+<li>读取该 MANIFEST 文件，重建层级元数据；</li>
+<li>清理过期文件（未被任何层级引用的 sstable 及旧 WAL 日志）；</li>
+<li>此处可打开所有 sstable，但采用惰性加载（按需打开）或许更优 —— 避免启动时加载大量无关数据，提升恢复速度；</li>
+<li>将未过期的 WAL 日志片段转换为新的 Level-0 sstable；</li>
+<li>创建新的 WAL 日志文件，沿用恢复得到的最大序列号（sequence number），承接后续写入操作。</li>
+</ol>
+<h2 id="文件垃圾回收（Garbage-collection-of-files）"><a href="#文件垃圾回收（Garbage-collection-of-files）" class="headerlink" title="文件垃圾回收（Garbage collection of files）"></a>文件垃圾回收（Garbage collection of files）</h2><p>RemoveObsoleteFiles() 函数会在每次压实操作结束后及恢复流程完成后调用。该函数会遍历数据库目录下的所有文件，执行以下清理逻辑：</p>
+<ol>
+<li>删除所有非当前活跃 WAL 日志的日志文件；</li>
+<li>删除所有未被任何层级引用、且不属于活跃压实操作输出的 sstable 文件。</li>
+</ol>
+<h1 id="使用方法"><a href="#使用方法" class="headerlink" title="使用方法"></a>使用方法</h1><p>这里先不赘述了，有空用中文写一遍。</p>
+<p>我觉得官方文档的<code>index.md</code>文件写的非常好。能从对外能力上，全局视角理解它的使用。</p>
+<p>从它的使用方法上，我觉得后续有几个能力的内核实现方式需要重点关注</p>
 <ul>
-<li>每个节点记录好自身的单元化的repl_id和offset（新数据结构），主要用于重连时让同步工具能获取到，该节点<strong>单元化的同步位点</strong>。</li>
-<li>对于一个单一节点而言，单元化写操作的binlog和一般的命令产生的binlog是共用缓冲区的，同样共用repl_id和offset（redis原生结构）。所以当收到一个psync repl_id offset命令时（无论是否为单元化），实际上都是将backup_log中的该offset之后的数据发给对端。</li>
+<li><code>WriteBatch</code>的具体实现</li>
+<li>并发读写的实现方式</li>
+<li>迭代器<code>Iterator</code>的实现</li>
+<li><code>block_cache</code>和<code>block_size</code>在内核中的表现</li>
+<li>布隆过滤器的<code>NewBloomFilterPolicy</code>实现，如何在sst文件的后面放<code>filter meta block</code>的。</li>
+<li>估计某个范围的key数量的实现<code>GetApproximateSizes</code></li>
+<li>快照的实现<code>GetSnapshot</code></li>
 </ul>
-<p><img src="/2025-08-24-redis%E5%8D%95%E5%85%83%E5%8C%96/%E8%AF%B7%E6%B1%82%E5%90%8C%E6%AD%A5.drawio.svg"></p>
-<h2 id="开始同步"><a href="#开始同步" class="headerlink" title="开始同步"></a>开始同步</h2><ol>
-<li>同步工具向r2发起连接，通过自定义命令<code>UNIT_SYNC_NEW_SESSION</code>，参数为源单元名与同步链路名，以及此次session的id字符串。</li>
-<li>可以从r2收包拿到其单元化的repl_id和offset，后续用于向r1发起同步用</li>
-<li>建立与r1的连接，发起<code>unit_psync</code>命令附带刚获取的<code>repl_id</code>和<code>offset</code>。这里可以将其理解为psync2命令。</li>
-<li>r1收到该同步请求时，判断backup_log是否还存在该offset（和redis常规情况一致），其走增量返回<code>CONTINUE</code>还是全量返回<code>FULLRESYNC</code>，以全量举例，r1顺带返回了<code>new_repl_id</code>和<code>new_offset</code></li>
-<li>同步工具开始获取和解析rdb。这里详细阐述一下</li>
-</ol>
-<p>每一个rdb的key-value对，会把他做成一个<code>multi exec</code>命令，一共附带3条命令</p>
-<ul>
-<li><code>UNIT_SYNC_BINLOG</code>，附带session_id、binlog_seq（恒递增）、repl_id、offset、源单元名和同步链路名。注意在全量同步解析rdb时，repl_id和offset可以置为初始值，因为不关心。</li>
-<li><code>UNIT_SYNC_PRE_RESTORE</code> + <code>key</code>，告知对端即将<code>RESTORE</code></li>
-<li><code>RESTORE</code> + 命令参数<code>REPLACE</code>和<code>ABSTTL</code>。</li>
-</ul>
-<p>同步工具会将所有拿到的binlog都存在本地文件里，即内存中不会放无限递增的binlog请求，到了一定程度便持久化到本地文件中。</p>
-<ol start="6">
-<li>最终在rdb所有命令解析为binlog后增加一条<code>UNIT_SYNC_BINLOG</code>，附带真正的<code>repl_id</code>和<code>repl_offset</code>，用于告知对端其同步位点。</li>
-</ol>
-<h2 id="同步稳态"><a href="#同步稳态" class="headerlink" title="同步稳态"></a>同步稳态</h2><p>稳态即同步工具和r1已经开始稳定的增量同步，同步工具收到包后将其持久化到本地文件里，并定期回复<code>REPLCONF ACK offset</code>。</p>
-<p>同步工具持续的从本地文件中拉取multi命令包装的binlog发送给r2，相当于自己就是一个业务写入方。通过r2的回复，来裁剪本地文件的binlog数据。</p>
-<p>跟R1的稳态交互为：</p>
-<ol>
-<li>同步工具持续解析从r1收命令，如果是<code>unit</code>命令，只更新offset，不持久化到文件。否则包装成<code>MULTI</code>命令附带<code>unit</code>命令，持久化到文件中。</li>
-<li>每一秒回复r1一次<code>REPLCONF ACK offset</code>。</li>
-</ol>
-<p>跟R2的稳态交互为：</p>
-<ol>
-<li>持续的从文件中取出之前持久化的<code>cmds</code>，如果db文件里没有，则检查binlog_buf中有没有，将这些发送给r2，将已经发送的未收到回复的请求f附带seq记录在队列<code>binlog_info_q</code>里。</li>
-<li>持续的从r2收回复包，每收到一个命令的回复，删除<code>binlog_info_q</code>这里面的这条记录，推进队列的总进度。</li>
-<li>每一段时间根据<code>binlog_info_q</code>记录的进度，删除db文件中的对方已经收到的命令。</li>
-</ol>
-<h1 id="redis-server行为"><a href="#redis-server行为" class="headerlink" title="redis-server行为"></a>redis-server行为</h1><h2 id="自定义命令与处理"><a href="#自定义命令与处理" class="headerlink" title="自定义命令与处理"></a>自定义命令与处理</h2><h3 id="UNIT-SYNC-NEW-SESSION"><a href="#UNIT-SYNC-NEW-SESSION" class="headerlink" title="UNIT_SYNC_NEW_SESSION"></a>UNIT_SYNC_NEW_SESSION</h3><figure class="highlight c"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br></pre></td><td class="code"><pre><span class="line">cmd = <span class="string">&quot;KUNIT_SYNC_NEW_SESSION&quot;</span>,</span><br><span class="line">    <span class="comment">/*</span></span><br><span class="line"><span class="comment">    req:</span></span><br><span class="line"><span class="comment">        KUNIT_SYNC_NEW_SESSION &lt;UNIT_NAME&gt; &lt;RL_NAME&gt; &lt;SID&gt;</span></span><br><span class="line"><span class="comment">    rsp:</span></span><br><span class="line"><span class="comment">        [</span></span><br><span class="line"><span class="comment">            &lt;REPL_ID&gt;</span></span><br><span class="line"><span class="comment">            &lt;OFFSET&gt;</span></span><br><span class="line"><span class="comment">        ]</span></span><br><span class="line"><span class="comment">    */</span></span><br></pre></td></tr></table></figure>
-<p>这个命令主要是同步工具启动初始化时，获取r2的过往同步进度的。比如tcp重连。通过这个命令可以拿到当前同步链路的repl_id和offset。</p>
-<h3 id="UNIT-SYNC-BINLOG"><a href="#UNIT-SYNC-BINLOG" class="headerlink" title="UNIT_SYNC_BINLOG"></a>UNIT_SYNC_BINLOG</h3><figure class="highlight c"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br></pre></td><td class="code"><pre><span class="line">cmd = <span class="string">&quot;KUNIT_SYNC_BINLOG&quot;</span>,</span><br><span class="line">    <span class="comment">/*</span></span><br><span class="line"><span class="comment">    req:</span></span><br><span class="line"><span class="comment">        MULTI</span></span><br><span class="line"><span class="comment">        KUNIT_SYNC_BINLOG &lt;SID&gt; &lt;BINLOG_SEQ_STR&gt; &lt;REPL_ID&gt; &lt;OFFSET_OF_CMD_END&gt; &lt;UNIT_NAME&gt;</span></span><br><span class="line"><span class="comment">        &lt;CMD_ARGS&gt;...</span></span><br><span class="line"><span class="comment">        ...</span></span><br><span class="line"><span class="comment">        EXEC</span></span><br><span class="line"><span class="comment">    rsp:</span></span><br><span class="line"><span class="comment">        +OK</span></span><br><span class="line"><span class="comment">        +QUEUED</span></span><br><span class="line"><span class="comment">        +QUEUED</span></span><br><span class="line"><span class="comment">        ...</span></span><br><span class="line"><span class="comment">        &lt;rsp of `EXEC`&gt;</span></span><br><span class="line"><span class="comment">    */</span></span><br></pre></td></tr></table></figure>
-<p>通过这个命令更新r2的session中的offset。并设置好接下来的命令的key的单元归属信息，以及该命令表明为单元化同步的命令。</p>
-<h3 id="UNIT-SYNC-PRE-RESTORE"><a href="#UNIT-SYNC-PRE-RESTORE" class="headerlink" title="UNIT_SYNC_PRE_RESTORE"></a>UNIT_SYNC_PRE_RESTORE</h3><figure class="highlight c"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br></pre></td><td class="code"><pre><span class="line">cmd = <span class="string">&quot;KUNIT_SYNC_PRE_RESTORE&quot;</span>,</span><br><span class="line">    <span class="comment">/*</span></span><br><span class="line"><span class="comment">    req:</span></span><br><span class="line"><span class="comment">        MULTI</span></span><br><span class="line"><span class="comment">        &lt;KUNIT_SYNC_BINLOG CMD&gt;</span></span><br><span class="line"><span class="comment">        KUNIT_SYNC_PRE_RESTORE &lt;KEY&gt;</span></span><br><span class="line"><span class="comment">        &lt;RESTORE_CMD&gt;</span></span><br><span class="line"><span class="comment">        EXEC</span></span><br><span class="line"><span class="comment">    rsp:</span></span><br><span class="line"><span class="comment">        +OK</span></span><br><span class="line"><span class="comment">        +QUEUED</span></span><br><span class="line"><span class="comment">        +QUEUED</span></span><br><span class="line"><span class="comment">        +QUEUED</span></span><br><span class="line"><span class="comment">        &lt;rsp of `EXEC`&gt;</span></span><br><span class="line"><span class="comment">    */</span></span><br></pre></td></tr></table></figure>
-<p>这条命令用于在restore key之前做校验，必须处于上面binlog命令的事务中。比如一次全量同步时，r1发过来的key的单元归属信息会指定为r1，但实际上有可能是r2的数据。</p>
-<p>那么r2可以通过这个命令检查key的单元归属信息拦截掉相应的写请求。</p>
-<h2 id="实际写命令处理"><a href="#实际写命令处理" class="headerlink" title="实际写命令处理"></a>实际写命令处理</h2><p>对于一般的写命令，我们将单元归属信息都置为<code>unit_id=0</code>，表明该key属于本单元。</p>
-<p>而单元化的写命令，都是在<code>MULTI</code>中，在<code>EXEC</code>执行前，清空当前所有的预置的单元归属信息。然后依次执行，在执行到<code>UNIT_SYNC_BINLOG</code>时，设置到接下来的key的单元归属信息。</p>
-<p>之后在dbAdd时，把这个object-val的单元归属信息加上即可。</p>
 
       
     </div>
@@ -298,7 +333,7 @@
 
 
   <nav class="pagination">
-    <a class="extend prev" rel="prev" title="上一页" aria-label="上一页" href="/"><i class="fa fa-angle-left"></i></a><a class="page-number" href="/">1</a><span class="page-number current">2</span><a class="page-number" href="/page/3/">3</a><span class="space">&hellip;</span><a class="page-number" href="/page/30/">30</a><a class="extend next" rel="next" title="下一页" aria-label="下一页" href="/page/3/"><i class="fa fa-angle-right"></i></a>
+    <a class="extend prev" rel="prev" title="上一页" aria-label="上一页" href="/"><i class="fa fa-angle-left"></i></a><a class="page-number" href="/">1</a><span class="page-number current">2</span><a class="page-number" href="/page/3/">3</a><span class="space">&hellip;</span><a class="page-number" href="/page/34/">34</a><a class="extend next" rel="next" title="下一页" aria-label="下一页" href="/page/3/"><i class="fa fa-angle-right"></i></a>
   </nav>
 
 </div>

@@ -1,0 +1,332 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+<meta name="viewport" content="width=device-width">
+<meta name="theme-color" content="#222"><meta name="generator" content="Hexo 7.3.0">
+
+  <link rel="apple-touch-icon" sizes="180x180" href="/images/apple-touch-icon-next.png">
+  <link rel="icon" type="image/png" sizes="32x32" href="/images/corgis.jpg">
+  <link rel="icon" type="image/png" sizes="16x16" href="/images/corgis.jpg">
+  <link rel="mask-icon" href="/images/logo.svg" color="#222">
+
+<link rel="stylesheet" href="/css/main.css">
+
+
+
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.2/css/all.min.css" integrity="sha256-XOqroi11tY4EFQMR9ZYwZWKj5ZXiftSx36RRuC3anlA=" crossorigin="anonymous">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/animate.css/3.1.1/animate.min.css" integrity="sha256-PR7ttpcvz8qrF57fur/yAx1qXMFJeJFiA6pSzWi0OIE=" crossorigin="anonymous">
+
+<script class="next-config" data-name="main" type="application/json">{"hostname":"scut-corgis.github.io","root":"/","images":"/images","scheme":"Muse","darkmode":false,"version":"8.20.0","exturl":false,"sidebar":{"position":"left","width_expanded":320,"width_dual_column":240,"display":"always","padding":18,"offset":12},"hljswrap":true,"copycode":{"enable":true,"style":null},"fold":{"enable":true,"height":500},"bookmark":{"enable":false,"color":"#222","save":"auto"},"mediumzoom":false,"lazyload":false,"pangu":false,"comments":{"style":"tabs","active":null,"storage":true,"lazyload":false,"nav":null},"stickytabs":false,"motion":{"enable":true,"async":false,"transition":{"menu_item":"fadeInDown","post_block":"fadeIn","post_header":"fadeInDown","post_body":"fadeInDown","coll_header":"fadeInLeft","sidebar":"fadeInUp"}},"prism":false,"i18n":{"placeholder":"搜索...","empty":"没有找到任何搜索结果：${query}","hits_time":"找到 ${hits} 个搜索结果（用时 ${time} 毫秒）","hits":"找到 ${hits} 个搜索结果"}}</script><script src="/js/config.js"></script>
+
+    <meta name="description" content="启动函数Open()解析demo首先写一个如下的测试文件，打开一个全新的db，并简单写入一个key。 12345678910111213141516171819202122#include &lt;cassert&gt;#include &quot;leveldb&#x2F;db.h&quot;int main() &#123;  leveldb::DB* db;  &#123;    leveldb::O">
+<meta property="og:type" content="article">
+<meta property="og:title" content="leveldb源码学习(2)-启动过程">
+<meta property="og:url" content="https://scut-corgis.github.io/2025-11-28-leveldb%E6%BA%90%E7%A0%81%E5%AD%A6%E4%B9%A0(2)-%E5%90%AF%E5%8A%A8%E8%BF%87%E7%A8%8B/index.html">
+<meta property="og:site_name" content="corgis的笔记">
+<meta property="og:description" content="启动函数Open()解析demo首先写一个如下的测试文件，打开一个全新的db，并简单写入一个key。 12345678910111213141516171819202122#include &lt;cassert&gt;#include &quot;leveldb&#x2F;db.h&quot;int main() &#123;  leveldb::DB* db;  &#123;    leveldb::O">
+<meta property="og:locale" content="zh_CN">
+<meta property="article:published_time" content="2025-11-28T07:51:12.000Z">
+<meta property="article:modified_time" content="2025-11-28T09:46:56.439Z">
+<meta property="article:author" content="Corgis">
+<meta name="twitter:card" content="summary">
+
+
+<link rel="canonical" href="https://scut-corgis.github.io/2025-11-28-leveldb%E6%BA%90%E7%A0%81%E5%AD%A6%E4%B9%A0(2)-%E5%90%AF%E5%8A%A8%E8%BF%87%E7%A8%8B/">
+
+
+
+<script class="next-config" data-name="page" type="application/json">{"sidebar":"","isHome":false,"isPost":true,"lang":"zh-CN","comments":true,"permalink":"https://scut-corgis.github.io/2025-11-28-leveldb%E6%BA%90%E7%A0%81%E5%AD%A6%E4%B9%A0(2)-%E5%90%AF%E5%8A%A8%E8%BF%87%E7%A8%8B/","path":"2025-11-28-leveldb源码学习(2)-启动过程/","title":"leveldb源码学习(2)-启动过程"}</script>
+
+<script class="next-config" data-name="calendar" type="application/json">""</script>
+<title>leveldb源码学习(2)-启动过程 | corgis的笔记</title>
+  
+
+
+
+
+
+
+
+
+  <noscript>
+    <link rel="stylesheet" href="/css/noscript.css">
+  </noscript>
+</head>
+
+<body itemscope itemtype="http://schema.org/WebPage" class="use-motion">
+  <div class="headband"></div>
+
+  <main class="main">
+    <div class="column">
+      <header class="header" itemscope itemtype="http://schema.org/WPHeader"><div class="site-brand-container">
+  <div class="site-nav-toggle">
+    <div class="toggle" aria-label="切换导航栏" role="button">
+        <span class="toggle-line"></span>
+        <span class="toggle-line"></span>
+        <span class="toggle-line"></span>
+    </div>
+  </div>
+
+  <div class="site-meta">
+
+    <a href="/" class="brand" rel="start">
+      <i class="logo-line"></i>
+      <p class="site-title">corgis的笔记</p>
+      <i class="logo-line"></i>
+    </a>
+  </div>
+
+  <div class="site-nav-right">
+    <div class="toggle popup-trigger" aria-label="搜索" role="button">
+    </div>
+  </div>
+</div>
+
+
+
+<nav class="site-nav">
+  <ul class="main-menu menu"><li class="menu-item menu-item-home"><a href="/" rel="section"><i class="fa fa-home fa-fw"></i>首页</a></li><li class="menu-item menu-item-about"><a href="/about/" rel="section"><i class="fa fa-user fa-fw"></i>关于</a></li><li class="menu-item menu-item-categories"><a href="/categories/" rel="section"><i class="fa fa-th fa-fw"></i>分类</a></li><li class="menu-item menu-item-archives"><a href="/archives/" rel="section"><i class="fa fa-archive fa-fw"></i>归档</a></li>
+  </ul>
+</nav>
+
+
+
+
+</header>
+        
+  
+  <aside class="sidebar">
+
+    <div class="sidebar-inner sidebar-nav-active sidebar-toc-active">
+      <ul class="sidebar-nav">
+        <li class="sidebar-nav-toc">
+          文章目录
+        </li>
+        <li class="sidebar-nav-overview">
+          站点概览
+        </li>
+      </ul>
+
+      <div class="sidebar-panel-container">
+        <!--noindex-->
+        <div class="post-toc-wrap sidebar-panel">
+            <div class="post-toc animated"><ol class="nav"><li class="nav-item nav-level-1"><a class="nav-link" href="#%E5%90%AF%E5%8A%A8%E5%87%BD%E6%95%B0Open-%E8%A7%A3%E6%9E%90"><span class="nav-number">1.</span> <span class="nav-text">启动函数Open()解析</span></a><ol class="nav-child"><li class="nav-item nav-level-2"><a class="nav-link" href="#demo"><span class="nav-number">1.1.</span> <span class="nav-text">demo</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E4%B8%BB%E6%B5%81%E7%A8%8B%E8%B5%B0%E8%AF%BB"><span class="nav-number">1.2.</span> <span class="nav-text">主流程走读</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#recover"><span class="nav-number">1.2.1.</span> <span class="nav-text">recover</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#recover%E5%90%8E%E7%BB%AD"><span class="nav-number">1.2.2.</span> <span class="nav-text">recover后续</span></a></li></ol></li></ol></li></ol></div>
+        </div>
+        <!--/noindex-->
+
+        <div class="site-overview-wrap sidebar-panel">
+          <div class="site-author animated" itemprop="author" itemscope itemtype="http://schema.org/Person">
+    <img class="site-author-image" itemprop="image" alt="Corgis"
+      src="/images/corgis.jpg">
+  <p class="site-author-name" itemprop="name">Corgis</p>
+  <div class="site-description" itemprop="description">用于成长过程中，记录值得对外分享的技术，如开源代码理解、国外课程项目，个人对一些领域的心得等</div>
+</div>
+<div class="site-state-wrap animated">
+  <nav class="site-state">
+      <div class="site-state-item site-state-posts">
+        <a href="/archives/">
+          <span class="site-state-item-count">34</span>
+          <span class="site-state-item-name">日志</span>
+        </a>
+      </div>
+      <div class="site-state-item site-state-categories">
+          <a href="/categories/">
+        <span class="site-state-item-count">14</span>
+        <span class="site-state-item-name">分类</span></a>
+      </div>
+  </nav>
+</div>
+
+        </div>
+      </div>
+        <div class="back-to-top animated" role="button" aria-label="返回顶部">
+          <i class="fa fa-arrow-up"></i>
+          <span>0%</span>
+        </div>
+    </div>
+
+    
+  </aside>
+
+
+    </div>
+
+    <div class="main-inner post posts-expand">
+
+
+  
+
+
+<div class="post-block">
+  
+  
+
+  <article itemscope itemtype="http://schema.org/Article" class="post-content" lang="zh-CN">
+    <link itemprop="mainEntityOfPage" href="https://scut-corgis.github.io/2025-11-28-leveldb%E6%BA%90%E7%A0%81%E5%AD%A6%E4%B9%A0(2)-%E5%90%AF%E5%8A%A8%E8%BF%87%E7%A8%8B/">
+
+    <span hidden itemprop="author" itemscope itemtype="http://schema.org/Person">
+      <meta itemprop="image" content="/images/corgis.jpg">
+      <meta itemprop="name" content="Corgis">
+    </span>
+
+    <span hidden itemprop="publisher" itemscope itemtype="http://schema.org/Organization">
+      <meta itemprop="name" content="corgis的笔记">
+      <meta itemprop="description" content="用于成长过程中，记录值得对外分享的技术，如开源代码理解、国外课程项目，个人对一些领域的心得等">
+    </span>
+
+    <span hidden itemprop="post" itemscope itemtype="http://schema.org/CreativeWork">
+      <meta itemprop="name" content="leveldb源码学习(2)-启动过程 | corgis的笔记">
+      <meta itemprop="description" content="">
+    </span>
+      <header class="post-header">
+        <h1 class="post-title" itemprop="name headline">
+          leveldb源码学习(2)-启动过程
+        </h1>
+
+        <div class="post-meta-container">
+          <div class="post-meta">
+    <span class="post-meta-item">
+      <span class="post-meta-item-icon">
+        <i class="far fa-calendar"></i>
+      </span>
+      <span class="post-meta-item-text">发表于</span>
+
+      <time title="创建时间：2025-11-28 15:51:12" itemprop="dateCreated datePublished" datetime="2025-11-28T15:51:12+08:00">2025-11-28</time>
+    </span>
+    <span class="post-meta-item">
+      <span class="post-meta-item-icon">
+        <i class="far fa-folder"></i>
+      </span>
+      <span class="post-meta-item-text">分类于</span>
+        <span itemprop="about" itemscope itemtype="http://schema.org/Thing">
+          <a href="/categories/leveldb/" itemprop="url" rel="index"><span itemprop="name">leveldb</span></a>
+        </span>
+    </span>
+
+  
+</div>
+
+        </div>
+      </header>
+
+    
+    
+    
+    <div class="post-body" itemprop="articleBody"><h1 id="启动函数Open-解析"><a href="#启动函数Open-解析" class="headerlink" title="启动函数Open()解析"></a>启动函数Open()解析</h1><h2 id="demo"><a href="#demo" class="headerlink" title="demo"></a>demo</h2><p>首先写一个如下的测试文件，打开一个<strong>全新的</strong>db，并简单写入一个key。</p>
+<figure class="highlight c++"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br></pre></td><td class="code"><pre><span class="line"><span class="meta">#<span class="keyword">include</span> <span class="string">&lt;cassert&gt;</span></span></span><br><span class="line"><span class="meta">#<span class="keyword">include</span> <span class="string">&quot;leveldb/db.h&quot;</span></span></span><br><span class="line"></span><br><span class="line"><span class="function"><span class="type">int</span> <span class="title">main</span><span class="params">()</span> </span>&#123;</span><br><span class="line">  leveldb::DB* db;</span><br><span class="line"></span><br><span class="line">  &#123;</span><br><span class="line">    leveldb::Options options;</span><br><span class="line">    options.create_if_missing = <span class="literal">true</span>;</span><br><span class="line">    options.compression = leveldb::kNoCompression;</span><br><span class="line">    leveldb::Status status = leveldb::DB::<span class="built_in">Open</span>(options, <span class="string">&quot;testdb&quot;</span>, &amp;db);</span><br><span class="line">    <span class="built_in">assert</span>(status.<span class="built_in">ok</span>());</span><br><span class="line">  &#125;</span><br><span class="line"></span><br><span class="line">  &#123;</span><br><span class="line">    leveldb::WriteOptions options;</span><br><span class="line">    leveldb::Status status = db-&gt;<span class="built_in">Put</span>(options, <span class="string">&quot;[Key]&quot;</span>, <span class="string">&quot;[Value]&quot;</span>);</span><br><span class="line">    <span class="built_in">assert</span>(status.<span class="built_in">ok</span>());</span><br><span class="line">  &#125;</span><br><span class="line"></span><br><span class="line">  <span class="keyword">delete</span> db;</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+<p>执行完毕后，可以看到，存在五个文件，其含义已经在前一篇文章中有叙述</p>
+<figure class="highlight shell"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br></pre></td><td class="code"><pre><span class="line">/build/testdb (main *%)</span><br><span class="line"><span class="meta prompt_">$ </span><span class="language-bash">ll</span></span><br><span class="line">total 16</span><br><span class="line">-rw-r--r--. 1 x  34 Nov 26 14:33 000003.log</span><br><span class="line">-rw-r--r--. 1 x  16 Nov 26 14:33 CURRENT</span><br><span class="line">-rw-r--r--. 1 x   0 Nov 26 14:33 LOCK</span><br><span class="line">-rw-r--r--. 1 x 144 Nov 26 14:33 LOG</span><br><span class="line">-rw-r--r--. 1 x  50 Nov 26 14:33 MANIFEST-000002</span><br></pre></td></tr></table></figure>
+
+<h2 id="主流程走读"><a href="#主流程走读" class="headerlink" title="主流程走读"></a>主流程走读</h2><p>后续会对代码进行大量精简，只保留核心逻辑</p>
+<figure class="highlight c++"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br><span class="line">27</span><br><span class="line">28</span><br><span class="line">29</span><br><span class="line">30</span><br><span class="line">31</span><br></pre></td><td class="code"><pre><span class="line"><span class="function">Status <span class="title">DB::Open</span><span class="params">(<span class="type">const</span> Options&amp; options, <span class="type">const</span> std::string&amp; dbname, DB** dbptr)</span> </span>&#123;</span><br><span class="line">  DBImpl* impl = <span class="keyword">new</span> <span class="built_in">DBImpl</span>(options, dbname);</span><br><span class="line">  VersionEdit edit;</span><br><span class="line">  <span class="type">bool</span> save_manifest = <span class="literal">false</span></span><br><span class="line">  Status s = impl-&gt;<span class="built_in">Recover</span>(&amp;edit, &amp;save_manifest);</span><br><span class="line">  <span class="keyword">if</span> (s.<span class="built_in">ok</span>() &amp;&amp; impl-&gt;mem_ == <span class="literal">nullptr</span>) &#123;</span><br><span class="line">    <span class="comment">// Create new log and a corresponding memtable.</span></span><br><span class="line">    <span class="type">uint64_t</span> new_log_number = impl-&gt;versions_-&gt;<span class="built_in">NewFileNumber</span>();</span><br><span class="line">    WritableFile* lfile;</span><br><span class="line">    s = options.env-&gt;<span class="built_in">NewWritableFile</span>(<span class="built_in">LogFileName</span>(dbname, new_log_number),</span><br><span class="line">                                     &amp;lfile);</span><br><span class="line">    <span class="keyword">if</span> (s.<span class="built_in">ok</span>()) &#123;</span><br><span class="line">      edit.<span class="built_in">SetLogNumber</span>(new_log_number);</span><br><span class="line">      impl-&gt;logfile_ = lfile;</span><br><span class="line">      impl-&gt;logfile_number_ = new_log_number;</span><br><span class="line">      impl-&gt;log_ = <span class="keyword">new</span> log::<span class="built_in">Writer</span>(lfile);</span><br><span class="line">      impl-&gt;mem_ = <span class="keyword">new</span> <span class="built_in">MemTable</span>(impl-&gt;internal_comparator_);</span><br><span class="line">      impl-&gt;mem_-&gt;<span class="built_in">Ref</span>();</span><br><span class="line">    &#125;</span><br><span class="line">  &#125;</span><br><span class="line">  <span class="keyword">if</span> (s.<span class="built_in">ok</span>() &amp;&amp; save_manifest) &#123;</span><br><span class="line">    edit.<span class="built_in">SetPrevLogNumber</span>(<span class="number">0</span>);  <span class="comment">// No older logs needed after recovery.</span></span><br><span class="line">    edit.<span class="built_in">SetLogNumber</span>(impl-&gt;logfile_number_);</span><br><span class="line">    s = impl-&gt;versions_-&gt;<span class="built_in">LogAndApply</span>(&amp;edit, &amp;impl-&gt;mutex_);</span><br><span class="line">  &#125;</span><br><span class="line">  <span class="keyword">if</span> (s.<span class="built_in">ok</span>()) &#123;</span><br><span class="line">    impl-&gt;<span class="built_in">RemoveObsoleteFiles</span>();</span><br><span class="line">    impl-&gt;<span class="built_in">MaybeScheduleCompaction</span>();</span><br><span class="line">  &#125;</span><br><span class="line">  ...</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+<h3 id="recover"><a href="#recover" class="headerlink" title="recover"></a>recover</h3><p><code>new DBImpl</code>这个构造函数只是做了内部变量的初始化，生成相应的日志文件而已。</p>
+<p>重点在于 <code>impl-&gt;Recover(&amp;edit, &amp;save_manifest)</code>这一段，这里对于空数据库（目录下是空的）会创一个新的，对于已经存在的数据库将执行recover过程。</p>
+<figure class="highlight c++"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br><span class="line">27</span><br><span class="line">28</span><br><span class="line">29</span><br><span class="line">30</span><br><span class="line">31</span><br><span class="line">32</span><br><span class="line">33</span><br><span class="line">34</span><br><span class="line">35</span><br><span class="line">36</span><br><span class="line">37</span><br><span class="line">38</span><br><span class="line">39</span><br><span class="line">40</span><br><span class="line">41</span><br><span class="line">42</span><br><span class="line">43</span><br><span class="line">44</span><br><span class="line">45</span><br><span class="line">46</span><br><span class="line">47</span><br><span class="line">48</span><br><span class="line">49</span><br><span class="line">50</span><br><span class="line">51</span><br><span class="line">52</span><br><span class="line">53</span><br><span class="line">54</span><br><span class="line">55</span><br><span class="line">56</span><br><span class="line">57</span><br><span class="line">58</span><br><span class="line">59</span><br><span class="line">60</span><br><span class="line">61</span><br><span class="line">62</span><br><span class="line">63</span><br><span class="line">64</span><br><span class="line">65</span><br><span class="line">66</span><br><span class="line">67</span><br></pre></td><td class="code"><pre><span class="line"><span class="function">Status <span class="title">DBImpl::Recover</span><span class="params">(VersionEdit* edit, <span class="type">bool</span>* save_manifest)</span> </span>&#123;</span><br><span class="line">  ...</span><br><span class="line">  <span class="comment">// 创建LOCK文件，保证整个机器只允许一个进程访问</span></span><br><span class="line">  Status s = env_-&gt;<span class="built_in">LockFile</span>(<span class="built_in">LockFileName</span>(dbname_), &amp;db_lock_);</span><br><span class="line"> ...</span><br><span class="line"></span><br><span class="line">   <span class="comment">// 如果没有文件，那么新创一个db</span></span><br><span class="line">  <span class="keyword">if</span> (!env_-&gt;<span class="built_in">FileExists</span>(<span class="built_in">CurrentFileName</span>(dbname_))) &#123;</span><br><span class="line">    <span class="keyword">if</span> (options_.create_if_missing) &#123;</span><br><span class="line">      <span class="comment">// 新创db的过程，即按照当前的空数据库的现状（如logNumber等），生成一个VersionEdit，并写入manifest</span></span><br><span class="line">      <span class="comment">// 再创建CURRENT文件指向刚刚的manifest</span></span><br><span class="line">      s = <span class="built_in">NewDB</span>();</span><br><span class="line">    &#125; </span><br><span class="line">    ...</span><br><span class="line">  &#125; </span><br><span class="line">  ...</span><br><span class="line">  <span class="comment">// 对于空数据库，显然就是按刚刚的空的manifest恢复，否则按实际的manifest恢复</span></span><br><span class="line">  <span class="comment">// 本质上这一步是解析manifest</span></span><br><span class="line">  s = versions_-&gt;<span class="built_in">Recover</span>(save_manifest);</span><br><span class="line">  <span class="keyword">if</span> (!s.<span class="built_in">ok</span>()) &#123;</span><br><span class="line">    <span class="keyword">return</span> s;</span><br><span class="line">  &#125;</span><br><span class="line">  <span class="function">SequenceNumber <span class="title">max_sequence</span><span class="params">(<span class="number">0</span>)</span></span>;</span><br><span class="line"></span><br><span class="line">  <span class="type">const</span> <span class="type">uint64_t</span> min_log = versions_-&gt;<span class="built_in">LogNumber</span>();</span><br><span class="line">  <span class="type">const</span> <span class="type">uint64_t</span> prev_log = versions_-&gt;<span class="built_in">PrevLogNumber</span>();</span><br><span class="line">  std::vector&lt;std::string&gt; filenames;</span><br><span class="line">  <span class="comment">// 拿到这个目录下的全部文件</span></span><br><span class="line">  s = env_-&gt;<span class="built_in">GetChildren</span>(dbname_, &amp;filenames);</span><br><span class="line">  <span class="keyword">if</span> (!s.<span class="built_in">ok</span>()) &#123;</span><br><span class="line">    <span class="keyword">return</span> s;</span><br><span class="line">  &#125;</span><br><span class="line">  <span class="comment">// 刚刚recover后，我们从manifest中知道了哪些文件是必须存在的</span></span><br><span class="line">  std::set&lt;<span class="type">uint64_t</span>&gt; expected;</span><br><span class="line">  versions_-&gt;<span class="built_in">AddLiveFiles</span>(&amp;expected);</span><br><span class="line">  <span class="type">uint64_t</span> number;</span><br><span class="line">  FileType type;</span><br><span class="line">  std::vector&lt;<span class="type">uint64_t</span>&gt; logs;</span><br><span class="line">  <span class="comment">// 解析所有文件，拿出所有的WAL文件，按名字排序</span></span><br><span class="line">  <span class="keyword">for</span> (<span class="type">size_t</span> i = <span class="number">0</span>; i &lt; filenames.<span class="built_in">size</span>(); i++) &#123;</span><br><span class="line">    <span class="keyword">if</span> (<span class="built_in">ParseFileName</span>(filenames[i], &amp;number, &amp;type)) &#123;</span><br><span class="line">      expected.<span class="built_in">erase</span>(number);</span><br><span class="line">      <span class="keyword">if</span> (type == kLogFile &amp;&amp; ((number &gt;= min_log) || (number == prev_log)))</span><br><span class="line">        logs.<span class="built_in">push_back</span>(number);</span><br><span class="line">    &#125;</span><br><span class="line">  &#125;</span><br><span class="line">  <span class="comment">// 如果缺失了文件，则数据库打开必须失败</span></span><br><span class="line">  <span class="keyword">if</span> (!expected.<span class="built_in">empty</span>()) &#123;</span><br><span class="line">    <span class="type">char</span> buf[<span class="number">50</span>];</span><br><span class="line">    std::<span class="built_in">snprintf</span>(buf, <span class="built_in">sizeof</span>(buf), <span class="string">&quot;%d missing files; e.g.&quot;</span>,</span><br><span class="line">                  <span class="built_in">static_cast</span>&lt;<span class="type">int</span>&gt;(expected.<span class="built_in">size</span>()));</span><br><span class="line">    <span class="keyword">return</span> Status::<span class="built_in">Corruption</span>(buf, <span class="built_in">TableFileName</span>(dbname_, *(expected.<span class="built_in">begin</span>())));</span><br><span class="line">  &#125;</span><br><span class="line"></span><br><span class="line">  <span class="comment">// 对wal进行重放恢复</span></span><br><span class="line">  std::<span class="built_in">sort</span>(logs.<span class="built_in">begin</span>(), logs.<span class="built_in">end</span>());</span><br><span class="line">  <span class="keyword">for</span> (<span class="type">size_t</span> i = <span class="number">0</span>; i &lt; logs.<span class="built_in">size</span>(); i++) &#123;</span><br><span class="line">    s = <span class="built_in">RecoverLogFile</span>(logs[i], (i == logs.<span class="built_in">size</span>() - <span class="number">1</span>), save_manifest, edit,</span><br><span class="line">                       &amp;max_sequence);</span><br><span class="line">    <span class="keyword">if</span> (!s.<span class="built_in">ok</span>()) &#123;</span><br><span class="line">      <span class="keyword">return</span> s;</span><br><span class="line">    &#125;</span><br><span class="line">    ...</span><br><span class="line">  &#125;</span><br><span class="line">    ...</span><br><span class="line">  <span class="keyword">return</span> Status::<span class="built_in">OK</span>();</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+<p>重点看看怎么解析的manifest</p>
+<figure class="highlight c++"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br><span class="line">27</span><br><span class="line">28</span><br><span class="line">29</span><br><span class="line">30</span><br><span class="line">31</span><br><span class="line">32</span><br><span class="line">33</span><br><span class="line">34</span><br><span class="line">35</span><br><span class="line">36</span><br><span class="line">37</span><br><span class="line">38</span><br><span class="line">39</span><br><span class="line">40</span><br><span class="line">41</span><br><span class="line">42</span><br><span class="line">43</span><br><span class="line">44</span><br><span class="line">45</span><br><span class="line">46</span><br><span class="line">47</span><br><span class="line">48</span><br><span class="line">49</span><br><span class="line">50</span><br><span class="line">51</span><br><span class="line">52</span><br><span class="line">53</span><br><span class="line">54</span><br><span class="line">55</span><br><span class="line">56</span><br><span class="line">57</span><br><span class="line">58</span><br><span class="line">59</span><br><span class="line">60</span><br><span class="line">61</span><br><span class="line">62</span><br><span class="line">63</span><br><span class="line">64</span><br><span class="line">65</span><br><span class="line">66</span><br><span class="line">67</span><br><span class="line">68</span><br><span class="line">69</span><br><span class="line">70</span><br><span class="line">71</span><br><span class="line">72</span><br><span class="line">73</span><br><span class="line">74</span><br><span class="line">75</span><br><span class="line">76</span><br><span class="line">77</span><br><span class="line">78</span><br><span class="line">79</span><br><span class="line">80</span><br><span class="line">81</span><br><span class="line">82</span><br><span class="line">83</span><br><span class="line">84</span><br><span class="line">85</span><br><span class="line">86</span><br><span class="line">87</span><br><span class="line">88</span><br><span class="line">89</span><br></pre></td><td class="code"><pre><span class="line"><span class="function">Status <span class="title">VersionSet::Recover</span><span class="params">(<span class="type">bool</span>* save_manifest)</span> </span>&#123;</span><br><span class="line">    ...</span><br><span class="line"></span><br><span class="line">  <span class="comment">// 从current文件中拿出现在的manifest</span></span><br><span class="line">  std::string current;</span><br><span class="line">  Status s = <span class="built_in">ReadFileToString</span>(env_, <span class="built_in">CurrentFileName</span>(dbname_), &amp;current);</span><br><span class="line">  ...</span><br><span class="line">  current.<span class="built_in">resize</span>(current.<span class="built_in">size</span>() - <span class="number">1</span>);</span><br><span class="line"></span><br><span class="line">  std::string dscname = dbname_ + <span class="string">&quot;/&quot;</span> + current;</span><br><span class="line">  SequentialFile* file;</span><br><span class="line">  s = env_-&gt;<span class="built_in">NewSequentialFile</span>(dscname, &amp;file);</span><br><span class="line">  ...</span><br><span class="line"></span><br><span class="line">  <span class="type">bool</span> have_log_number = <span class="literal">false</span>;</span><br><span class="line">  <span class="type">bool</span> have_prev_log_number = <span class="literal">false</span>;</span><br><span class="line">  <span class="type">bool</span> have_next_file = <span class="literal">false</span>;</span><br><span class="line">  <span class="type">bool</span> have_last_sequence = <span class="literal">false</span>;</span><br><span class="line">  <span class="type">uint64_t</span> next_file = <span class="number">0</span>;</span><br><span class="line">  <span class="type">uint64_t</span> last_sequence = <span class="number">0</span>;</span><br><span class="line">  <span class="type">uint64_t</span> log_number = <span class="number">0</span>;</span><br><span class="line">  <span class="type">uint64_t</span> prev_log_number = <span class="number">0</span>;</span><br><span class="line">  <span class="function">Builder <span class="title">builder</span><span class="params">(<span class="keyword">this</span>, current_)</span></span>;</span><br><span class="line">  <span class="type">int</span> read_records = <span class="number">0</span>;</span><br><span class="line"></span><br><span class="line">  &#123;</span><br><span class="line">    LogReporter reporter;</span><br><span class="line">    reporter.status = &amp;s;</span><br><span class="line">    <span class="function">log::Reader <span class="title">reader</span><span class="params">(file, &amp;reporter, <span class="literal">true</span> <span class="comment">/*checksum*/</span>,</span></span></span><br><span class="line"><span class="params"><span class="function">                       <span class="number">0</span> <span class="comment">/*initial_offset*/</span>)</span></span>;</span><br><span class="line">    Slice record;</span><br><span class="line">    std::string scratch;</span><br><span class="line">    <span class="comment">// 注意manifest的格式和wal（.log）文件是一致的，这里依次的读出所有的VersionEdit</span></span><br><span class="line">    <span class="keyword">while</span> (reader.<span class="built_in">ReadRecord</span>(&amp;record, &amp;scratch) &amp;&amp; s.<span class="built_in">ok</span>()) &#123;</span><br><span class="line">      ++read_records;</span><br><span class="line">      VersionEdit edit;</span><br><span class="line">      s = edit.<span class="built_in">DecodeFrom</span>(record);</span><br><span class="line"></span><br><span class="line">      ...</span><br><span class="line">      <span class="keyword">if</span> (s.<span class="built_in">ok</span>()) &#123;</span><br><span class="line">        <span class="comment">//依次的应用这些VersionEdit，得到一个当前的版本Version</span></span><br><span class="line">        builder.<span class="built_in">Apply</span>(&amp;edit);</span><br><span class="line">      &#125;</span><br><span class="line"></span><br><span class="line">      <span class="keyword">if</span> (edit.has_log_number_) &#123;</span><br><span class="line">        log_number = edit.log_number_;</span><br><span class="line">        have_log_number = <span class="literal">true</span>;</span><br><span class="line">      &#125;</span><br><span class="line"></span><br><span class="line">      <span class="keyword">if</span> (edit.has_prev_log_number_) &#123;</span><br><span class="line">        prev_log_number = edit.prev_log_number_;</span><br><span class="line">        have_prev_log_number = <span class="literal">true</span>;</span><br><span class="line">      &#125;</span><br><span class="line"></span><br><span class="line">      <span class="keyword">if</span> (edit.has_next_file_number_) &#123;</span><br><span class="line">        next_file = edit.next_file_number_;</span><br><span class="line">        have_next_file = <span class="literal">true</span>;</span><br><span class="line">      &#125;</span><br><span class="line"></span><br><span class="line">      <span class="keyword">if</span> (edit.has_last_sequence_) &#123;</span><br><span class="line">        last_sequence = edit.last_sequence_;</span><br><span class="line">        have_last_sequence = <span class="literal">true</span>;</span><br><span class="line">      &#125;</span><br><span class="line">    &#125;</span><br><span class="line">  &#125;</span><br><span class="line">  <span class="keyword">delete</span> file;</span><br><span class="line">  file = <span class="literal">nullptr</span>;</span><br><span class="line">  ...</span><br><span class="line"></span><br><span class="line">  <span class="keyword">if</span> (s.<span class="built_in">ok</span>()) &#123;</span><br><span class="line">    <span class="comment">// 最终得到一个当前版</span></span><br><span class="line">    Version* v = <span class="keyword">new</span> <span class="built_in">Version</span>(<span class="keyword">this</span>);</span><br><span class="line">    builder.<span class="built_in">SaveTo</span>(v);</span><br><span class="line">    <span class="built_in">Finalize</span>(v);</span><br><span class="line">    <span class="comment">// 插入到版本双向链表中，并让current_版本指标指向这个新的</span></span><br><span class="line">    <span class="built_in">AppendVersion</span>(v);</span><br><span class="line">    manifest_file_number_ = next_file;</span><br><span class="line">    next_file_number_ = next_file + <span class="number">1</span>;</span><br><span class="line">    last_sequence_ = last_sequence;</span><br><span class="line">    log_number_ = log_number;</span><br><span class="line">    prev_log_number_ = prev_log_number;</span><br><span class="line"></span><br><span class="line">    ...</span><br><span class="line">    <span class="comment">// 可以看到这里后续会生成一个新的manifest，所以文件目录下是MANIFEST-000002</span></span><br><span class="line">    *save_manifest = <span class="literal">true</span>;</span><br><span class="line">  &#125; </span><br><span class="line">  ...</span><br><span class="line">  <span class="keyword">return</span> s;</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+<p>看看重放wal的过程做了什么，注意对于新数据库，实际上是没有wal文件的，这里不会执行。</p>
+<figure class="highlight c++"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br><span class="line">27</span><br><span class="line">28</span><br><span class="line">29</span><br><span class="line">30</span><br><span class="line">31</span><br><span class="line">32</span><br><span class="line">33</span><br><span class="line">34</span><br><span class="line">35</span><br><span class="line">36</span><br><span class="line">37</span><br><span class="line">38</span><br><span class="line">39</span><br><span class="line">40</span><br><span class="line">41</span><br><span class="line">42</span><br><span class="line">43</span><br><span class="line">44</span><br><span class="line">45</span><br><span class="line">46</span><br><span class="line">47</span><br><span class="line">48</span><br><span class="line">49</span><br><span class="line">50</span><br><span class="line">51</span><br><span class="line">52</span><br><span class="line">53</span><br><span class="line">54</span><br><span class="line">55</span><br><span class="line">56</span><br><span class="line">57</span><br><span class="line">58</span><br><span class="line">59</span><br><span class="line">60</span><br><span class="line">61</span><br><span class="line">62</span><br><span class="line">63</span><br></pre></td><td class="code"><pre><span class="line"><span class="function">Status <span class="title">DBImpl::RecoverLogFile</span><span class="params">(<span class="type">uint64_t</span> log_number, <span class="type">bool</span> last_log,</span></span></span><br><span class="line"><span class="params"><span class="function">                              <span class="type">bool</span>* save_manifest, VersionEdit* edit,</span></span></span><br><span class="line"><span class="params"><span class="function">                              SequenceNumber* max_sequence)</span> </span>&#123;</span><br><span class="line">  ...</span><br><span class="line">  <span class="comment">// Open the log file</span></span><br><span class="line">  std::string fname = <span class="built_in">LogFileName</span>(dbname_, log_number);</span><br><span class="line">  SequentialFile* file;</span><br><span class="line">  Status status = env_-&gt;<span class="built_in">NewSequentialFile</span>(fname, &amp;file);</span><br><span class="line">  ...</span><br><span class="line">  <span class="function">log::Reader <span class="title">reader</span><span class="params">(file, &amp;reporter, <span class="literal">true</span> <span class="comment">/*checksum*/</span>, <span class="number">0</span> <span class="comment">/*initial_offset*/</span>)</span></span>;</span><br><span class="line">  ...</span><br><span class="line"></span><br><span class="line">  <span class="comment">// 读取所有的记录，并应用到memtable</span></span><br><span class="line">  std::string scratch;</span><br><span class="line">  Slice record;</span><br><span class="line">  WriteBatch batch;</span><br><span class="line">  <span class="type">int</span> compactions = <span class="number">0</span>;</span><br><span class="line">  MemTable* mem = <span class="literal">nullptr</span>;</span><br><span class="line">  <span class="keyword">while</span> (reader.<span class="built_in">ReadRecord</span>(&amp;record, &amp;scratch) &amp;&amp; status.<span class="built_in">ok</span>()) &#123;</span><br><span class="line">    <span class="keyword">if</span> (record.<span class="built_in">size</span>() &lt; <span class="number">12</span>) &#123;</span><br><span class="line">      reporter.<span class="built_in">Corruption</span>(record.<span class="built_in">size</span>(),</span><br><span class="line">                          Status::<span class="built_in">Corruption</span>(<span class="string">&quot;log record too small&quot;</span>));</span><br><span class="line">      <span class="keyword">continue</span>;</span><br><span class="line">    &#125;</span><br><span class="line">    WriteBatchInternal::<span class="built_in">SetContents</span>(&amp;batch, record);</span><br><span class="line">    <span class="comment">// 第一次进入时，在此处创建memtable</span></span><br><span class="line">    <span class="keyword">if</span> (mem == <span class="literal">nullptr</span>) &#123;</span><br><span class="line">      mem = <span class="keyword">new</span> <span class="built_in">MemTable</span>(internal_comparator_);</span><br><span class="line">      mem-&gt;<span class="built_in">Ref</span>();</span><br><span class="line">    &#125;</span><br><span class="line">    <span class="comment">// 往memtable里面插入此条解析记录</span></span><br><span class="line">    status = WriteBatchInternal::<span class="built_in">InsertInto</span>(&amp;batch, mem);</span><br><span class="line">    ...</span><br><span class="line">    <span class="type">const</span> SequenceNumber last_seq = WriteBatchInternal::<span class="built_in">Sequence</span>(&amp;batch) +</span><br><span class="line">                                    WriteBatchInternal::<span class="built_in">Count</span>(&amp;batch) - <span class="number">1</span>;</span><br><span class="line">    <span class="keyword">if</span> (last_seq &gt; *max_sequence) &#123;</span><br><span class="line">      *max_sequence = last_seq;</span><br><span class="line">    &#125;</span><br><span class="line">    <span class="comment">// memtable占用内存太多时，刷盘到sst level0</span></span><br><span class="line">    <span class="keyword">if</span> (mem-&gt;<span class="built_in">ApproximateMemoryUsage</span>() &gt; options_.write_buffer_size) &#123;</span><br><span class="line">      compactions++;</span><br><span class="line">      *save_manifest = <span class="literal">true</span>;</span><br><span class="line">      status = <span class="built_in">WriteLevel0Table</span>(mem, edit, <span class="literal">nullptr</span>);</span><br><span class="line">      mem-&gt;<span class="built_in">Unref</span>();</span><br><span class="line">      mem = <span class="literal">nullptr</span>;</span><br><span class="line">      ...</span><br><span class="line">    &#125;</span><br><span class="line">  &#125;</span><br><span class="line">  <span class="keyword">delete</span> file;</span><br><span class="line"></span><br><span class="line">  ...</span><br><span class="line">  <span class="comment">// recover阶段，都会把memtable最终清空，也就是刷sst level0</span></span><br><span class="line">  <span class="keyword">if</span> (mem != <span class="literal">nullptr</span>) &#123;</span><br><span class="line">    <span class="comment">// mem did not get reused; compact it.</span></span><br><span class="line">    <span class="keyword">if</span> (status.<span class="built_in">ok</span>()) &#123;</span><br><span class="line">      *save_manifest = <span class="literal">true</span>;</span><br><span class="line">      status = <span class="built_in">WriteLevel0Table</span>(mem, edit, <span class="literal">nullptr</span>);</span><br><span class="line">    &#125;</span><br><span class="line">    mem-&gt;<span class="built_in">Unref</span>();</span><br><span class="line">  &#125;</span><br><span class="line"></span><br><span class="line">  <span class="keyword">return</span> status;</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+<h3 id="recover后续"><a href="#recover后续" class="headerlink" title="recover后续"></a>recover后续</h3><p>重新回到<code>Open()</code>函数，对于空数据库，之前是没有初始化memtable指针的，这里会做初始化，并创建新的wal文件</p>
+<figure class="highlight c++"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">if</span> (s.<span class="built_in">ok</span>() &amp;&amp; impl-&gt;mem_ == <span class="literal">nullptr</span>) &#123;</span><br><span class="line">  <span class="comment">// Create new log and a corresponding memtable.</span></span><br><span class="line">  <span class="type">uint64_t</span> new_log_number = impl-&gt;versions_-&gt;<span class="built_in">NewFileNumber</span>();</span><br><span class="line">  WritableFile* lfile;</span><br><span class="line">  s = options.env-&gt;<span class="built_in">NewWritableFile</span>(<span class="built_in">LogFileName</span>(dbname, new_log_number),</span><br><span class="line">                                   &amp;lfile);</span><br><span class="line">  <span class="keyword">if</span> (s.<span class="built_in">ok</span>()) &#123;</span><br><span class="line">    edit.<span class="built_in">SetLogNumber</span>(new_log_number);</span><br><span class="line">    impl-&gt;logfile_ = lfile;</span><br><span class="line">    impl-&gt;logfile_number_ = new_log_number;</span><br><span class="line">    impl-&gt;log_ = <span class="keyword">new</span> log::<span class="built_in">Writer</span>(lfile);</span><br><span class="line">    impl-&gt;mem_ = <span class="keyword">new</span> <span class="built_in">MemTable</span>(impl-&gt;internal_comparator_);</span><br><span class="line">    impl-&gt;mem_-&gt;<span class="built_in">Ref</span>();</span><br><span class="line">  &#125;</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+<p>之前也判断过<code>save_manifest</code>最终会为<code>true</code>，则执行以下逻辑</p>
+<figure class="highlight c++"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">if</span> (s.<span class="built_in">ok</span>() &amp;&amp; save_manifest) &#123;</span><br><span class="line">  edit.<span class="built_in">SetPrevLogNumber</span>(<span class="number">0</span>);  <span class="comment">// No older logs needed after recovery.</span></span><br><span class="line">  edit.<span class="built_in">SetLogNumber</span>(impl-&gt;logfile_number_);</span><br><span class="line">  s = impl-&gt;versions_-&gt;<span class="built_in">LogAndApply</span>(&amp;edit, &amp;impl-&gt;mutex_);</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+<p>重点关注<code>LogAndApply()</code>，应用edit，生成新version</p>
+<figure class="highlight c++"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br><span class="line">27</span><br><span class="line">28</span><br><span class="line">29</span><br><span class="line">30</span><br><span class="line">31</span><br><span class="line">32</span><br><span class="line">33</span><br><span class="line">34</span><br><span class="line">35</span><br><span class="line">36</span><br><span class="line">37</span><br><span class="line">38</span><br><span class="line">39</span><br><span class="line">40</span><br><span class="line">41</span><br><span class="line">42</span><br><span class="line">43</span><br><span class="line">44</span><br><span class="line">45</span><br><span class="line">46</span><br><span class="line">47</span><br><span class="line">48</span><br><span class="line">49</span><br><span class="line">50</span><br><span class="line">51</span><br><span class="line">52</span><br><span class="line">53</span><br><span class="line">54</span><br><span class="line">55</span><br><span class="line">56</span><br><span class="line">57</span><br></pre></td><td class="code"><pre><span class="line"><span class="function">Status <span class="title">VersionSet::LogAndApply</span><span class="params">(VersionEdit* edit, port::Mutex* mu)</span> </span>&#123;</span><br><span class="line">  ...</span><br><span class="line">  <span class="comment">// 将edit和当前的version情况结合（启动时为空），生成一个新version</span></span><br><span class="line">  Version* v = <span class="keyword">new</span> <span class="built_in">Version</span>(<span class="keyword">this</span>);</span><br><span class="line">  &#123;</span><br><span class="line">    <span class="function">Builder <span class="title">builder</span><span class="params">(<span class="keyword">this</span>, current_)</span></span>;</span><br><span class="line">    builder.<span class="built_in">Apply</span>(edit);</span><br><span class="line">    builder.<span class="built_in">SaveTo</span>(v);</span><br><span class="line">  &#125;</span><br><span class="line">  <span class="built_in">Finalize</span>(v);</span><br><span class="line"></span><br><span class="line">  std::string new_manifest_file;</span><br><span class="line">  Status s;</span><br><span class="line">  <span class="comment">// 启动时，这里就是nullptr，会直接生成新的manifest</span></span><br><span class="line">  <span class="keyword">if</span> (descriptor_log_ == <span class="literal">nullptr</span>) &#123;</span><br><span class="line">    ...</span><br><span class="line">    new_manifest_file = <span class="built_in">DescriptorFileName</span>(dbname_, manifest_file_number_);</span><br><span class="line">    s = env_-&gt;<span class="built_in">NewWritableFile</span>(new_manifest_file, &amp;descriptor_file_);</span><br><span class="line">    <span class="keyword">if</span> (s.<span class="built_in">ok</span>()) &#123;</span><br><span class="line">      descriptor_log_ = <span class="keyword">new</span> log::<span class="built_in">Writer</span>(descriptor_file_);</span><br><span class="line">      <span class="comment">// 将当前的version写入manifest</span></span><br><span class="line">      s = <span class="built_in">WriteSnapshot</span>(descriptor_log_);</span><br><span class="line">    &#125;</span><br><span class="line">  &#125;</span><br><span class="line"></span><br><span class="line">  &#123;</span><br><span class="line">    mu-&gt;<span class="built_in">Unlock</span>();</span><br><span class="line"></span><br><span class="line">    <span class="comment">// 再把最新的这条VersionEdit写入</span></span><br><span class="line">    <span class="keyword">if</span> (s.<span class="built_in">ok</span>()) &#123;</span><br><span class="line">      std::string record;</span><br><span class="line">      edit-&gt;<span class="built_in">EncodeTo</span>(&amp;record);</span><br><span class="line">      s = descriptor_log_-&gt;<span class="built_in">AddRecord</span>(record);</span><br><span class="line">      <span class="keyword">if</span> (s.<span class="built_in">ok</span>()) &#123;</span><br><span class="line">        s = descriptor_file_-&gt;<span class="built_in">Sync</span>();</span><br><span class="line">      &#125;</span><br><span class="line">      ...</span><br><span class="line">    &#125;</span><br><span class="line"></span><br><span class="line">    <span class="comment">// 更新CURRENT文件</span></span><br><span class="line">    <span class="keyword">if</span> (s.<span class="built_in">ok</span>() &amp;&amp; !new_manifest_file.<span class="built_in">empty</span>()) &#123;</span><br><span class="line">      s = <span class="built_in">SetCurrentFile</span>(env_, dbname_, manifest_file_number_);</span><br><span class="line">    &#125;</span><br><span class="line"></span><br><span class="line">    mu-&gt;<span class="built_in">Lock</span>();</span><br><span class="line">  &#125;</span><br><span class="line"></span><br><span class="line">  <span class="comment">// 修改cur版本指针到最新版本</span></span><br><span class="line">  <span class="keyword">if</span> (s.<span class="built_in">ok</span>()) &#123;</span><br><span class="line">    <span class="built_in">AppendVersion</span>(v);</span><br><span class="line">    log_number_ = edit-&gt;log_number_;</span><br><span class="line">    prev_log_number_ = edit-&gt;prev_log_number_;</span><br><span class="line">  &#125; <span class="keyword">else</span> &#123;</span><br><span class="line">    ...</span><br><span class="line">  &#125;</span><br><span class="line">  <span class="keyword">return</span> s;</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+<p>最后清空旧文件，也就是manifest中没有记录的文件，以及判断是否需要compaction。逻辑简单，不再详细叙述。</p>
+<figure class="highlight c++"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br></pre></td><td class="code"><pre><span class="line">impl-&gt;<span class="built_in">RemoveObsoleteFiles</span>();</span><br><span class="line">impl-&gt;<span class="built_in">MaybeScheduleCompaction</span>();</span><br></pre></td></tr></table></figure>
+
+
+
+
+
+
+
+    </div>
+
+    
+    
+    
+
+    <footer class="post-footer">
+
+        
+
+          <div class="post-nav">
+            <div class="post-nav-item">
+                <a href="/2025-11-26-leveldb%E6%BA%90%E7%A0%81%E5%AD%A6%E4%B9%A0(1)-%E8%83%8C%E6%99%AF%E7%9F%A5%E8%AF%86/" rel="prev" title="leveldb源码学习(1)-背景知识">
+                  <i class="fa fa-angle-left"></i> leveldb源码学习(1)-背景知识
+                </a>
+            </div>
+            <div class="post-nav-item">
+            </div>
+          </div>
+    </footer>
+  </article>
+</div>
+
+
+
+
+
+
+</div>
+  </main>
+
+  <footer class="footer">
+    <div class="footer-inner">
+
+  <div class="copyright">
+    &copy; 
+    <span itemprop="copyrightYear">2025</span>
+    <span class="with-love">
+      <i class="fa fa-heart"></i>
+    </span>
+    <span class="author" itemprop="copyrightHolder">Corgis</span>
+  </div>
+  <div class="powered-by">由 <a href="https://hexo.io/" rel="noopener" target="_blank">Hexo</a> & <a href="https://theme-next.js.org/muse/" rel="noopener" target="_blank">NexT.Muse</a> 强力驱动
+  </div>
+
+    </div>
+  </footer>
+
+  
+  <div class="toggle sidebar-toggle" role="button">
+    <span class="toggle-line"></span>
+    <span class="toggle-line"></span>
+    <span class="toggle-line"></span>
+  </div>
+  <div class="sidebar-dimmer"></div>
+  <div class="reading-progress-bar"></div>
+
+<noscript>
+  <div class="noscript-warning">Theme NexT works best with JavaScript enabled</div>
+</noscript>
+
+
+  
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/animejs/3.2.1/anime.min.js" integrity="sha256-XL2inqUJaslATFnHdJOi9GfQ60on8Wx1C2H8DYiN1xY=" crossorigin="anonymous"></script>
+<script src="/js/comments.js"></script><script src="/js/utils.js"></script><script src="/js/motion.js"></script><script src="/js/sidebar.js"></script><script src="/js/next-boot.js"></script>
+
+  
+
+
+
+
+
+
+  
+
+
+
+
+
+</body>
+</html>
