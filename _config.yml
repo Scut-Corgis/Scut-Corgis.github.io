@@ -3,7 +3,7 @@
 ## Source: https://github.com/hexojs/hexo/
 
 # Site
-title: corgis的学习笔记
+title: corgis的笔记
 subtitle: ''
 description: 用于成长过程中，记录值得对外分享的技术，如开源代码理解、国外课程项目，个人对一些领域的心得等
 keywords:
@@ -13,7 +13,7 @@ timezone: ''
 
 # URL
 ## Set your site url here. For example, if you use GitHub Page, set url as 'https://username.github.io/project'
-url: https://scut-corgis.github.io/project
+url: https://Scut-Corgis.github.io
 permalink: :year-:month-:day-:title/
 permalink_defaults:
 pretty_urls:
