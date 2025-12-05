@@ -27,7 +27,7 @@
 <meta property="og:description" content="libco源码阅读笔记1.协程切换汇编 这部分引用了文章libco中的coctx_swap汇编源码分析 - 知乎 (zhihu.com) 是我看过写的最清晰的  coctx_swap汇编源码  就是将当前协程上下文保存到regs中，然后将要运行的协程切换回来 充分利用了调用函数进入函数体时的rsp指向函数返回地址，实现了pc&#x2F;rip寄存器的切换  基础知识： X86-64有16个64位通">
 <meta property="og:locale" content="zh_CN">
 <meta property="article:published_time" content="2021-12-01T14:30:05.000Z">
-<meta property="article:modified_time" content="2025-11-28T09:46:56.442Z">
+<meta property="article:modified_time" content="2025-12-05T07:41:48.836Z">
 <meta property="article:author" content="Corgis">
 <meta name="twitter:card" content="summary">
 
@@ -126,7 +126,7 @@
   <nav class="site-state">
       <div class="site-state-item site-state-posts">
         <a href="/archives/">
-          <span class="site-state-item-count">34</span>
+          <span class="site-state-item-count">36</span>
           <span class="site-state-item-name">日志</span>
         </a>
       </div>
