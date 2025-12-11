@@ -123,7 +123,7 @@
   <nav class="site-state">
       <div class="site-state-item site-state-posts">
         <a href="/archives/">
-          <span class="site-state-item-count">36</span>
+          <span class="site-state-item-count">38</span>
           <span class="site-state-item-name">日志</span>
         </a>
       </div>
@@ -159,7 +159,7 @@
   
 
   <article itemscope itemtype="http://schema.org/Article" class="post-content" lang="">
-    <link itemprop="mainEntityOfPage" href="https://scut-corgis.github.io/2025-09-23-k8s%E8%8A%82%E7%82%B9%E8%B0%83%E5%BA%A6%E7%AE%97%E6%B3%95%E7%A0%94%E7%A9%B6.md/k8s%E8%8A%82%E7%82%B9%E8%B0%83%E5%BA%A6%E7%AE%97%E6%B3%95%E7%A0%94%E7%A9%B6/">
+    <link itemprop="mainEntityOfPage" href="https://scut-corgis.github.io/2025-11-26-leveldb%E6%BA%90%E7%A0%81%E5%AD%A6%E4%B9%A0(1)-%E8%83%8C%E6%99%AF%E7%9F%A5%E8%AF%86/">
 
     <span hidden itemprop="author" itemscope itemtype="http://schema.org/Person">
       <meta itemprop="image" content="/images/corgis.jpg">
@@ -177,7 +177,7 @@
     </span>
       <header class="post-header">
         <h2 class="post-title" itemprop="name headline">
-          <a href="/2025-09-23-k8s%E8%8A%82%E7%82%B9%E8%B0%83%E5%BA%A6%E7%AE%97%E6%B3%95%E7%A0%94%E7%A9%B6.md/k8s%E8%8A%82%E7%82%B9%E8%B0%83%E5%BA%A6%E7%AE%97%E6%B3%95%E7%A0%94%E7%A9%B6/" class="post-title-link" itemprop="url">k8s节点调度算法研究</a>
+          <a href="/2025-11-26-leveldb%E6%BA%90%E7%A0%81%E5%AD%A6%E4%B9%A0(1)-%E8%83%8C%E6%99%AF%E7%9F%A5%E8%AF%86/" class="post-title-link" itemprop="url">leveldb源码学习(1)-背景知识</a>
         </h2>
 
         <div class="post-meta-container">
@@ -188,7 +188,7 @@
       </span>
       <span class="post-meta-item-text">发表于</span>
 
-      <time title="创建时间：2025-09-23 11:55:05" itemprop="dateCreated datePublished" datetime="2025-09-23T11:55:05+08:00">2025-09-23</time>
+      <time title="创建时间：2025-11-26 15:21:12" itemprop="dateCreated datePublished" datetime="2025-11-26T15:21:12+08:00">2025-11-26</time>
     </span>
     <span class="post-meta-item">
       <span class="post-meta-item-icon">
@@ -196,7 +196,7 @@
       </span>
       <span class="post-meta-item-text">分类于</span>
         <span itemprop="about" itemscope itemtype="http://schema.org/Thing">
-          <a href="/categories/%E6%95%B0%E6%8D%AE%E5%BA%93%E7%AE%A1%E6%8E%A7/" itemprop="url" rel="index"><span itemprop="name">数据库管控</span></a>
+          <a href="/categories/leveldb/" itemprop="url" rel="index"><span itemprop="name">leveldb</span></a>
         </span>
     </span>
 
@@ -210,142 +210,109 @@
     
     
     <div class="post-body" itemprop="articleBody">
-          <h1 id="背景"><a href="#背景" class="headerlink" title="背景"></a>背景</h1><p>当前的运维平台节点选机器算法比较简陋，如cpu、内存够用的情况下选内存最小的，过滤算法也比较粗暴，只考虑内存、cpu和实例节点数小于某个阈值。最终造成了较大的资源浪费和不均衡，也经常选不出机器。</p>
-<p>当前目标是优化当前的总体机器资源利用率，防止选不出机器部署节点。</p>
-<p>本文调研了节点scheduler算法，或者称为装箱算法，需要找出一种适合我们管控平台的装箱算法，用于优化资源利用率。</p>
-<p>总的来说，主要参考k8s的思想，装箱算法可以简化为两个阶段，即filter和score。对于filter来说，相对简单很多，即过滤掉无法使用的机器，这里无需调研业界做法，按自身情况定义即可。</p>
-<p>通过filter阶段的机器，我们认为都是可以使用的机器，那么需要对这批机器做score打分，最终分数最高的机器选出。</p>
-<h1 id="filter"><a href="#filter" class="headerlink" title="filter"></a>filter</h1><p>暂不叙述，后续用自己的方法</p>
+          <h1 id="学习背景"><a href="#学习背景" class="headerlink" title="学习背景"></a>学习背景</h1><p>虽然我的工作内容是纯缓存redis，但是也经常跟做磁盘数据库的同学交流沟通，我发现深入的理解rocksdb这种十分常用的kv数据库是相当有必要的。它能补齐我磁盘数据库知识缺失的一块。</p>
+<p>并且，不能只从宏观原理上理解，比如只理解lsm-tree就可以了，我渴望从更深层的底层源码理解它的运作。</p>
+<p>考虑到rocksdb过于复杂以至于并不适合新手学习lsm-tree的kv引擎，加上有句话说：“跟leveldb学习c++”，我决定开始学习leveldb。</p>
+<p>几个链接：</p>
 <ul>
-<li>机器cpu阈值</li>
-<li>机器内存阈值</li>
-<li>机器网卡阈值</li>
-<li>端口号不重复</li>
-<li>maxmemory的和小于总内存的百分比</li>
-<li>同集群的master在某个机器上的个数小于总master个数的百分比</li>
-<li>昨天一天的最高点参考等。</li>
+<li>文档与github链接：<a target="_blank" rel="noopener" href="https://github.com/google/leveldb/tree/main/doc">https://github.com/google/leveldb/tree/main/doc</a></li>
+<li>知乎一篇讲解lsm的文章，非常简单 <a target="_blank" rel="noopener" href="https://zhuanlan.zhihu.com/p/415799237">https://zhuanlan.zhihu.com/p/415799237</a></li>
+<li>某个大佬的学习笔记，但是我觉得写的太少了，不够深入和细致。<a target="_blank" rel="noopener" href="https://sf-zhou.github.io/#/LevelDB">https://sf-zhou.github.io/#/LevelDB</a></li>
 </ul>
-<h1 id="score"><a href="#score" class="headerlink" title="score"></a>score</h1><h2 id="最小资源利用率-资源比例均衡-default"><a href="#最小资源利用率-资源比例均衡-default" class="headerlink" title="最小资源利用率&amp;资源比例均衡 (default)"></a>最小资源利用率&amp;资源比例均衡 (default)</h2><p>该算法插件是k8s提供的<strong>默认方法</strong>，其中最小资源利用率和资源比例均衡的权重相同。</p>
-<blockquote>
-<p>直接阅读的源码<code>/kubernetes/pkg/scheduler/framework/plugins/noderesources</code>。</p>
-</blockquote>
-<p>强调一点，k8s默认只使用内存和cpu作为score的参考资源resources。若要加入gpu、rdma等资源，是需要用户自定义的。</p>
-<p>该算法只使用了两个采集参数</p>
+<h1 id="基础术语与宏观理解"><a href="#基础术语与宏观理解" class="headerlink" title="基础术语与宏观理解"></a>基础术语与宏观理解</h1><p>这里更多是翻译的其<code>doc/impl.md</code>的内容，并增加自己的一些理解。</p>
+<h2 id="核心文件类型（精简核心组件）"><a href="#核心文件类型（精简核心组件）" class="headerlink" title="核心文件类型（精简核心组件）"></a>核心文件类型（精简核心组件）</h2><h3 id="WAL-日志文件（Write-Ahead-Log，-log）"><a href="#WAL-日志文件（Write-Ahead-Log，-log）" class="headerlink" title="WAL 日志文件（Write-Ahead Log，*.log）"></a>WAL 日志文件（Write-Ahead Log，*.log）</h3><ul>
+<li>定义：LevelDB 的预写日志文件，是保障崩溃一致性的核心组件。</li>
+<li>核心机制：所有写操作（Put&#x2F;Delete）会先以追加方式写入当前 WAL 日志，再写入内存中的 MemTable。这种 “先写日志，后写内存” 的设计，确保崩溃后可通过日志恢复 MemTable 数据。</li>
+<li>触发切换：当日志文件达到预设阈值（默认 4MB）时，触发 MemTable 刷盘（生成 sstable），同时创建新 WAL 日志承接后续写操作。</li>
+<li>关键解析：WAL 日志与 MemTable 是 “逻辑绑定” 关系，同一时段内一个 WAL 对应一个活跃 MemTable，刷盘后旧 WAL 会被标记为过期，等待垃圾回收。</li>
+</ul>
+<h3 id="排序字符串表（SSTable，-ldb，-sst）"><a href="#排序字符串表（SSTable，-ldb，-sst）" class="headerlink" title="排序字符串表（SSTable，*.ldb，*.sst）"></a>排序字符串表（SSTable，*.ldb，*.sst）</h3><ul>
+<li>定义：LevelDB 的持久化存储核心，是按键有序排列的不可变数据文件。</li>
+<li>存储内容：每个条目包含 InternalKey（用户键 + 序列号 + 操作类型）与对应值，或键的删除标记（tombstone）—— 删除标记用于屏蔽旧 sstable 中已过时的键值对，避免读取时返回无效数据。</li>
+</ul>
+<p>层级组织规则：</p>
 <ul>
-<li>资源的可分配值<code>allocatable</code>，该值是静态值，在机器启动时则保持固定。比如内存资源可定义为<code>内存总量</code>*0.9。</li>
-<li>当前总的申请值<code>requested</code>，定义为已经绑定的所有节点累积的已经<strong>申请的</strong>资源总和，注意既包括了已经部署的节点也包含假定绑定的节点。该值在多节点选机器时是动态变化的。</li>
+<li>0 级（Level-0）：由 MemTable 刷盘直接生成，特点是文件可能存在键范围重叠（因 MemTable 刷盘是独立触发的），读取时需合并所有重叠文件。</li>
+<li>1 级及以上（Level-L，L≥1）：文件键范围互不重叠，层级越高，单文件数据量越大，Level-1 为 10MB，Level-2 为 100MB，以此类推。</li>
 </ul>
-<p>值得注意，<code>requested</code>在k8s的场景下很容易计算出来，因为每个pod会声明自己需要的内存和cpu。但是在当前运维平台场景，我们无法预先知道每个redis节点或者proxy节点到底需要多少cpu。假如按单核来算，或者直接按maxmemory来算，可能会有很大的分配误差。</p>
-<p>因此若需要使用该方案，建议把<code>requested</code>当成机器已经占用的资源，加上分配过程中已绑定节点预估的资源值。</p>
-<h3 id="最小资源利用率"><a href="#最小资源利用率" class="headerlink" title="最小资源利用率"></a>最小资源利用率</h3><p>公式如下，注意默认cpuWeight和memoryWeight均为1。</p>
-<p>意义为选出资源利用率最低的机器。</p>
-<figure class="highlight c"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">score = (cpu((allocatable-requested)*<span class="number">100</span>*cpuWeight/allocatable) + memory((allocatable-requested)*<span class="number">100</span>*memoryWeight/allocatable) + ...)/weightSum</span><br></pre></td></tr></table></figure>
-<h3 id="资源比例均衡"><a href="#资源比例均衡" class="headerlink" title="资源比例均衡"></a>资源比例均衡</h3><p>公式为</p>
-<p>意义为选出各资源利用率标准差最小的</p>
-<figure class="highlight c"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br></pre></td><td class="code"><pre><span class="line">fraction = requested/allocable</span><br><span class="line">mean = Σ(fraction(i))/len(fractions)</span><br><span class="line"><span class="built_in">std</span> = <span class="built_in">sqrt</span>( Σ((fraction(i)-mean)^<span class="number">2</span>)/len(fractions) )</span><br><span class="line">score = (<span class="number">1</span> - <span class="built_in">std</span>) * <span class="number">100</span></span><br><span class="line"></span><br><span class="line">当只有两种资源时</span><br><span class="line"><span class="built_in">std</span> = math.Abs((fraction[<span class="number">0</span>] - fraction[<span class="number">1</span>]) / <span class="number">2</span>)</span><br></pre></td></tr></table></figure>
-
-<h3 id="举例说明"><a href="#举例说明" class="headerlink" title="举例说明"></a>举例说明</h3><p>此时有3台机器</p>
-<ul>
-<li>总cpu和内存均为64核心、64G</li>
-<li>已分配cpu分别为50核、30核、10核心</li>
-<li>已分配内存分别为10G、30G、50G</li>
+<p>核心价值：不可变特性避免了写时冲突，用于只允许追加写，为磁盘高效写设计。</p>
+<h3 id="清单文件（MANIFEST）"><a href="#清单文件（MANIFEST）" class="headerlink" title="清单文件（MANIFEST）"></a>清单文件（MANIFEST）</h3><ul>
+<li>定义：数据库元数据的 “变更日志”，记录全量层级信息与文件元数据。</li>
+<li>存储内容：各层级包含的 sstable 列表、每个 sstable 的键范围（smallest_key&#x2F;largest_key）、当前 WAL 日志号（log_number）、最大序列号（last_sequence）等核心元数据。</li>
+<li>更新机制：采用追加写（Append-Only）模式，数据库重启或元数据变更（如 Compaction、sstable 增减）时，不会修改原有文件，而是生成新 MANIFEST 文件并更新 CURRENT 指向。</li>
 </ul>
-<p>我们需要依次分配2个节点，其信息分配为</p>
-<ul>
-<li>2核10G</li>
-<li>5核5G</li>
+<p>manifest的内容实际上可以理解为<code>VersionEdit</code>数组，每次版本更替时（比如memtable刷盘成sst），会往文件里面追加写入一条<code>VersionEdit</code>。因此重放时，从头到尾依次读出<code>VersionEdit</code>，最后整合为当前的<code>Version</code>，涵盖了每个<code>level</code>的文件列表。</p>
+<h3 id="当前指针文件（CURRENT）"><a href="#当前指针文件（CURRENT）" class="headerlink" title="当前指针文件（CURRENT）"></a>当前指针文件（CURRENT）</h3><ul>
+<li>定义：轻量级文本文件，仅存储最新 MANIFEST 文件的文件名。</li>
+<li>核心作用：简化恢复流程 —— 数据库启动时无需遍历所有 MANIFEST 文件，只需读取 CURRENT 即可定位最新元数据文件，提升启动效率。</li>
 </ul>
-<h4 id="分配第一个节点"><a href="#分配第一个节点" class="headerlink" title="分配第一个节点"></a>分配第一个节点</h4><p>当分配第一个节点2核心10G时，分数计算如下</p>
-<p>3台机器的最小资源利用率得分</p>
-<ul>
-<li>(（64-50-2）* 100 &#x2F; 64 +（64-10-10）* 100&#x2F;64）&#x2F;2 &#x3D; 43.75分</li>
-<li>(（64-30-2）* 100 &#x2F; 64 +（64-30-10）* 100&#x2F;64）&#x2F;2 &#x3D; 43.75分</li>
-<li>(（64-10-2）* 100 &#x2F; 64 +（64-50-10）* 100&#x2F;64）&#x2F;2 &#x3D; 43.75分</li>
+<h3 id="辅助文件"><a href="#辅助文件" class="headerlink" title="辅助文件"></a>辅助文件</h3><ul>
+<li>LOCK 文件：进程级排他锁，防止多个进程同时操作同一数据库目录，避免数据损坏。</li>
+<li>INFO 日志（LOG&#x2F;LOG.old）：记录系统运行日志（如 Compaction 触发、错误信息），用于问题排查。</li>
+<li>临时文件（*.dbtmp）：Compaction 或刷盘过程中生成的中间文件，操作成功后会重命名为正式 sstable，失败则直接删除，不影响数据一致性。</li>
 </ul>
-<p>3台机器的资源比例均衡得分</p>
-<ul>
-<li>(1-abs(((2+50)&#x2F;64 - (10+10)&#x2F;64)&#x2F;2)) * 100 &#x3D; 75分</li>
-<li>(1-abs(((2+30)&#x2F;64 - (10+30)&#x2F;64)&#x2F;2)) * 100 &#x3D; 93.75分</li>
-<li>(1-abs(((2+10)&#x2F;64 - (10+50)&#x2F;64)&#x2F;2)) * 100 &#x3D; 25分</li>
+<h2 id="压实操作（Compaction）"><a href="#压实操作（Compaction）" class="headerlink" title="压实操作（Compaction）"></a>压实操作（Compaction）</h2><h3 id="MemTable-刷盘与-Level-0-生成"><a href="#MemTable-刷盘与-Level-0-生成" class="headerlink" title="MemTable 刷盘与 Level-0 生成"></a>MemTable 刷盘与 Level-0 生成</h3><ul>
+<li>触发条件：当前活跃 MemTable 对应的 WAL 日志达到 4MB 阈值。</li>
 </ul>
-<p>因此我们选出第二台机器。</p>
-<h4 id="分配第二个节点"><a href="#分配第二个节点" class="headerlink" title="分配第二个节点"></a>分配第二个节点</h4><p>当分配第一个节点5核心5G时，分数计算如下，注意此时第三台机器已经分配了一个节点</p>
-<p>3台机器的最小资源利用率得分</p>
-<ul>
-<li>(（64-50-5）* 100 &#x2F; 64 +（64-10-5）* 100&#x2F;64）&#x2F;2 &#x3D; 45.3分</li>
-<li>(（64-30-2-5）* 100 &#x2F; 64 +（64-30-10-5）* 100&#x2F;64）&#x2F;2 &#x3D; 35.9分</li>
-<li>(（64-10-5）* 100 &#x2F; 64 +（64-50-5）* 100&#x2F;64）&#x2F;2 &#x3D; 45.3分</li>
-</ul>
-<p>3台机器的资源比例均衡得分</p>
-<ul>
-<li>(1-abs(((5+50)&#x2F;64 - (5+10)&#x2F;64)&#x2F;2)) * 100 &#x3D; 68.75分</li>
-<li>(1-abs(((2+5+30)&#x2F;64 - (10+5+30)&#x2F;64)&#x2F;2)) * 100 &#x3D; 93.75分</li>
-<li>(1-abs(((5+10)&#x2F;64 - (5+50)&#x2F;64)&#x2F;2)) * 100 &#x3D; 68.75分</li>
-</ul>
-<p>因此第二个节点选中第二台机器。</p>
-<h2 id="Trimaran-目标资源利用率-负载风险均衡"><a href="#Trimaran-目标资源利用率-负载风险均衡" class="headerlink" title="Trimaran-目标资源利用率&amp;负载风险均衡"></a>Trimaran-目标资源利用率&amp;负载风险均衡</h2><p>该方法是另一个笔者认为很棒的策略，在阅读完后，我觉得其比默认策略更容易直观的或者用数据评估收益，其主要使用的是机器在滑动时间窗口内的资源利用率和方差来做抉择。</p>
-<p>该时间窗口大小以我们线上的情况，我认为可以暂定义为1小时。</p>
-<p>该策略跟默认策略类似，一共有两个相同权重的插件相辅相成。</p>
-<ul>
-<li>目标资源利用率：即定义一个资源利用率百分比<code>X%</code>，该打分算法会将大于该百分比的机器的分数降的很低，而小于该百分比的机器会优先选出离该百分比最近的机器。</li>
-<li>负载风险均衡：该策略用于多种资源，其会计算出机器部署目标节点后的各资源利用率，取最小利用率的资源作为分数。即短板效应，短板越明显的机器越不会选出来，其本质上是防范风险，而<strong>不是跟默认策略一样使机器的各资源利用率平衡</strong>。</li>
-</ul>
-<p>但假设我们只考虑两种资源打分，按笔者线上情况建议使用内存资源利用率作为目标，如设置<code>X=50%</code>，那么累加<code>负载风险均衡</code>插件的分数实际上也不容易选出cpu太高的机器。</p>
-<h3 id="目标资源利用率"><a href="#目标资源利用率" class="headerlink" title="目标资源利用率"></a>目标资源利用率</h3><h4 id="算法"><a href="#算法" class="headerlink" title="算法"></a>算法</h4><ol>
-<li>获取待评分当前机器的利用率，记为 A。</li>
-<li>计算当前 待调度节点 的 单资源 总请求量与开销，记为 B。</li>
-<li>计算将该 节点 调度到该机器后的预期利用率（即 U &#x3D; A + B，通过叠加得出）。</li>
-<li>若 U ≤ X%，则返回评分：(100 - X)×U&#x2F;X + X</li>
-<li>若 X% &lt;U ≤ 100%，则返回评分：X×(100 - U)&#x2F;(100 - X)</li>
-<li>若 U &gt; 100%，则返回评分：0</li>
-</ol>
-<h4 id="示例"><a href="#示例" class="headerlink" title="示例"></a>示例</h4><p>假设有 3 个节点 X、Y、Z，每个节点均为 4 核，当前利用率分别为 1 核、2 核、3 核。为简化计算，假设待调度 Pod 的 CPU 请求量与开销均为 0 核，目标利用率 X &#x3D; 50%。</p>
-<p>各节点利用率计算</p>
-<figure class="highlight shell"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br></pre></td><td class="code"><pre><span class="line">Ux → (1/4)×100 = 25%</span><br><span class="line">Uy → (2/4)×100 = 50%</span><br><span class="line">Uz → (3/4)×100 = 75%</span><br></pre></td></tr></table></figure>
-<p>各节点评分计算</p>
-<figure class="highlight sh"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br></pre></td><td class="code"><pre><span class="line">X 节点 → (100 - 50)×25/50 + 50 = 75 分</span><br><span class="line">Y 节点 → (100 - 50)×50/50 + 50 = 100 分</span><br><span class="line">Z 节点 → 50×(100 - 75)/(100 - 50) = 25 分</span><br></pre></td></tr></table></figure>
-<p>在上述算法中，50% 是我们希望所有节点达到的目标利用率。若希望降低调度激进程度，可将其下调至 40%，从而大幅降低在负载峰值或意外负载下利用率超过 50% 的可能性。因此，实践中若要实现 X% 的利用率目标，建议将配置值设为 X-10。</p>
-<p>利用率阈值 X% 可配置。</p>
-<h4 id="算法分析"><a href="#算法分析" class="headerlink" title="算法分析"></a>算法分析</h4><p><img src="/tlp-graph.png"></p>
-<p>上述图像为算法中所述分段函数的可视化呈现(X&#x3D;50)，从中可得出以下几点关键结论：</p>
+<p>核心流程：</p>
 <ol>
-<li>当利用率从 0 升至 50% 时，我们会优先选择这些节点进行 Pod 的打包调度。</li>
-<li>当利用率超过 50% 后，节点会受到线性惩罚，以此避免 Pod 过度集中在这些 “高负载节点” 上。</li>
-<li>正斜率从 50 分（而非 0 分）开始，原因在于评分范围为 0-100 分：我们希望让优先选择的节点得分最大化，使其评分更具分量，从而降低其他插件对该调度结果的干扰。</li>
-<li>由于上述 “惩罚机制” 的存在，图表中出现断点，对应评分会产生大幅下降</li>
+<li>原子创建新 MemTable 与新 WAL 日志，后续写操作直接导向新组件；</li>
+<li>后台线程将旧 MemTable 数据有序写入磁盘，生成 Level-0 sstable；</li>
+<li>刷盘成功后，释放旧 MemTable 内存，标记旧 WAL 日志为过期；</li>
+<li>将新 sstable 加入 Level-0 层级。</li>
 </ol>
-<p>后续调研发现：这个目标资源利用率其实效果不好，因为我们很多时候没法定义出目标资源利用率X%，比如增加机器或减少机器都会使这个抖动。</p>
-<h3 id="负载风险均衡"><a href="#负载风险均衡" class="headerlink" title="负载风险均衡"></a>负载风险均衡</h3><h4 id="算法-1"><a href="#算法-1" class="headerlink" title="算法"></a>算法</h4><ol>
-<li>获取待调度Pod的资源请求量，记为(r)。  </li>
-<li>获取待评分当前节点所有资源类型（CPU、内存、存储等）的资源利用率占比（范围0至1）的滑动窗口平均值(M)和标准差(V)。  </li>
-<li>计算当前节点每种资源类型的得分：<br>[<br>S_i &#x3D; M + r + V<br>]  </li>
-<li>对每种资源的得分进行处理，将其限制在[0,1]范围内：<br>[<br>S_i &#x3D; min(S_i, 1.0)<br>]  </li>
-<li>计算每种资源的节点优先级得分：<br>[<br>U_i &#x3D; (1 - S_i) x 100<br>]  </li>
-<li>计算最终节点得分：<br>[<br>U &#x3D; min(U_i)<br>]</li>
+<p>设计解析：刷盘过程采用 “后台异步 + 原子切换”，实际上在一个memtable写满后不会直接刷盘否则会阻塞前台写操作，而是变成immutable-memtable，等待后台线程刷盘和更新manifest，同时旧组件仅在刷盘成功后释放，确保崩溃时可通过旧 WAL 恢复数据。</p>
+<h3 id="核心流程"><a href="#核心流程" class="headerlink" title="核心流程"></a>核心流程</h3><p>定义：LevelDB 核心后台任务，用于解决 sstable 累积导致的读取性能下降，核心目标是 “合并数据、清理过期条目、维持层级结构”。</p>
+<p>触发条件：</p>
+<ul>
+<li>Level-0：文件数量超过 4 个（因文件重叠，数量过多会导致读取时需合并大量文件）；</li>
+<li>Level-L（L≥1）：总数据量超过10^L MB 阈值。</li>
+</ul>
+<p>核心逻辑：</p>
+<ol>
+<li>选文件：Level-0 压实会选取所有含有重叠key范围的文件，Level-L（L≥1）仅选取一个文件及 Level-L+1 中所有有key范围重叠的文件；</li>
+<li>归并排序：将选中文件的键值对按 InternalKey 重新排序，过滤过期值（被覆盖的键）与无效删除标记（无更高层级文件包含该键范围）；</li>
+<li>生成新文件：按 2MB 分片生成 Level-L+1 新 sstable，确保新文件键范围不重叠；</li>
+<li>原子替换：新文件写入成功后，将旧文件标记为过期，更新 MANIFEST 元数据。</li>
 </ol>
-<h4 id="示例-1"><a href="#示例-1" class="headerlink" title="示例"></a>示例</h4><p>假设存在3个机器N1、N2、N3，待调度节点的CPU请求量为500毫核，内存请求量为1GB。所有节点的容量均为4核CPU和8GB内存。  </p>
-<p>可计算得出节点的资源请求占比为：<br>(r_{cpu} &#x3D; 1&#x2F;8)，(r_{memory} &#x3D; 1&#x2F;8)。  </p>
-<p>（注：CPU请求占比计算：500毫核&#x3D;0.5核，0.5核÷4核&#x3D;1&#x2F;8；内存请求占比计算：1GB÷8GB&#x3D;1&#x2F;8）</p>
+<p>特定层级的压实操作会按键空间（key space）循环执行。具体来说，对于每个层级 L，系统会记录该层级上一次压实操作的结束键；下一次 L 层级的压实操作会选取第一个起始键位于该结束键之后的文件（若不存在此类文件，则循环回到键空间的起始位置）。</p>
+<p>压实操作会丢弃被覆盖的值（overwritten values）；若不存在更高编号的层级包含与当前键范围重叠的文件，则会一并丢弃该键的删除标记（deletion markers）。</p>
+<h3 id="时间开销-Timing"><a href="#时间开销-Timing" class="headerlink" title="时间开销 Timing"></a>时间开销 Timing</h3><p>Level-0 压实操作最多会从 Level-0 读取 4 个 1MB 大小的文件，最坏情况下需读取所有 Level-1 文件（总计 10MB）。即，压实过程需读取 14MB 数据并写入 14MB 数据。</p>
+<p>除特殊的 Level-0 压实外，会从 L 层级选取 1 个 2MB 大小的文件。最坏情况下，该文件会与 L+1 层级的约 12 个文件重叠（其中 10 个源于 L+1 层级的总大小是 L 层级的 10 倍，另外 2 个源于 L 层级与 L+1 层级的文件键范围通常无法对齐，导致边界处额外重叠）。因此，压实操作需读取 26MB 数据并写入 26MB 数据。假设现代硬盘的 I&#x2F;O 速率为 100MB&#x2F;s（常规水平），最坏情况下压实耗时约 0.5 秒。</p>
+<p>若将后台写入速率限制在较低水平（例如，硬盘峰值速率 100MB&#x2F;s 的 10%），一次压实操作可能耗时长达 5 秒。若用户写入速率为 10MB&#x2F;s，Level-0 可能会累积大量文件（约 50 个文件，用于存储 5 秒内写入的 50MB 数据）。这会导致读取时需合并更多文件，显著增加读取开销。</p>
 <blockquote>
-<p>注意下面的图，因为用k8s的概念画的，请把pod理解为我们上文一直说的节点，node理解为机器</p>
+<p>26MB&#x2F;(10MB&#x2F;s) &#x3D; 2.6秒，但这是最理想的情况，文档写5秒估计是测试结果。</p>
 </blockquote>
-<p><img src="/image6.png"></p>
-<p>按照步骤2～4，可以算出各资源利用率的平均值和标准差见下表</p>
-<p><img src="/image9.png"></p>
-<p>按照步骤5～6，可以算出每个机器的得分如下：</p>
-<p><img src="/image1.png"></p>
-<p>因此选出机器3。</p>
-<h1 id="后续"><a href="#后续" class="headerlink" title="后续"></a>后续</h1><p>后续我们上面的算法全都试了试，核心算法都没有采用，因为跑出来的结果很难表现出是优越于当前的。</p>
-<p>我们最后采用的算法是，高权重的全局方差最小 + 低权重Trimaran算法。</p>
-<p>全局方差最小即：把节点放进机器后，计算某个指标的全局方差，最后全局最小方差的对应机器为结果。</p>
-<p>跑出来绘图效果很明显，绝大多数的机器在分配一轮后都集中在了均值处。</p>
-<h1 id="参考文献"><a href="#参考文献" class="headerlink" title="参考文献"></a>参考文献</h1><ul>
-<li>k8s源码，默认scheduler插件，即目录<code>pkg/scheduler/framework/noderesources</code></li>
-<li>k8s源码，每种计算参数的来源，目录<code>/kubernetes/pkg/scheduler/framework/types.go</code></li>
-<li>k8s官方文档1，介绍scheduler插件用法 <a target="_blank" rel="noopener" href="https://kubernetes.io/docs/reference/scheduling/config/">https://kubernetes.io/docs/reference/scheduling/config/</a></li>
-<li>k8s官方文档2，教开发者如何自定义自己的插件 <a target="_blank" rel="noopener" href="https://github.com/kubernetes/community/blob/master/contributors/devel/sig-scheduling/scheduler_framework_plugins.md">https://github.com/kubernetes/community/blob/master/contributors/devel/sig-scheduling/scheduler_framework_plugins.md</a></li>
-<li>k8s-sig代码仓库，给出了一系列业界比较好的自定义插件 <a target="_blank" rel="noopener" href="https://github.com/kubernetes-sigs/scheduler-plugins">https://github.com/kubernetes-sigs/scheduler-plugins</a></li>
-<li>trimaran算法 <a target="_blank" rel="noopener" href="https://github.com/kubernetes-sigs/scheduler-plugins/blob/master/kep/61-Trimaran-real-load-aware-scheduling/README.md">https://github.com/kubernetes-sigs/scheduler-plugins/blob/master/kep/61-Trimaran-real-load-aware-scheduling/README.md</a></li>
+<p>解决方案 </p>
+<ol>
+<li>当 Level-0 文件数量较多时，可提高日志切换阈值（即 WAL 日志触发刷盘的大小阈值）。但该方案的缺点是，阈值越大，对应的 MemTable 所需占用的内存就越多。</li>
+<li>当 Level-0 文件数量增加时，可人工降低写入速率。</li>
+<li>优化大范围合并的开销。实际上就是增加block_cache的大小，让level0的大部份文件的原始数据在内存中存在，就不用去磁盘读了。</li>
+</ol>
+<h2 id="恢复流程（Recovery）"><a href="#恢复流程（Recovery）" class="headerlink" title="恢复流程（Recovery）"></a>恢复流程（Recovery）</h2><ol>
+<li>读取 CURRENT 文件，获取最新已提交的 MANIFEST 文件名称；</li>
+<li>读取该 MANIFEST 文件，重建层级元数据；</li>
+<li>清理过期文件（未被任何层级引用的 sstable 及旧 WAL 日志）；</li>
+<li>此处可打开所有 sstable，但采用惰性加载（按需打开）或许更优 —— 避免启动时加载大量无关数据，提升恢复速度；</li>
+<li>将未过期的 WAL 日志片段转换为新的 Level-0 sstable；</li>
+<li>创建新的 WAL 日志文件，沿用恢复得到的最大序列号（sequence number），承接后续写入操作。</li>
+</ol>
+<h2 id="文件垃圾回收（Garbage-collection-of-files）"><a href="#文件垃圾回收（Garbage-collection-of-files）" class="headerlink" title="文件垃圾回收（Garbage collection of files）"></a>文件垃圾回收（Garbage collection of files）</h2><p>RemoveObsoleteFiles() 函数会在每次压实操作结束后及恢复流程完成后调用。该函数会遍历数据库目录下的所有文件，执行以下清理逻辑：</p>
+<ol>
+<li>删除所有非当前活跃 WAL 日志的日志文件；</li>
+<li>删除所有未被任何层级引用、且不属于活跃压实操作输出的 sstable 文件。</li>
+</ol>
+<h1 id="使用方法"><a href="#使用方法" class="headerlink" title="使用方法"></a>使用方法</h1><p>这里先不赘述了，有空用中文写一遍。</p>
+<p>我觉得官方文档的<code>index.md</code>文件写的非常好。能从对外能力上，全局视角理解它的使用。</p>
+<p>从它的使用方法上，我觉得后续有几个能力的内核实现方式需要重点关注</p>
+<ul>
+<li><code>WriteBatch</code>的具体实现</li>
+<li>并发读写的实现方式</li>
+<li>迭代器<code>Iterator</code>的实现</li>
+<li><code>block_cache</code>和<code>block_size</code>在内核中的表现</li>
+<li>布隆过滤器的<code>NewBloomFilterPolicy</code>实现，如何在sst文件的后面放<code>filter meta block</code>的。</li>
+<li>估计某个范围的key数量的实现<code>GetApproximateSizes</code></li>
+<li>快照的实现<code>GetSnapshot</code></li>
 </ul>
 
       
@@ -366,7 +333,7 @@
 
 
   <nav class="pagination">
-    <a class="extend prev" rel="prev" title="上一页" aria-label="上一页" href="/page/4/"><i class="fa fa-angle-left"></i></a><a class="page-number" href="/">1</a><span class="space">&hellip;</span><a class="page-number" href="/page/4/">4</a><span class="page-number current">5</span><a class="page-number" href="/page/6/">6</a><span class="space">&hellip;</span><a class="page-number" href="/page/36/">36</a><a class="extend next" rel="next" title="下一页" aria-label="下一页" href="/page/6/"><i class="fa fa-angle-right"></i></a>
+    <a class="extend prev" rel="prev" title="上一页" aria-label="上一页" href="/page/4/"><i class="fa fa-angle-left"></i></a><a class="page-number" href="/">1</a><span class="space">&hellip;</span><a class="page-number" href="/page/4/">4</a><span class="page-number current">5</span><a class="page-number" href="/page/6/">6</a><span class="space">&hellip;</span><a class="page-number" href="/page/38/">38</a><a class="extend next" rel="next" title="下一页" aria-label="下一页" href="/page/6/"><i class="fa fa-angle-right"></i></a>
   </nav>
 
 </div>

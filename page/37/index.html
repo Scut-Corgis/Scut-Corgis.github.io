@@ -19,27 +19,25 @@
 
 <script class="next-config" data-name="main" type="application/json">{"hostname":"scut-corgis.github.io","root":"/","images":"/images","scheme":"Muse","darkmode":false,"version":"8.20.0","exturl":false,"sidebar":{"position":"left","width_expanded":320,"width_dual_column":240,"display":"always","padding":18,"offset":12},"hljswrap":true,"copycode":{"enable":true,"style":null},"fold":{"enable":true,"height":500},"bookmark":{"enable":false,"color":"#222","save":"auto"},"mediumzoom":false,"lazyload":false,"pangu":false,"comments":{"style":"tabs","active":null,"storage":true,"lazyload":false,"nav":null},"stickytabs":false,"motion":{"enable":true,"async":false,"transition":{"menu_item":"fadeInDown","post_block":"fadeIn","post_header":"fadeInDown","post_body":"fadeInDown","coll_header":"fadeInLeft","sidebar":"fadeInUp"}},"prism":false,"i18n":{"placeholder":"搜索...","empty":"没有找到任何搜索结果：${query}","hits_time":"找到 ${hits} 个搜索结果（用时 ${time} 毫秒）","hits":"找到 ${hits} 个搜索结果"}}</script><script src="/js/config.js"></script>
 
-    <meta name="description" content="libco源码阅读笔记1.协程切换汇编 这部分引用了文章libco中的coctx_swap汇编源码分析 - 知乎 (zhihu.com) 是我看过写的最清晰的  coctx_swap汇编源码  就是将当前协程上下文保存到regs中，然后将要运行的协程切换回来 充分利用了调用函数进入函数体时的rsp指向函数返回地址，实现了pc&#x2F;rip寄存器的切换  基础知识： X86-64有16个64位通">
-<meta property="og:type" content="article">
-<meta property="og:title" content="libco协程剖析">
-<meta property="og:url" content="https://scut-corgis.github.io/2021-12-01-libco%E5%8D%8F%E7%A8%8B%E5%89%96%E6%9E%90/index.html">
+    <meta name="description" content="用于成长过程中，记录值得对外分享的技术，如开源代码理解、国外课程项目，个人对一些领域的心得等">
+<meta property="og:type" content="website">
+<meta property="og:title" content="corgis的笔记">
+<meta property="og:url" content="https://scut-corgis.github.io/page/37/index.html">
 <meta property="og:site_name" content="corgis的笔记">
-<meta property="og:description" content="libco源码阅读笔记1.协程切换汇编 这部分引用了文章libco中的coctx_swap汇编源码分析 - 知乎 (zhihu.com) 是我看过写的最清晰的  coctx_swap汇编源码  就是将当前协程上下文保存到regs中，然后将要运行的协程切换回来 充分利用了调用函数进入函数体时的rsp指向函数返回地址，实现了pc&#x2F;rip寄存器的切换  基础知识： X86-64有16个64位通">
+<meta property="og:description" content="用于成长过程中，记录值得对外分享的技术，如开源代码理解、国外课程项目，个人对一些领域的心得等">
 <meta property="og:locale" content="zh_CN">
-<meta property="article:published_time" content="2021-12-01T14:30:05.000Z">
-<meta property="article:modified_time" content="2025-12-11T12:21:40.926Z">
 <meta property="article:author" content="Corgis">
 <meta name="twitter:card" content="summary">
 
 
-<link rel="canonical" href="https://scut-corgis.github.io/2021-12-01-libco%E5%8D%8F%E7%A8%8B%E5%89%96%E6%9E%90/">
+<link rel="canonical" href="https://scut-corgis.github.io/page/37/">
 
 
 
-<script class="next-config" data-name="page" type="application/json">{"sidebar":"","isHome":false,"isPost":true,"lang":"zh-CN","comments":true,"permalink":"https://scut-corgis.github.io/2021-12-01-libco%E5%8D%8F%E7%A8%8B%E5%89%96%E6%9E%90/","path":"2021-12-01-libco协程剖析/","title":"libco协程剖析"}</script>
+<script class="next-config" data-name="page" type="application/json">{"sidebar":"","isHome":true,"isPost":false,"lang":"zh-CN","comments":"","permalink":"","path":"page/37/index.html","title":""}</script>
 
 <script class="next-config" data-name="calendar" type="application/json">""</script>
-<title>libco协程剖析 | corgis的笔记</title>
+<title>corgis的笔记</title>
   
 
 
@@ -72,7 +70,7 @@
 
     <a href="/" class="brand" rel="start">
       <i class="logo-line"></i>
-      <p class="site-title">corgis的笔记</p>
+      <h1 class="site-title">corgis的笔记</h1>
       <i class="logo-line"></i>
     </a>
   </div>
@@ -98,7 +96,7 @@
   
   <aside class="sidebar">
 
-    <div class="sidebar-inner sidebar-nav-active sidebar-toc-active">
+    <div class="sidebar-inner sidebar-overview-active">
       <ul class="sidebar-nav">
         <li class="sidebar-nav-toc">
           文章目录
@@ -111,7 +109,6 @@
       <div class="sidebar-panel-container">
         <!--noindex-->
         <div class="post-toc-wrap sidebar-panel">
-            <div class="post-toc animated"><ol class="nav"><li class="nav-item nav-level-1"><a class="nav-link" href="#libco%E6%BA%90%E7%A0%81%E9%98%85%E8%AF%BB%E7%AC%94%E8%AE%B0"><span class="nav-number">1.</span> <span class="nav-text">libco源码阅读笔记</span></a><ol class="nav-child"><li class="nav-item nav-level-2"><a class="nav-link" href="#1-%E5%8D%8F%E7%A8%8B%E5%88%87%E6%8D%A2%E6%B1%87%E7%BC%96"><span class="nav-number">1.1.</span> <span class="nav-text">1.协程切换汇编</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#2-%E7%BD%91%E7%BB%9CI-O%E9%98%BB%E5%A1%9E%E6%97%B6%E5%8D%8F%E7%A8%8B%E7%9A%84%E8%87%AA%E5%8A%A8%E5%88%87%E6%8D%A2"><span class="nav-number">1.2.</span> <span class="nav-text">2.网络I&#x2F;O阻塞时协程的自动切换</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#3-%E5%85%B6%E4%BB%96"><span class="nav-number">1.3.</span> <span class="nav-text">3.其他</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#%E5%AF%B9%E7%85%A7%E7%9D%80golang%E7%9A%84%E5%8D%8F%E7%A8%8B%E6%A0%88"><span class="nav-number">1.3.1.</span> <span class="nav-text">对照着golang的协程栈</span></a></li></ol></li></ol></li></ol></div>
         </div>
         <!--/noindex-->
 
@@ -152,17 +149,16 @@
 
     </div>
 
-    <div class="main-inner post posts-expand">
+    <div class="main-inner index posts-expand">
 
-
-  
+    
 
 
 <div class="post-block">
   
   
 
-  <article itemscope itemtype="http://schema.org/Article" class="post-content" lang="zh-CN">
+  <article itemscope itemtype="http://schema.org/Article" class="post-content" lang="">
     <link itemprop="mainEntityOfPage" href="https://scut-corgis.github.io/2021-12-01-libco%E5%8D%8F%E7%A8%8B%E5%89%96%E6%9E%90/">
 
     <span hidden itemprop="author" itemscope itemtype="http://schema.org/Person">
@@ -176,13 +172,13 @@
     </span>
 
     <span hidden itemprop="post" itemscope itemtype="http://schema.org/CreativeWork">
-      <meta itemprop="name" content="libco协程剖析 | corgis的笔记">
+      <meta itemprop="name" content="undefined | corgis的笔记">
       <meta itemprop="description" content="">
     </span>
       <header class="post-header">
-        <h1 class="post-title" itemprop="name headline">
-          libco协程剖析
-        </h1>
+        <h2 class="post-title" itemprop="name headline">
+          <a href="/2021-12-01-libco%E5%8D%8F%E7%A8%8B%E5%89%96%E6%9E%90/" class="post-title-link" itemprop="url">libco协程剖析</a>
+        </h2>
 
         <div class="post-meta-container">
           <div class="post-meta">
@@ -213,7 +209,8 @@
     
     
     
-    <div class="post-body" itemprop="articleBody"><h1 id="libco源码阅读笔记"><a href="#libco源码阅读笔记" class="headerlink" title="libco源码阅读笔记"></a>libco源码阅读笔记</h1><h2 id="1-协程切换汇编"><a href="#1-协程切换汇编" class="headerlink" title="1.协程切换汇编"></a>1.协程切换汇编</h2><blockquote>
+    <div class="post-body" itemprop="articleBody">
+          <h1 id="libco源码阅读笔记"><a href="#libco源码阅读笔记" class="headerlink" title="libco源码阅读笔记"></a>libco源码阅读笔记</h1><h2 id="1-协程切换汇编"><a href="#1-协程切换汇编" class="headerlink" title="1.协程切换汇编"></a>1.协程切换汇编</h2><blockquote>
 <p>这部分引用了文章<a target="_blank" rel="noopener" href="https://zhuanlan.zhihu.com/p/42874353">libco中的coctx_swap汇编源码分析 - 知乎 (zhihu.com)</a></p>
 <p>是我看过写的最清晰的</p>
 </blockquote>
@@ -272,6 +269,7 @@
 </blockquote>
 <p>我个人觉得看这三篇就够了。然后结合云风的coroutine就能理解有栈协程了。</p>
 
+      
     </div>
 
     
@@ -279,21 +277,8 @@
     
 
     <footer class="post-footer">
-
-        
-
-          <div class="post-nav">
-            <div class="post-nav-item">
-                <a href="/2021-10-01-muduo%E6%BA%90%E7%A0%81%E5%89%96%E6%9E%90/" rel="prev" title="muduo源码剖析">
-                  <i class="fa fa-angle-left"></i> muduo源码剖析
-                </a>
-            </div>
-            <div class="post-nav-item">
-                <a href="/2022-04-09-%E4%BA%91%E9%A3%8Ecoroutine%E6%BA%90%E7%A0%81%E5%89%96%E6%9E%90%E7%AC%94%E8%AE%B0/" rel="next" title="云风coroutine源码剖析笔记">
-                  云风coroutine源码剖析笔记 <i class="fa fa-angle-right"></i>
-                </a>
-            </div>
-          </div>
+        <div class="post-eof"></div>
+      
     </footer>
   </article>
 </div>
@@ -301,7 +286,9 @@
 
 
 
-
+  <nav class="pagination">
+    <a class="extend prev" rel="prev" title="上一页" aria-label="上一页" href="/page/36/"><i class="fa fa-angle-left"></i></a><a class="page-number" href="/">1</a><span class="space">&hellip;</span><a class="page-number" href="/page/36/">36</a><span class="page-number current">37</span><a class="page-number" href="/page/38/">38</a><a class="extend next" rel="next" title="下一页" aria-label="下一页" href="/page/38/"><i class="fa fa-angle-right"></i></a>
+  </nav>
 
 </div>
   </main>

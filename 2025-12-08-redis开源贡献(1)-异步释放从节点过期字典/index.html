@@ -19,25 +19,27 @@
 
 <script class="next-config" data-name="main" type="application/json">{"hostname":"scut-corgis.github.io","root":"/","images":"/images","scheme":"Muse","darkmode":false,"version":"8.20.0","exturl":false,"sidebar":{"position":"left","width_expanded":320,"width_dual_column":240,"display":"always","padding":18,"offset":12},"hljswrap":true,"copycode":{"enable":true,"style":null},"fold":{"enable":true,"height":500},"bookmark":{"enable":false,"color":"#222","save":"auto"},"mediumzoom":false,"lazyload":false,"pangu":false,"comments":{"style":"tabs","active":null,"storage":true,"lazyload":false,"nav":null},"stickytabs":false,"motion":{"enable":true,"async":false,"transition":{"menu_item":"fadeInDown","post_block":"fadeIn","post_header":"fadeInDown","post_body":"fadeInDown","coll_header":"fadeInLeft","sidebar":"fadeInUp"}},"prism":false,"i18n":{"placeholder":"搜索...","empty":"没有找到任何搜索结果：${query}","hits_time":"找到 ${hits} 个搜索结果（用时 ${time} 毫秒）","hits":"找到 ${hits} 个搜索结果"}}</script><script src="/js/config.js"></script>
 
-    <meta name="description" content="用于成长过程中，记录值得对外分享的技术，如开源代码理解、国外课程项目，个人对一些领域的心得等">
-<meta property="og:type" content="website">
-<meta property="og:title" content="corgis的笔记">
-<meta property="og:url" content="https://scut-corgis.github.io/page/15/index.html">
+    <meta name="description" content="问题描述最近给redis和valkey的社区提了一个pr，解决了一个在redis中存在了数年的问题。截止目前，valkey的已经pr通过并合入了主线，redis的还在cr中。 pr链接如下：  valkey：https:&#x2F;&#x2F;github.com&#x2F;valkey-io&#x2F;valkey&#x2F;pull&#x2F;2849 redis: https:&#x2F;&#x2F;github.com&#x2F;redis&#x2F;redis&#x2F;pull&#x2F;14583">
+<meta property="og:type" content="article">
+<meta property="og:title" content="redis开源贡献(1)-异步释放从节点过期字典">
+<meta property="og:url" content="https://scut-corgis.github.io/2025-12-08-redis%E5%BC%80%E6%BA%90%E8%B4%A1%E7%8C%AE(1)-%E5%BC%82%E6%AD%A5%E9%87%8A%E6%94%BE%E4%BB%8E%E8%8A%82%E7%82%B9%E8%BF%87%E6%9C%9F%E5%AD%97%E5%85%B8/index.html">
 <meta property="og:site_name" content="corgis的笔记">
-<meta property="og:description" content="用于成长过程中，记录值得对外分享的技术，如开源代码理解、国外课程项目，个人对一些领域的心得等">
+<meta property="og:description" content="问题描述最近给redis和valkey的社区提了一个pr，解决了一个在redis中存在了数年的问题。截止目前，valkey的已经pr通过并合入了主线，redis的还在cr中。 pr链接如下：  valkey：https:&#x2F;&#x2F;github.com&#x2F;valkey-io&#x2F;valkey&#x2F;pull&#x2F;2849 redis: https:&#x2F;&#x2F;github.com&#x2F;redis&#x2F;redis&#x2F;pull&#x2F;14583">
 <meta property="og:locale" content="zh_CN">
+<meta property="article:published_time" content="2025-12-08T08:03:05.000Z">
+<meta property="article:modified_time" content="2025-12-11T12:21:40.980Z">
 <meta property="article:author" content="Corgis">
 <meta name="twitter:card" content="summary">
 
 
-<link rel="canonical" href="https://scut-corgis.github.io/page/15/">
+<link rel="canonical" href="https://scut-corgis.github.io/2025-12-08-redis%E5%BC%80%E6%BA%90%E8%B4%A1%E7%8C%AE(1)-%E5%BC%82%E6%AD%A5%E9%87%8A%E6%94%BE%E4%BB%8E%E8%8A%82%E7%82%B9%E8%BF%87%E6%9C%9F%E5%AD%97%E5%85%B8/">
 
 
 
-<script class="next-config" data-name="page" type="application/json">{"sidebar":"","isHome":true,"isPost":false,"lang":"zh-CN","comments":"","permalink":"","path":"page/15/index.html","title":""}</script>
+<script class="next-config" data-name="page" type="application/json">{"sidebar":"","isHome":false,"isPost":true,"lang":"zh-CN","comments":true,"permalink":"https://scut-corgis.github.io/2025-12-08-redis%E5%BC%80%E6%BA%90%E8%B4%A1%E7%8C%AE(1)-%E5%BC%82%E6%AD%A5%E9%87%8A%E6%94%BE%E4%BB%8E%E8%8A%82%E7%82%B9%E8%BF%87%E6%9C%9F%E5%AD%97%E5%85%B8/","path":"2025-12-08-redis开源贡献(1)-异步释放从节点过期字典/","title":"redis开源贡献(1)-异步释放从节点过期字典"}</script>
 
 <script class="next-config" data-name="calendar" type="application/json">""</script>
-<title>corgis的笔记</title>
+<title>redis开源贡献(1)-异步释放从节点过期字典 | corgis的笔记</title>
   
 
 
@@ -70,7 +72,7 @@
 
     <a href="/" class="brand" rel="start">
       <i class="logo-line"></i>
-      <h1 class="site-title">corgis的笔记</h1>
+      <p class="site-title">corgis的笔记</p>
       <i class="logo-line"></i>
     </a>
   </div>
@@ -96,7 +98,7 @@
   
   <aside class="sidebar">
 
-    <div class="sidebar-inner sidebar-overview-active">
+    <div class="sidebar-inner sidebar-nav-active sidebar-toc-active">
       <ul class="sidebar-nav">
         <li class="sidebar-nav-toc">
           文章目录
@@ -109,6 +111,7 @@
       <div class="sidebar-panel-container">
         <!--noindex-->
         <div class="post-toc-wrap sidebar-panel">
+            <div class="post-toc animated"><ol class="nav"><li class="nav-item nav-level-1"><a class="nav-link" href="#%E9%97%AE%E9%A2%98%E6%8F%8F%E8%BF%B0"><span class="nav-number">1.</span> <span class="nav-text">问题描述</span></a></li><li class="nav-item nav-level-1"><a class="nav-link" href="#pr%E8%BF%87%E7%A8%8B"><span class="nav-number">2.</span> <span class="nav-text">pr过程</span></a></li></ol></div>
         </div>
         <!--/noindex-->
 
@@ -149,17 +152,18 @@
 
     </div>
 
-    <div class="main-inner index posts-expand">
+    <div class="main-inner post posts-expand">
 
-    
+
+  
 
 
 <div class="post-block">
   
   
 
-  <article itemscope itemtype="http://schema.org/Article" class="post-content" lang="">
-    <link itemprop="mainEntityOfPage" href="https://scut-corgis.github.io/2025-05-06-hash%E5%AD%98%E5%82%A8%E5%BC%95%E6%93%8E-%E5%BA%94%E7%94%A8%E5%9B%B0%E5%A2%83/">
+  <article itemscope itemtype="http://schema.org/Article" class="post-content" lang="zh-CN">
+    <link itemprop="mainEntityOfPage" href="https://scut-corgis.github.io/2025-12-08-redis%E5%BC%80%E6%BA%90%E8%B4%A1%E7%8C%AE(1)-%E5%BC%82%E6%AD%A5%E9%87%8A%E6%94%BE%E4%BB%8E%E8%8A%82%E7%82%B9%E8%BF%87%E6%9C%9F%E5%AD%97%E5%85%B8/">
 
     <span hidden itemprop="author" itemscope itemtype="http://schema.org/Person">
       <meta itemprop="image" content="/images/corgis.jpg">
@@ -172,13 +176,13 @@
     </span>
 
     <span hidden itemprop="post" itemscope itemtype="http://schema.org/CreativeWork">
-      <meta itemprop="name" content="undefined | corgis的笔记">
+      <meta itemprop="name" content="redis开源贡献(1)-异步释放从节点过期字典 | corgis的笔记">
       <meta itemprop="description" content="">
     </span>
       <header class="post-header">
-        <h2 class="post-title" itemprop="name headline">
-          <a href="/2025-05-06-hash%E5%AD%98%E5%82%A8%E5%BC%95%E6%93%8E-%E5%BA%94%E7%94%A8%E5%9B%B0%E5%A2%83/" class="post-title-link" itemprop="url">hash存储引擎-应用困境</a>
-        </h2>
+        <h1 class="post-title" itemprop="name headline">
+          redis开源贡献(1)-异步释放从节点过期字典
+        </h1>
 
         <div class="post-meta-container">
           <div class="post-meta">
@@ -188,7 +192,7 @@
       </span>
       <span class="post-meta-item-text">发表于</span>
 
-      <time title="创建时间：2025-05-06 19:32:51" itemprop="dateCreated datePublished" datetime="2025-05-06T19:32:51+08:00">2025-05-06</time>
+      <time title="创建时间：2025-12-08 16:03:05" itemprop="dateCreated datePublished" datetime="2025-12-08T16:03:05+08:00">2025-12-08</time>
     </span>
     <span class="post-meta-item">
       <span class="post-meta-item-icon">
@@ -196,7 +200,7 @@
       </span>
       <span class="post-meta-item-text">分类于</span>
         <span itemprop="about" itemscope itemtype="http://schema.org/Thing">
-          <a href="/categories/%E5%93%88%E5%B8%8C%E5%AD%98%E5%82%A8%E5%BC%95%E6%93%8E/" itemprop="url" rel="index"><span itemprop="name">哈希存储引擎</span></a>
+          <a href="/categories/redis/" itemprop="url" rel="index"><span itemprop="name">redis</span></a>
         </span>
     </span>
 
@@ -209,31 +213,21 @@
     
     
     
-    <div class="post-body" itemprop="articleBody">
-          <h1 id="哈希引擎的应用困境"><a href="#哈希引擎的应用困境" class="headerlink" title="哈希引擎的应用困境"></a>哈希引擎的应用困境</h1><p>经过了这段时间对哈希引擎的深入研究，以及与前任核心开发人员的交流（已活水转组），我越来越深刻的理解哈希引擎的应用场景。</p>
-<p>简而言之：应用面狭隘，优势不明显。</p>
-<p>集中在这几个方面</p>
+    <div class="post-body" itemprop="articleBody"><h1 id="问题描述"><a href="#问题描述" class="headerlink" title="问题描述"></a>问题描述</h1><p>最近给redis和valkey的社区提了一个pr，解决了一个在redis中存在了数年的问题。截止目前，valkey的已经pr通过并合入了主线，redis的还在cr中。</p>
+<p>pr链接如下：</p>
 <ul>
-<li>性能</li>
-<li>成本</li>
+<li>valkey：<a target="_blank" rel="noopener" href="https://github.com/valkey-io/valkey/pull/2849">https://github.com/valkey-io/valkey/pull/2849</a></li>
+<li>redis: <a target="_blank" rel="noopener" href="https://github.com/redis/redis/pull/14583">https://github.com/redis/redis/pull/14583</a></li>
 </ul>
-<p>如何理解哈希引擎的成本？假如用一种最普遍的哈希引擎架构而言，其索引完全放内存，假如全key都要放索引中，那内存是存储容量的瓶颈，即使学习aerospike将哈希值放索引，依然最少是64byte一个key，内存依旧是瓶颈。</p>
-<p>大内存意味着高成本，以aerospike为例，10亿个key，单副本内存需要60G。</p>
-<p>那何种情况下哈希引擎的成本是可以接受的呢？</p>
-<ul>
-<li>大value</li>
-<li>可混部ssd存储应用</li>
-</ul>
-<p>可混部不多解释，即将多的ssd部份给其他存储引擎使用，用来充分利用单机。</p>
-<p>大value是我们重点讨论的问题，假如是小value，比如几十byte（对于redis转kv其实非常常见），那么key和value几乎一样大，ssd中要存key和value两个值，但ssd可以block压缩。导致一个现象：即内存和ssd占用几乎没差别。</p>
-<p>这就导致了一个问题，既然内存占用和ssd都差不多，我为何不上纯内存的数据库呢？比如redis，我何必要redis转kv存储到哈希存储引擎呢？直接用redis存，10亿个普通小string的kv，估计都不需要60G，性能还远比你哈希引擎优异，更别说复杂数据结构了，若要转成kv的表达，还需要在key上追加约20字节的元数据，得不偿失。</p>
-<p>那如果是非常大的value呢？举个例子，M级别的value。这种大value真的用哈希引擎更好吗？答案当然是否定的，姑且不论哈希引擎的设计本身就难以支持大value（如aerospike最多设置wblock为8M，即value最大8M）。做gc的时候，产生的迁移都是非常浪费资源的。这种情况不如直接用对象存储，比如快手的对象存储底层就是hdfs，直接把kv当对象存进去性能更好，成本也低得多。</p>
-<p>所以结论产生了，哈希引擎只适合kb级别的value，比如现在快手哈希引擎支持的图数据库，约4kb的value。</p>
-<p>当然以上的讨论都基于常规哈希引擎的定义方式，即key放内存，其实aerospike这种商业数据库早想到了这个问题，他们提供了索引落盘的方式，每次查索引都从ssd中直接查，他们对ssd极致的使用方式做到了这一切。如果索引落盘，所有数据都在ssd中，内存导致的成本问题得以解决。</p>
-<p>再往外看看，其实facebook早提供了类似的实现，如blobdb，他基于rocksdb，做了kv分离，使得大value放在独立的blob文件存储，并自己实现了一套gc机制。其key存在lsm中，lsm的value只存了实际value的位置信息。</p>
-<p>blobdb这种仔细思考，会发现就是哈希引擎的一种实现（成本优化版），如果他的key都放内存，不就是哈希引擎了吗？所以进一步论证了哈希引擎的应用场景的狭隘。</p>
+<p>该pr解决问题描述如下：</p>
+<p>redis的从节点有一个配置开关，可以打开写功能，即可以直接往从节点写入数据。</p>
+<p>那么这个会导致一个一致性问题，我们知道redis的从节点是不允许自己删除过期数据的，只能主节点过期删除后，同步del命令给从节点，从节点才能删除。但这样直接往从节点写入的带过期时间的数据，就永远不会被删除了，因为不会有del命令从主节点同步过来。</p>
+<p>因此redis内部有一个字典，专门记录属于slave的过期key，用于解决以上问题。</p>
+<p>但这个字典在删除时，比如<code>flushall async</code>时，是同步操作，实测每一百万个key，会阻塞一秒主线程，这不符合异步删除的预期。</p>
+<p>因此我简单添加了一些异步删除的代码逻辑，解决了此问题。</p>
+<h1 id="pr过程"><a href="#pr过程" class="headerlink" title="pr过程"></a>pr过程</h1><p>其实在valkey的合并过程中，跟维护者有过一段必要性的探讨。主要是探讨什么场景有可能会大量的往从节点写入数据。因为在redis场景下，是不鼓励往从节点写数据的。</p>
+<p>具体的cr comment在链接中有详细的记录，这里不再赘述。<a target="_blank" rel="noopener" href="https://github.com/valkey-io/valkey/pull/2849">https://github.com/valkey-io/valkey/pull/2849</a></p>
 
-      
     </div>
 
     
@@ -241,8 +235,21 @@
     
 
     <footer class="post-footer">
-        <div class="post-eof"></div>
-      
+
+        
+
+          <div class="post-nav">
+            <div class="post-nav-item">
+                <a href="/2025-12-05-leveldb%E6%BA%90%E7%A0%81%E5%AD%A6%E4%B9%A0(3)-memtable/" rel="prev" title="leveldb源码学习(3)-memtable">
+                  <i class="fa fa-angle-left"></i> leveldb源码学习(3)-memtable
+                </a>
+            </div>
+            <div class="post-nav-item">
+                <a href="/2025-12-11-leveldb%E6%BA%90%E7%A0%81%E5%AD%A6%E4%B9%A0(4)-%E5%B9%B6%E5%8F%91%E5%86%99%E4%B8%8E%E7%BB%84%E6%8F%90%E4%BA%A4/" rel="next" title="leveldb源码学习(4)-并发写与组提交">
+                  leveldb源码学习(4)-并发写与组提交 <i class="fa fa-angle-right"></i>
+                </a>
+            </div>
+          </div>
     </footer>
   </article>
 </div>
@@ -250,9 +257,7 @@
 
 
 
-  <nav class="pagination">
-    <a class="extend prev" rel="prev" title="上一页" aria-label="上一页" href="/page/14/"><i class="fa fa-angle-left"></i></a><a class="page-number" href="/">1</a><span class="space">&hellip;</span><a class="page-number" href="/page/14/">14</a><span class="page-number current">15</span><a class="page-number" href="/page/16/">16</a><span class="space">&hellip;</span><a class="page-number" href="/page/38/">38</a><a class="extend next" rel="next" title="下一页" aria-label="下一页" href="/page/16/"><i class="fa fa-angle-right"></i></a>
-  </nav>
+
 
 </div>
   </main>
