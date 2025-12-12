@@ -123,7 +123,7 @@
   <nav class="site-state">
       <div class="site-state-item site-state-posts">
         <a href="/archives/">
-          <span class="site-state-item-count">38</span>
+          <span class="site-state-item-count">39</span>
           <span class="site-state-item-name">日志</span>
         </a>
       </div>
@@ -159,7 +159,7 @@
   
 
   <article itemscope itemtype="http://schema.org/Article" class="post-content" lang="">
-    <link itemprop="mainEntityOfPage" href="https://scut-corgis.github.io/2025-03-20-aerospike%E5%AD%A6%E4%B9%A0(0)-%E7%BC%96%E8%AF%91%E4%B8%8E%E8%BF%90%E8%A1%8C/">
+    <link itemprop="mainEntityOfPage" href="https://scut-corgis.github.io/2025-04-01-hash%E5%AD%98%E5%82%A8%E5%BC%95%E6%93%8E%E6%9D%82%E8%B0%88/">
 
     <span hidden itemprop="author" itemscope itemtype="http://schema.org/Person">
       <meta itemprop="image" content="/images/corgis.jpg">
@@ -177,7 +177,7 @@
     </span>
       <header class="post-header">
         <h2 class="post-title" itemprop="name headline">
-          <a href="/2025-03-20-aerospike%E5%AD%A6%E4%B9%A0(0)-%E7%BC%96%E8%AF%91%E4%B8%8E%E8%BF%90%E8%A1%8C/" class="post-title-link" itemprop="url">aerospike学习(0)-编译与运行</a>
+          <a href="/2025-04-01-hash%E5%AD%98%E5%82%A8%E5%BC%95%E6%93%8E%E6%9D%82%E8%B0%88/" class="post-title-link" itemprop="url">hash存储引擎杂谈</a>
         </h2>
 
         <div class="post-meta-container">
@@ -188,7 +188,7 @@
       </span>
       <span class="post-meta-item-text">发表于</span>
 
-      <time title="创建时间：2025-03-20 00:21:36" itemprop="dateCreated datePublished" datetime="2025-03-20T00:21:36+08:00">2025-03-20</time>
+      <time title="创建时间：2025-04-01 23:41:51" itemprop="dateCreated datePublished" datetime="2025-04-01T23:41:51+08:00">2025-04-01</time>
     </span>
     <span class="post-meta-item">
       <span class="post-meta-item-icon">
@@ -210,35 +210,52 @@
     
     
     <div class="post-body" itemprop="articleBody">
-          <h1 id="引言"><a href="#引言" class="headerlink" title="引言"></a>引言</h1><p>开源代码编译起来并不是直接通过，很多报错，把坑记录一下。</p>
-<h1 id="编译"><a href="#编译" class="headerlink" title="编译"></a>编译</h1><p>首先不能使用mac进行编译，不支持。需要选linux。</p>
-<p>分支切换</p>
-<figure class="highlight shell"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br></pre></td><td class="code"><pre><span class="line">checkout origin/hotfix/7.0.0分支</span><br><span class="line">fq2 git submodule update --init</span><br><span class="line">make</span><br></pre></td></tr></table></figure>
-
-<h2 id="问题1-libtool安装目录问题"><a href="#问题1-libtool安装目录问题" class="headerlink" title="问题1. libtool安装目录问题"></a>问题1. libtool安装目录问题</h2><figure class="highlight shell"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br></pre></td><td class="code"><pre><span class="line">[libin11@dev03 jansson]$ autoreconf -i</span><br><span class="line">src/Makefile.am:6: error: Libtool library used but &#x27;LIBTOOL&#x27; is undefined</span><br><span class="line">src/Makefile.am:6:   The usual way to define &#x27;LIBTOOL&#x27; is to add &#x27;LT_INIT&#x27;</span><br><span class="line">src/Makefile.am:6:   to &#x27;configure.ac&#x27; and run &#x27;aclocal&#x27; and &#x27;autoconf&#x27; again.</span><br><span class="line">src/Makefile.am:6:   If &#x27;LT_INIT&#x27; is in &#x27;configure.ac&#x27;, make sure</span><br><span class="line"></span><br><span class="line">fix:</span><br><span class="line">On many distros, including CentOS7, the seven macro files for libtools are installed under /usr/share/aclocal rather than under /usr/local/share/aclocal. Consequently, they aren&#x27;t found when the package you are building sets prefix to /usr/local.</span><br><span class="line">To fix this if you already have a /usr/local/share/aclocal directory, type the following as root:</span><br><span class="line"></span><br><span class="line">for file in argz libtool ltdl ltoptions ltsugar ltversion lt~obsolete</span><br><span class="line">do</span><br><span class="line">  ln -s /usr/share/aclocal/$file.m4 /usr/local/share/aclocal/$file.m4</span><br><span class="line">done</span><br></pre></td></tr></table></figure>
-
-<p><a target="_blank" rel="noopener" href="https://superuser.com/questions/565988/autoconf-libtool-and-an-undefined-ac-prog-libtool">https://superuser.com/questions/565988/autoconf-libtool-and-an-undefined-ac-prog-libtool</a></p>
-<h2 id="问题2-编译absl失败"><a href="#问题2-编译absl失败" class="headerlink" title="问题2. 编译absl失败"></a>问题2. 编译absl失败</h2><p>-S2_FLAGS &#x3D; -DCMAKE_CXX_STANDARD&#x3D;17 -DCMAKE_BUILD_TYPE&#x3D;RelWithDebInfo<br>+S2_FLAGS &#x3D; -DCMAKE_CXX_STANDARD&#x3D;17 -DCMAKE_BUILD_TYPE&#x3D;RelWithDebInfo -DABSL_PROPAGATE_CXX_STD&#x3D;ON</p>
-<h2 id="问题3-编译absl失败2"><a href="#问题3-编译absl失败2" class="headerlink" title="问题3. 编译absl失败2"></a>问题3. 编译absl失败2</h2><figure class="highlight shell"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br></pre></td><td class="code"><pre><span class="line">cmake -S /data/libin11/work/aerospike-server/modules/abseil-cpp -B /data/libin11/work/aerospike-server/modules/abseil-cpp/build -DCMAKE_CXX_STANDARD=17 -DCMAKE_BUILD_TYPE=RelWithDebInfo -DABSL_PROPAGATE_CXX_STD=ON -DCMAKE_INSTALL_PREFIX=/data/libin11/work/aerospike-server/modules/abseil-cpp/installation -DABSL_ENABLE_INSTALL=ON -DCMAKE_INSTALL_MESSAGE=LAZY -DCMAKE_TARGET_MESSAGES=OFF</span><br><span class="line">-- Configuring done (0.2s)</span><br><span class="line">-- Generating done (0.3s)</span><br><span class="line">-- Build files have been written to: /data/libin11/work/aerospike-server/modules/abseil-cpp/build</span><br><span class="line">cmake --build /data/libin11/work/aerospike-server/modules/abseil-cpp/build -- --no-print-directory</span><br><span class="line">[  0%] Building CXX object absl/base/CMakeFiles/log_severity.dir/log_severity.cc.o</span><br><span class="line">In file included from /data/libin11/work/aerospike-server/modules/abseil-cpp/absl/base/config.h:86:0,</span><br><span class="line">                 from /data/libin11/work/aerospike-server/modules/abseil-cpp/absl/base/attributes.h:37,</span><br><span class="line">                 from /data/libin11/work/aerospike-server/modules/abseil-cpp/absl/base/log_severity.h:21,</span><br><span class="line">                 from /data/libin11/work/aerospike-server/modules/abseil-cpp/absl/base/log_severity.cc:15:</span><br><span class="line">/data/libin11/work/aerospike-server/modules/abseil-cpp/absl/base/policy_checks.h:57:2: error: #error &quot;This package requires GCC 7 or higher.&quot;</span><br><span class="line"><span class="meta prompt_"> #</span><span class="language-bash">error <span class="string">&quot;This package requires GCC 7 or higher.&quot;</span></span></span><br></pre></td></tr></table></figure>
-<p>fix:<br>step1. 升级g++版本</p>
+          <h1 id="hash存储引擎"><a href="#hash存储引擎" class="headerlink" title="hash存储引擎"></a>hash存储引擎</h1><h2 id="引言"><a href="#引言" class="headerlink" title="引言"></a>引言</h2><p>最近开始频繁接触存储引擎的相关知识。传统的存储引擎基本两种：lsm或者B+树。前者的代表作是rocksdb，后者有mongodb使用的wiredtiger。</p>
+<p>传统的两种存储引擎很好理解。比如rocksdb，其整个设计理念完全基于追加写，所有的文件都是不可修改的。lsm结构也代表的全序，使得可以生成一个interator来按顺序扫表，但是lsm结构最大的问题也在于其的多层级，一旦访问到冷数据，io次数相当于。对于写操作，写放大基本等于其层级数，相当于写一个数据，实际上做了10次该数据大小的IO。而compaction操作带来的性能抖动也是可观的。</p>
+<p>对于B+树，更好理解，跨叶子后，几乎完全随机IO，叶子中插入数据需要搬运，整个内存设计均为页设计的。换句话说，内存中维护的不是某个数据对应的块位置，而是需要从顶层往底层查找到对应页，然后从磁盘获取这个页，再根据偏移量读出数据。从写吞吐上来说，肯定是完全不如rocksdb。</p>
+<p>而现在公司开始谈论哈希引擎。顾名思义，哈希引擎即点对点，一个数据，直接通过内存索引对应到底层的数据块上。哈希引擎只在内存中存key的索引，磁盘中存key的值。若不加以特殊设计，key之间基本是无序的。</p>
+<h2 id="仿造rocksdb理念的哈希引擎"><a href="#仿造rocksdb理念的哈希引擎" class="headerlink" title="仿造rocksdb理念的哈希引擎"></a>仿造rocksdb理念的哈希引擎</h2><p>公司内部现在存在一个哈希引擎的底座，其设计大幅度的模仿的rocksdb。如</p>
 <ol>
-<li><p>yum 安装g++ 9<br>sudo yum install devtoolset-9-gcc devtoolset-9-gcc-c++</p>
-</li>
-<li><p>指定新安装为默认版本<br>在&#x2F;etc&#x2F;bashrc中增加：<br> source &#x2F;opt&#x2F;rh&#x2F;devtoolset-9&#x2F;enable</p>
-</li>
+<li>采用追加写的方式设计文件结构和写流程。</li>
+<li>可以保证某个前缀相同的情况下key有序</li>
+<li>提供compaction-filter</li>
 </ol>
-<h2 id="问题4：安装absl失败"><a href="#问题4：安装absl失败" class="headerlink" title="问题4：安装absl失败"></a>问题4：安装absl失败</h2><figure class="highlight shell"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br></pre></td><td class="code"><pre><span class="line">ar /data/libin11/work/aerospike-server/modules/abseil-cpp/installation/lib/libabsl.a /data/libin11/work/aerospike-server/modules/abseil-cpp/installation/lib/libabsl_*.a</span><br><span class="line">ls /data/libin11/work/aerospike-server/modules/abseil</span><br><span class="line">-cpp/installation/lib/libabsl_*.a</span><br><span class="line">ls: cannot access /data/libin11/work/aerospike-server/modules/abseil-cpp/installation/lib/libabsl_*.a: No such file or directory</span><br><span class="line"></span><br><span class="line">fix: </span><br><span class="line">修改make_in/Makefile.vars，从installation/lib64下查找</span><br><span class="line">-ifeq ($(OS),$(filter $(OS), el8 el9 amzn2023))</span><br><span class="line">-  ABSL_LIB_DIR = $(ABSL)/installation/lib64</span><br><span class="line">-else</span><br><span class="line">-  ABSL_LIB_DIR = $(ABSL)/installation/lib</span><br><span class="line">-endif</span><br><span class="line">+</span><br><span class="line">+ABSL_LIB_DIR = $(ABSL)/installation/lib64</span><br></pre></td></tr></table></figure>
+<p>当初为什么这么做呢？主要还是想直接平替哈希引擎，但是又要兼容rocksdb的相关接口。我在之前的文章中提到过如何redis结构转kv，但是基于rocksdb的，现在想要哈希引擎替换掉，那么必须保证以上几点特性。</p>
+<p>其整体架构如下</p>
+<p><img src="/2025-04-01-hash%E5%AD%98%E5%82%A8%E5%BC%95%E6%93%8E%E6%9D%82%E8%B0%88/taycan%E6%95%B4%E4%BD%93%E6%9E%B6%E6%9E%84.png"></p>
+<p>可以看到，内存索引节点是通过跳表保证key有序的，key根据某个业务提供的前缀哈希决定放在不同的跳表中。文件的设计如manifest等和rocksdb理念基本一致。</p>
+<p>在写操作时，追加写af文件，写满af文件后，刷盘。假如重复写了某一个key，无需删除之前的ssd中的key，只需要追加写数据后维护内存索引的指向即可。</p>
+<p><img src="/2025-04-01-hash%E5%AD%98%E5%82%A8%E5%BC%95%E6%93%8E%E6%9D%82%E8%B0%88/taycan%E8%AF%BB%E6%B5%81%E7%A8%8B.png"><br><img src="/2025-04-01-hash%E5%AD%98%E5%82%A8%E5%BC%95%E6%93%8E%E6%9D%82%E8%B0%88/taycan%E5%86%99%E6%B5%81%E7%A8%8B.png"></p>
+<p>而compaction过程更加简单，取一定数量的block文件，扫一遍过滤到删除的或过期的旧key即可，然后生成一个新的。</p>
+<p><img src="/2025-04-01-hash%E5%AD%98%E5%82%A8%E5%BC%95%E6%93%8E%E6%9D%82%E8%B0%88/compaction%E6%B5%81%E7%A8%8B.png"></p>
+<p>显然，该架构实现十分自然，但是有很多缺点，比如内存大小占用过大，可能成为key数量的瓶颈。</p>
+<p>在我学习公司该哈希引擎的时候，我也觉得是挺好的架构，应该很难从架构上去大幅度超过该引擎了，直到我们发现了aerospike。</p>
+<h2 id="aerospike"><a href="#aerospike" class="headerlink" title="aerospike"></a>aerospike</h2><p>其源码几乎打开了我新世界的大门，真的很强大。建议后续ssd引擎的文章必读。</p>
+<h3 id="总览"><a href="#总览" class="headerlink" title="总览"></a>总览</h3><p>aerospike也是一种哈希引擎，支持ssd存储值，内存中只存索引。我们经过多次测试，发现aerospike的性能非常夸张，几乎吊打了公司的哈希引擎。不管是内存占用、cpu使用还是延时与qps吞吐上，都非常强大。更强大的是，它根本没有compaction那种使得性能抖动的因素，在测试过程中性能非常稳定。</p>
+<ol>
+<li>多模数据库，采用schema-less数据模型，一个db+多种应用API：KV、SQL、类JSON、搜索、图、向量检索等。</li>
+<li>支持KV、事务、批量接口，最终一致 和 强一致性两种模型。</li>
+<li>2层share nothing架构，伸缩强，无独立的管控节点，可用性高。</li>
+<li>支持多种存储介质，实现极致成本：DRAM、PMEM、和SSD。</li>
+</ol>
+<p>Aerospike数据库是一个实时、高性能的 NoSQL 数据库。专为不能有任何停机时间且需要高读写吞吐量的应用程序而设计。Aerospike 经过优化，可在能够高效存储大型数据集（千兆字节到千兆字节）的 NVMe SSD 上运行。Aerospike 是个多模数据库，可以部署为完全内存缓存数据库。Aerospike 提供键值、类似JSON 文档、图数据和向量搜索模型。在DB engine KV store上排名第7。</p>
+<p><img src="/2025-04-01-hash%E5%AD%98%E5%82%A8%E5%BC%95%E6%93%8E%E6%9D%82%E8%B0%88/aerospike%E6%8E%92%E5%90%8D.png"></p>
+<h3 id="链接"><a href="#链接" class="headerlink" title="链接"></a>链接</h3><p>后续准备写一批关于aerospike实现的文章。至于其简介相关链接放在下面供参考，不再赘述。</p>
+<ol>
+<li>Aerospike: Architecture of a Real-Time Operational DBMS， VLDB 2016</li>
+<li><a target="_blank" rel="noopener" href="https://aerospike.com/docs/">https://aerospike.com/docs/</a></li>
+<li><a target="_blank" rel="noopener" href="https://aerospike.com/blog/active-active-capabilities-in-aerospike-database-5/?_gl=1*1w5i4k7*_gcl_au*MTQ0OTA3MTMwMS4xNzMzMjk5MTk5*_ga*MTU1Nzk1OTk2My4xNzMzMjk5MjA2*_ga_HSLESVGFW2*MTczNDYwMDg1MS41LjEuMTczNDYwMjU2NS41MS4wLjA.">强一致性模型（SC）下单AZ故障</a></li>
+<li>Citrusleaf: A Real-Time NoSQL DB which Preserves ACID, PVLDB 2012</li>
+<li><a target="_blank" rel="noopener" href="https://www.slideshare.net/slideshow/aerospike-hybrid-memory-architecture/73004682#26">https://www.slideshare.net/slideshow/aerospike-hybrid-memory-architecture/73004682#26</a></li>
+<li><a target="_blank" rel="noopener" href="https://www.slideshare.net/slideshow/aerospike-the-enterprise-class-nosql-database-for-realtime-applications/77043638?from_search=20#3">https://www.slideshare.net/slideshow/aerospike-the-enterprise-class-nosql-database-for-realtime-applications/77043638?from_search=20#3</a></li>
+<li><a target="_blank" rel="noopener" href="https://www.slideshare.net/slideshow/aerospike-meetup-july-2019-big-data-demystified/153128898?from_search=30">https://www.slideshare.net/slideshow/aerospike-meetup-july-2019-big-data-demystified/153128898?from_search=30</a></li>
+<li><a target="_blank" rel="noopener" href="https://www.slideshare.net/slideshow/brian-bulkowski-aerospike/37529750?from_search=53#2">https://www.slideshare.net/slideshow/brian-bulkowski-aerospike/37529750?from_search=53#2</a></li>
+<li><a target="_blank" rel="noopener" href="https://www.slideshare.net/slideshow/what-a-modern-database-enablessrini-srinivasanpdf/258588703?from_search=76">https://www.slideshare.net/slideshow/what-a-modern-database-enablessrini-srinivasanpdf/258588703?from_search=76</a></li>
+<li><a target="_blank" rel="noopener" href="https://www.slideshare.net/slideshow/art-of-the-possibletim-faulkespdf/258588223?from_search=77">https://www.slideshare.net/slideshow/art-of-the-possibletim-faulkespdf/258588223?from_search=77</a></li>
+<li><a target="_blank" rel="noopener" href="https://www.slideshare.net/slideshow/aerospike-key-value-store/33335466#28">https://www.slideshare.net/slideshow/aerospike-key-value-store/33335466#28</a></li>
+<li><a target="_blank" rel="noopener" href="https://www.slideshare.net/slideshow/getting-the-most-out-of-your-flashssds/31454203">https://www.slideshare.net/slideshow/getting-the-most-out-of-your-flashssds/31454203</a></li>
+</ol>
 
-<h2 id="问题5：编译as源码失败"><a href="#问题5：编译as源码失败" class="headerlink" title="问题5：编译as源码失败"></a>问题5：编译as源码失败</h2><figure class="highlight shell"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br></pre></td><td class="code"><pre><span class="line">base/signal.c: In function ‘log_siginfo’:</span><br><span class="line">base/signal.c:283:52: error: ‘BUS_MCEERR_AR’ undeclared (first use in this function)</span><br><span class="line">  283 |  if (info-&gt;si_signo == SIGBUS &amp;&amp; (info-&gt;si_code == BUS_MCEERR_AR ||</span><br></pre></td></tr></table></figure>
-<p>fix：<br>简单fix，将as&#x2F;src&#x2F;base&#x2F;signal.c中相关的代码注释掉</p>
-<h1 id="二、运行"><a href="#二、运行" class="headerlink" title="二、运行"></a>二、运行</h1><p>问题1：ssd运行失败<br>fix:</p>
-<ul>
-<li>切换到root用户，sudo -iu root</li>
-<li>初始化分区<br>  ○ blkdiscard -z –length 8MiB &#x2F;dev&#x2F;nvme0n1<br>  ○ 参考：<a target="_blank" rel="noopener" href="https://aerospike.com/docs/server/operations/configure/storage/ssd_init">https://aerospike.com/docs/server/operations/configure/storage/ssd_init</a></li>
-<li>创建文件目录：<figure class="highlight shell"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br></pre></td><td class="code"><pre><span class="line">mkdir -p  log/aerospike</span><br><span class="line">mkdir -p run/aerospike/</span><br><span class="line">mkdir -p /opt/aerospike</span><br><span class="line"> mkdir -p /opt/aerospike/usr/udf/lua</span><br><span class="line"> mkdir -p  /opt/aerospike/smd</span><br><span class="line">./asd --config-file aerospike_ssd.conf</span><br></pre></td></tr></table></figure></li>
-</ul>
-<p>配置文件参考。基于ssd</p>
-<figure class="highlight plaintext"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br><span class="line">27</span><br><span class="line">28</span><br><span class="line">29</span><br><span class="line">30</span><br><span class="line">31</span><br><span class="line">32</span><br><span class="line">33</span><br><span class="line">34</span><br><span class="line">35</span><br><span class="line">36</span><br><span class="line">37</span><br><span class="line">38</span><br><span class="line">39</span><br><span class="line">40</span><br><span class="line">41</span><br><span class="line">42</span><br><span class="line">43</span><br><span class="line">44</span><br><span class="line">45</span><br><span class="line">46</span><br><span class="line">47</span><br><span class="line">48</span><br><span class="line">49</span><br><span class="line">50</span><br><span class="line">51</span><br><span class="line">52</span><br><span class="line">53</span><br><span class="line">54</span><br><span class="line">55</span><br><span class="line">56</span><br><span class="line">57</span><br><span class="line">58</span><br><span class="line">59</span><br><span class="line">60</span><br><span class="line">61</span><br><span class="line">62</span><br><span class="line">63</span><br></pre></td><td class="code"><pre><span class="line">service &#123;</span><br><span class="line">	user root</span><br><span class="line">	group root</span><br><span class="line">	pidfile run/aerospike/asd.pid</span><br><span class="line">	proto-fd-max 15000</span><br><span class="line">	cluster-name cakery</span><br><span class="line">&#125;</span><br><span class="line"></span><br><span class="line">logging &#123;</span><br><span class="line">	# Log file must be an absolute path.</span><br><span class="line">	file log/aerospike/aerospike.log &#123;</span><br><span class="line">		context any info</span><br><span class="line">	&#125;</span><br><span class="line">&#125;</span><br><span class="line"></span><br><span class="line">network &#123;</span><br><span class="line">	service &#123;</span><br><span class="line">		address any</span><br><span class="line">		port 3000</span><br><span class="line">	&#125;</span><br><span class="line"></span><br><span class="line">	heartbeat &#123;</span><br><span class="line">		mode multicast</span><br><span class="line">		multicast-group 239.1.99.222</span><br><span class="line">		port 9918</span><br><span class="line"></span><br><span class="line">		# To use unicast-mesh heartbeats, remove the 3 lines above, and see</span><br><span class="line">		# aerospike_mesh.conf for alternative.</span><br><span class="line"></span><br><span class="line">		interval 150</span><br><span class="line">		timeout 10</span><br><span class="line">	&#125;</span><br><span class="line"></span><br><span class="line">	fabric &#123;</span><br><span class="line">		port 3001</span><br><span class="line">	&#125;</span><br><span class="line"></span><br><span class="line">#	info &#123;</span><br><span class="line">#		port 3003</span><br><span class="line">#	&#125;</span><br><span class="line">&#125;</span><br><span class="line"></span><br><span class="line">namespace test &#123;</span><br><span class="line">	replication-factor 3</span><br><span class="line"></span><br><span class="line">	# Warning - legacy data in defined raw partition devices will be erased.</span><br><span class="line">	# These partitions must not be mounted by the file system.</span><br><span class="line">	#index-type flash &#123;</span><br><span class="line">  #      mounts-budget 1T</span><br><span class="line">  #      mount /dev/nvme0n1</span><br><span class="line">  #&#125;</span><br><span class="line"></span><br><span class="line">	storage-engine device &#123;</span><br><span class="line">		# Use one or more lines like those below with actual device paths.</span><br><span class="line">		#device /dev/nvme0n1</span><br><span class="line">    device /dev/nvme0n1p1</span><br><span class="line">    device /dev/nvme0n1p2</span><br><span class="line">    device /dev/nvme0n1p3</span><br><span class="line">    device /dev/nvme0n1p4</span><br><span class="line">    cold-start-empty true</span><br><span class="line">		# write-block-size 128K</span><br><span class="line">	&#125;</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
       
     </div>
 
@@ -257,7 +274,7 @@
 
 
   <nav class="pagination">
-    <a class="extend prev" rel="prev" title="上一页" aria-label="上一页" href="/page/20/"><i class="fa fa-angle-left"></i></a><a class="page-number" href="/">1</a><span class="space">&hellip;</span><a class="page-number" href="/page/20/">20</a><span class="page-number current">21</span><a class="page-number" href="/page/22/">22</a><span class="space">&hellip;</span><a class="page-number" href="/page/38/">38</a><a class="extend next" rel="next" title="下一页" aria-label="下一页" href="/page/22/"><i class="fa fa-angle-right"></i></a>
+    <a class="extend prev" rel="prev" title="上一页" aria-label="上一页" href="/page/20/"><i class="fa fa-angle-left"></i></a><a class="page-number" href="/">1</a><span class="space">&hellip;</span><a class="page-number" href="/page/20/">20</a><span class="page-number current">21</span><a class="page-number" href="/page/22/">22</a><span class="space">&hellip;</span><a class="page-number" href="/page/39/">39</a><a class="extend next" rel="next" title="下一页" aria-label="下一页" href="/page/22/"><i class="fa fa-angle-right"></i></a>
   </nav>
 
 </div>

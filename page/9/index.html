@@ -123,7 +123,7 @@
   <nav class="site-state">
       <div class="site-state-item site-state-posts">
         <a href="/archives/">
-          <span class="site-state-item-count">38</span>
+          <span class="site-state-item-count">39</span>
           <span class="site-state-item-name">日志</span>
         </a>
       </div>
@@ -159,7 +159,7 @@
   
 
   <article itemscope itemtype="http://schema.org/Article" class="post-content" lang="">
-    <link itemprop="mainEntityOfPage" href="https://scut-corgis.github.io/2025-09-02-%E6%A2%B3%E7%90%86redis%E5%A4%9A%E7%BA%BF%E7%A8%8B%EF%BC%88%E5%8C%85%E6%8B%ACredis8%EF%BC%89/">
+    <link itemprop="mainEntityOfPage" href="https://scut-corgis.github.io/2025-09-02-%E6%A2%B3%E7%90%86redis%E5%A4%9A%E7%BA%BF%E7%A8%8B(%E5%8C%85%E6%8B%ACredis8)/">
 
     <span hidden itemprop="author" itemscope itemtype="http://schema.org/Person">
       <meta itemprop="image" content="/images/corgis.jpg">
@@ -177,7 +177,7 @@
     </span>
       <header class="post-header">
         <h2 class="post-title" itemprop="name headline">
-          <a href="/2025-09-02-%E6%A2%B3%E7%90%86redis%E5%A4%9A%E7%BA%BF%E7%A8%8B%EF%BC%88%E5%8C%85%E6%8B%ACredis8%EF%BC%89/" class="post-title-link" itemprop="url">梳理redis多线程（包括redis8）</a>
+          <a href="/2025-09-02-%E6%A2%B3%E7%90%86redis%E5%A4%9A%E7%BA%BF%E7%A8%8B(%E5%8C%85%E6%8B%ACredis8)/" class="post-title-link" itemprop="url">梳理redis多线程（包括redis8）</a>
         </h2>
 
         <div class="post-meta-container">
@@ -242,7 +242,7 @@
 
 <figure class="highlight c++"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br></pre></td><td class="code"><pre><span class="line"><span class="comment">/* 读操作推迟 */</span></span><br><span class="line"><span class="function"><span class="type">void</span> <span class="title">readQueryFromClient</span><span class="params">(connection *conn)</span> </span>&#123;</span><br><span class="line">	...</span><br><span class="line">    <span class="keyword">if</span> (<span class="built_in">postponeClientRead</span>(c)) <span class="keyword">return</span>;</span><br><span class="line">    ...</span><br><span class="line">&#125;</span><br><span class="line"></span><br><span class="line"><span class="function"><span class="type">int</span> <span class="title">postponeClientRead</span><span class="params">(client *c)</span> </span>&#123;</span><br><span class="line">    <span class="keyword">if</span> (server.io_threads_active &amp;&amp;</span><br><span class="line">        server.io_threads_do_reads &amp;&amp;</span><br><span class="line">        !<span class="built_in">clientsArePaused</span>() &amp;&amp;</span><br><span class="line">        !ProcessingEventsWhileBlocked &amp;&amp;</span><br><span class="line">        !(c-&gt;flags &amp; (CLIENT_MASTER|CLIENT_SLAVE|CLIENT_PENDING_READ)))</span><br><span class="line">    &#123;</span><br><span class="line">        c-&gt;flags |= CLIENT_PENDING_READ;</span><br><span class="line">        <span class="comment">// 将要处理的读操作放入全局变量 clients_pending_read 链表</span></span><br><span class="line">        <span class="built_in">listAddNodeHead</span>(server.clients_pending_read, c);</span><br><span class="line">        <span class="keyword">return</span> <span class="number">1</span>;</span><br><span class="line">    &#125; <span class="keyword">else</span> &#123;</span><br><span class="line">        <span class="keyword">return</span> <span class="number">0</span>;</span><br><span class="line">    &#125;</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
 
-<p><img src="/2025-09-02-%E6%A2%B3%E7%90%86redis%E5%A4%9A%E7%BA%BF%E7%A8%8B%EF%BC%88%E5%8C%85%E6%8B%ACredis8%EF%BC%89/redis6.png"></p>
+<p><img src="/2025-09-02-%E6%A2%B3%E7%90%86redis%E5%A4%9A%E7%BA%BF%E7%A8%8B(%E5%8C%85%E6%8B%ACredis8)/redis6.png"></p>
 <h1 id="redis8的io多线程"><a href="#redis8的io多线程" class="headerlink" title="redis8的io多线程"></a>redis8的io多线程</h1><p>pr见：<br><a target="_blank" rel="noopener" href="https://github.com/redis/redis/pull/13695">https://github.com/redis/redis/pull/13695</a></p>
 <p>同时推荐一篇valkey8.0的多线程实现讲解的文章：<a target="_blank" rel="noopener" href="https://cloud.tencent.com/developer/article/2552574">https://cloud.tencent.com/developer/article/2552574</a></p>
 <p>实现的效果是：io线程和主线程完全异步，主线程无需做任何io操作，收到了client直接分发给io线程，epoll也再也不需要关心分发出去的client。主线程全程只需要执行命令即可。</p>
@@ -348,7 +348,7 @@
 
 
   <nav class="pagination">
-    <a class="extend prev" rel="prev" title="上一页" aria-label="上一页" href="/page/8/"><i class="fa fa-angle-left"></i></a><a class="page-number" href="/">1</a><span class="space">&hellip;</span><a class="page-number" href="/page/8/">8</a><span class="page-number current">9</span><a class="page-number" href="/page/10/">10</a><span class="space">&hellip;</span><a class="page-number" href="/page/38/">38</a><a class="extend next" rel="next" title="下一页" aria-label="下一页" href="/page/10/"><i class="fa fa-angle-right"></i></a>
+    <a class="extend prev" rel="prev" title="上一页" aria-label="上一页" href="/page/8/"><i class="fa fa-angle-left"></i></a><a class="page-number" href="/">1</a><span class="space">&hellip;</span><a class="page-number" href="/page/8/">8</a><span class="page-number current">9</span><a class="page-number" href="/page/10/">10</a><span class="space">&hellip;</span><a class="page-number" href="/page/39/">39</a><a class="extend next" rel="next" title="下一页" aria-label="下一页" href="/page/10/"><i class="fa fa-angle-right"></i></a>
   </nav>
 
 </div>

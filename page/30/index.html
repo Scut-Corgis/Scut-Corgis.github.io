@@ -123,7 +123,7 @@
   <nav class="site-state">
       <div class="site-state-item site-state-posts">
         <a href="/archives/">
-          <span class="site-state-item-count">38</span>
+          <span class="site-state-item-count">39</span>
           <span class="site-state-item-name">日志</span>
         </a>
       </div>
@@ -159,7 +159,7 @@
   
 
   <article itemscope itemtype="http://schema.org/Article" class="post-content" lang="">
-    <link itemprop="mainEntityOfPage" href="https://scut-corgis.github.io/2024-09-18-%E6%AD%A3%E5%88%99%E8%A1%A8%E8%BE%BE%E5%BC%8F/">
+    <link itemprop="mainEntityOfPage" href="https://scut-corgis.github.io/2024-10-20-%E6%95%B0%E6%8D%AE%E5%BA%93%E7%AE%A1%E6%8E%A7%E5%B9%B3%E5%8F%B0%E8%AE%BE%E8%AE%A1%E4%B8%8E%E5%AE%9E%E7%8E%B0-%E6%9C%8D%E5%8A%A1%E7%AB%AF/">
 
     <span hidden itemprop="author" itemscope itemtype="http://schema.org/Person">
       <meta itemprop="image" content="/images/corgis.jpg">
@@ -177,7 +177,7 @@
     </span>
       <header class="post-header">
         <h2 class="post-title" itemprop="name headline">
-          <a href="/2024-09-18-%E6%AD%A3%E5%88%99%E8%A1%A8%E8%BE%BE%E5%BC%8F/" class="post-title-link" itemprop="url">正则表达式</a>
+          <a href="/2024-10-20-%E6%95%B0%E6%8D%AE%E5%BA%93%E7%AE%A1%E6%8E%A7%E5%B9%B3%E5%8F%B0%E8%AE%BE%E8%AE%A1%E4%B8%8E%E5%AE%9E%E7%8E%B0-%E6%9C%8D%E5%8A%A1%E7%AB%AF/" class="post-title-link" itemprop="url">数据库管控平台设计与实现-服务端</a>
         </h2>
 
         <div class="post-meta-container">
@@ -188,7 +188,7 @@
       </span>
       <span class="post-meta-item-text">发表于</span>
 
-      <time title="创建时间：2024-09-18 22:02:51" itemprop="dateCreated datePublished" datetime="2024-09-18T22:02:51+08:00">2024-09-18</time>
+      <time title="创建时间：2024-10-20 21:10:05" itemprop="dateCreated datePublished" datetime="2024-10-20T21:10:05+08:00">2024-10-20</time>
     </span>
     <span class="post-meta-item">
       <span class="post-meta-item-icon">
@@ -196,7 +196,7 @@
       </span>
       <span class="post-meta-item-text">分类于</span>
         <span itemprop="about" itemscope itemtype="http://schema.org/Thing">
-          <a href="/categories/regular-expression/" itemprop="url" rel="index"><span itemprop="name">regular expression</span></a>
+          <a href="/categories/%E6%95%B0%E6%8D%AE%E5%BA%93%E7%AE%A1%E6%8E%A7/" itemprop="url" rel="index"><span itemprop="name">数据库管控</span></a>
         </span>
     </span>
 
@@ -210,82 +210,59 @@
     
     
     <div class="post-body" itemprop="articleBody">
-          <h1 id="学习目的"><a href="#学习目的" class="headerlink" title="学习目的"></a>学习目的</h1><p>工作中开始多次涉及正则表达式。如：</p>
-<ul>
-<li>web编程时，对外暴露的http的接口url匹配。</li>
-<li>shell脚本中的模式匹配等。</li>
-</ul>
-<p>因此开始系统学习</p>
-<h1 id="目的"><a href="#目的" class="headerlink" title="目的"></a>目的</h1><p>用于匹配字符串，如命令<code>sed</code>、<code>grep</code>、<code>awk</code>均可以用正则表达式语法。</p>
-<figure class="highlight bash"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br></pre></td><td class="code"><pre><span class="line"><span class="comment"># 可匹配成功, -E表示使用扩展正则表达式</span></span><br><span class="line"><span class="built_in">echo</span> 12313 | grep -E <span class="string">&#x27;^[0-9]+$&#x27;</span></span><br></pre></td></tr></table></figure>
+          <h1 id="引言"><a href="#引言" class="headerlink" title="引言"></a>引言</h1><p>各大公司都有庞大的数据库资源，涉及机器轻则上千，基本都是以万计。几乎每天都有机器宕机，或者发生网络延迟，或者发生机房故障。稍有不慎便容易出现管控缺失，数据库不稳定的问题。而数据库稳定性一般都是最重要的一环。</p>
+<p>一般数据库管控维度为分数据库种类，再细分对应的业务集群。如何设计一个数据库管控系统，其具备一些公共能力，能够对各种数据库集群进行相应的具体的管控逻辑的开发，具有一定的挑战。</p>
+<p>首先，当前业界通用的做法是如下图所示，通过在数据库机器中内嵌相应的agent进程，该agent负责管理当前机器上的数据库进程，上报与采集内核信息，以实现相应的管控逻辑。</p>
+<p><img src="/2024-10-20-%E6%95%B0%E6%8D%AE%E5%BA%93%E7%AE%A1%E6%8E%A7%E5%B9%B3%E5%8F%B0%E8%AE%BE%E8%AE%A1%E4%B8%8E%E5%AE%9E%E7%8E%B0-%E6%9C%8D%E5%8A%A1%E7%AB%AF/mgr-agent%E6%9E%B6%E6%9E%84.drawio.svg"></p>
+<p>当然一个好的平台不仅需要强大的后端组件支持，还需要前端项目用于展示和运维人员操作的，在本文中着重讨论后端部分。</p>
+<h1 id="运维模块"><a href="#运维模块" class="headerlink" title="运维模块"></a>运维模块</h1><h2 id="插件系统"><a href="#插件系统" class="headerlink" title="插件系统"></a>插件系统</h2><p>一些数据库，对应运维操作相当复杂，即运维管控代码庞大。若以脚本语言如python完全去写起管控逻辑，到后期几乎无法维护，因此管控平台需要能够提供原生语言的编写能力，一般管控平台以golang编写，则应当允许数据库运维开发方能够直接使用golang编写运维逻辑。</p>
+<p>一种实现方法是，提供某种代码生成器，将业务golang的接口代码直接生成与管控平台黏合的代码，并编译成<code>.so</code>文件，供动态链接，这种方法的好处是，一个mgr可以链接多个插件系统，即服务多种数据库。</p>
+<h2 id="任务执行"><a href="#任务执行" class="headerlink" title="任务执行"></a>任务执行</h2><p>负责任务的创建、管理、下发、agent回复处理等工作</p>
+<p>该模块是数据库管控平台最重要的模块。每一个管控逻辑，都是由一个或多个任务组成。而强大的管控平台可以提供多种任务编写方式，如shell、python、甚至是直接的golang语言。</p>
+<p>任务必须具备可取消的能力，即超时关闭，若直接在线程中运行任务显然无法取消。一种简单的方式是，执行任务的线程，再起一个任务线程并记录pid，并不断观测任务线程结果，必要时直接杀死对应线程。</p>
+<p>任务必须具备提取返回值的能力，这对于golang来说实现简单，因为管控平台原生语言即为golang。而对于python而言捕获返回值相当困难。一种可行的实现是python返回结果直接json化后写到某个临时文件，供golang代码后续读并解码(python任务日志也可以如此实现)。</p>
+<p>对于shell执行器，为了记录中间的<code>echo xxx</code>输出，需要捕获相应的stdout并于日志文件中。需要关心shell脚本的退出码以判断任务的成功与否。</p>
+<p>对于python执行器，python执行器应该能够只执行某个<code>.py</code>文件的某个类中的一个成员函数。一种实现是可以用shell执行器作为中间方，以shell执行器启动<code>python_control.sh args</code>，将任务入参放在<code>args</code>，在里面执行<code>python control.py options=args</code>，再以<code>control.py</code>去调用相应具体python任务。</p>
+<p>为了持续的观测任务的执行过程，供前端展示任务的执行情况，任务创建时应该往管控数据库中插入任务信息和状态信息，任务执行完后需要修改对应任务的状态。</p>
+<p>任务执行需要区别mgr本地执行与agent远端执行，对于agent远端执行，需要区分同步与异步两种方式。实际两种方法本质一样，均向agent调用执行任务接口，agent执行完后会调用mgr的上报接口。同步的话，mgr要hold住请求不返回即可，直到agent回复。</p>
+<h2 id="定时调度"><a href="#定时调度" class="headerlink" title="定时调度"></a>定时调度</h2><p>定时调度在数据库管控中相当常见，比如机器宕机检测与恢复。我们可以很方便的在任务执行模块上实现定时调度。</p>
+<p>只需要将定时调度信息存于管控数据库中。使用某种<code>cron</code>包进行调度即可。</p>
+<h2 id="流程引擎"><a href="#流程引擎" class="headerlink" title="流程引擎"></a>流程引擎</h2><p>有的运维操作相当冗长，如数据中心级别的故障转移。若以代码硬编码将无法维护，一般是以编写多个任务以类似流水线的方式串接起来，应该管控平台需要具备流程引擎的能力。</p>
+<p>一般实现是，前端画流程图，并将对应流程图结构化插入到管控数据库中，后端mgr只需要取出管控数据库中已经结构化的流程定义即可。</p>
+<p>使用方式：前端画流程图，生成流程定义到数据库中。后端从数据库中取流程定义，然后执行流程，将执行结果记录到数据库中。</p>
+<h3 id="前端实现"><a href="#前端实现" class="headerlink" title="前端实现"></a>前端实现</h3><p><img src="/2024-10-20-%E6%95%B0%E6%8D%AE%E5%BA%93%E7%AE%A1%E6%8E%A7%E5%B9%B3%E5%8F%B0%E8%AE%BE%E8%AE%A1%E4%B8%8E%E5%AE%9E%E7%8E%B0-%E6%9C%8D%E5%8A%A1%E7%AB%AF/%E5%89%8D%E7%AB%AF%E7%95%8C%E9%9D%A2.png"></p>
+<h3 id="后端实现"><a href="#后端实现" class="headerlink" title="后端实现"></a>后端实现</h3><h4 id="数据结构"><a href="#数据结构" class="headerlink" title="数据结构"></a>数据结构</h4><h5 id="process"><a href="#process" class="headerlink" title="process"></a>process</h5><p>当前端编辑完，保存后，会将流程的数据结构放于mongo表<code>process</code>中</p>
+<p><img src="/2024-10-20-%E6%95%B0%E6%8D%AE%E5%BA%93%E7%AE%A1%E6%8E%A7%E5%B9%B3%E5%8F%B0%E8%AE%BE%E8%AE%A1%E4%B8%8E%E5%AE%9E%E7%8E%B0-%E6%9C%8D%E5%8A%A1%E7%AB%AF/process.png"></p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br></pre></td><td class="code"><pre><span class="line"><span class="comment">// Process 流程</span></span><br><span class="line"><span class="keyword">type</span> Process <span class="keyword">struct</span> &#123;</span><br><span class="line">    <span class="comment">// 基础信息</span></span><br><span class="line">    Name   <span class="type">string</span> <span class="string">`json:&quot;name&quot; bson:&quot;name&quot;`</span>       <span class="comment">// 流程名</span></span><br><span class="line">    ChName <span class="type">string</span> <span class="string">`json:&quot;ch_name&quot; bson:&quot;ch_name&quot;`</span> <span class="comment">// 流程中文名</span></span><br><span class="line">    <span class="comment">// 属性信息</span></span><br><span class="line">    ParamList      []ValueDefinition <span class="string">`json:&quot;param_list&quot; bson:&quot;param_list&quot;`</span>           <span class="comment">// 全局入参</span></span><br><span class="line">    ResultList     []ValueDefinition <span class="string">`json:&quot;result_list&quot; bson:&quot;result_list&quot;`</span>         <span class="comment">// 全局结果</span></span><br><span class="line">    <span class="comment">// 节点信息，记录了流程图一个节点的全部信息，如task，其入参信息等等</span></span><br><span class="line">    ActivityList   []Activity        <span class="string">`json:&quot;activity_list&quot; bson:&quot;activity_list&quot;`</span>    </span><br><span class="line">    SequenceList   []Sequence        <span class="string">`json:&quot;sequence_list&quot; bson:&quot;sequence_list&quot;`</span>     <span class="comment">// activity连线列表</span></span><br><span class="line">    Author         <span class="type">string</span>            <span class="string">`json:&quot;author&quot; bson:&quot;author&quot;`</span>                   <span class="comment">// 创建人</span></span><br><span class="line">    CreatedAt      <span class="type">int64</span>             <span class="string">`json:&quot;created_at&quot; bson:&quot;created_at&quot;`</span>           <span class="comment">// 创建时间</span></span><br><span class="line">    UpdatedAt      <span class="type">int64</span>             <span class="string">`json:&quot;updated_at&quot; bson:&quot;updated_at&quot;`</span>           <span class="comment">// 更新时间</span></span><br><span class="line">    Position       <span class="keyword">map</span>[<span class="type">string</span>]<span class="type">string</span> <span class="string">`json:&quot;position&quot; bson:&quot;position&quot;`</span>               <span class="comment">// activity的位置信息，&#123;node_1: &quot;top:xx;left:xx&quot;&#125;</span></span><br><span class="line">    ConnectionDire <span class="keyword">map</span>[<span class="type">string</span>]<span class="type">string</span> <span class="string">`json:&quot;connection_dire&quot; bson:&quot;connection_dire&quot;`</span> <span class="comment">// 连线的方向信息,&#123;node_1-node_2: &quot;rig-left&quot;&#125;</span></span><br><span class="line">    Labels         []ValueDefinition <span class="string">`json:&quot;labels&quot; json:&quot;labels&quot;`</span>                   <span class="comment">// 流程拥有标签</span></span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
 
-<p>go标准库也提供了正则表达式库</p>
-<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">import</span> (</span><br><span class="line">    <span class="string">&quot;regexp&quot;</span></span><br><span class="line">)</span><br><span class="line"></span><br><span class="line"><span class="function"><span class="keyword">func</span> <span class="title">isValidEmail</span><span class="params">(email <span class="type">string</span>)</span></span> <span class="type">bool</span> &#123;</span><br><span class="line">    re := regexp.MustCompile(<span class="string">`^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]&#123;2,&#125;$`</span>)</span><br><span class="line">    <span class="keyword">return</span> re.MatchString(email)</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+<p><img src="/2024-10-20-%E6%95%B0%E6%8D%AE%E5%BA%93%E7%AE%A1%E6%8E%A7%E5%B9%B3%E5%8F%B0%E8%AE%BE%E8%AE%A1%E4%B8%8E%E5%AE%9E%E7%8E%B0-%E6%9C%8D%E5%8A%A1%E7%AB%AF/activity_list.png"></p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br></pre></td><td class="code"><pre><span class="line"><span class="comment">// Activity 活动节点的定义</span></span><br><span class="line"><span class="keyword">type</span> Activity <span class="keyword">struct</span> &#123;</span><br><span class="line">    <span class="comment">// 基础信息</span></span><br><span class="line">    Name   <span class="type">string</span>       <span class="string">`json:&quot;name&quot; bson:&quot;name&quot;`</span>       <span class="comment">// 名称，自动生成</span></span><br><span class="line">    ChName <span class="type">string</span>       <span class="string">`json:&quot;ch_name&quot; bson:&quot;ch_name&quot;`</span> <span class="comment">// 中文名称，选填，为空时按如下顺序赋值：任务/process</span></span><br><span class="line">    Type   ActivityType <span class="string">`json:&quot;type&quot; bson:&quot;type&quot;`</span>       <span class="comment">// 类型，对应ActivityType。比如为task或者start</span></span><br><span class="line">    <span class="comment">// 属性信息</span></span><br><span class="line">    ParamList    []ValueDefinition <span class="string">`json:&quot;param_list&quot; bson:&quot;param_list&quot;`</span>       <span class="comment">// 节点入参</span></span><br><span class="line">    ResultList   []ValueDefinition <span class="string">`json:&quot;result_list&quot; bson:&quot;result_list&quot;`</span>     <span class="comment">// 输出结果</span></span><br><span class="line">    InputAnchor  <span class="type">string</span>            <span class="string">`json:&quot;input_anchor&quot; bson:&quot;input_anchor&quot;`</span>   <span class="comment">// 入参锚点</span></span><br><span class="line">    OutputAnchor <span class="type">string</span>            <span class="string">`json:&quot;output_anchor&quot; bson:&quot;output_anchor&quot;`</span> <span class="comment">// 出参锚点</span></span><br><span class="line">    Timeout      <span class="type">int64</span>             <span class="string">`json:&quot;timeout&quot; bson:&quot;timeout&quot;`</span>             <span class="comment">// 超时时间，单位秒</span></span><br><span class="line">    LoopUntil    <span class="type">string</span>            <span class="string">`json:&quot;loop_until&quot; bson:&quot;loop_until&quot;`</span>       <span class="comment">// 循环等待</span></span><br><span class="line">    LoopInterval <span class="type">int64</span>             <span class="string">`json:&quot;loop_interval&quot; bson:&quot;loop_interval&quot;`</span> <span class="comment">// 循环间隔，单位秒</span></span><br><span class="line">    SuccFlag     <span class="type">string</span>            <span class="string">`json:&quot;succ_flag&quot; bson:&quot;succ_flag&quot;`</span>         <span class="comment">// 任务执行成功与否的标识</span></span><br><span class="line">    <span class="comment">// 内容</span></span><br><span class="line">    Content <span class="type">string</span> <span class="string">`json:&quot;content&quot; bson:&quot;content&quot;`</span> <span class="comment">// 包含的任务或流程</span></span><br><span class="line">    Remote  <span class="type">bool</span>   <span class="string">`json:&quot;remote&quot; bson:&quot;remote&quot;`</span>   <span class="comment">// 针对作业平台任务，标识是否远程任务，默认false，如果为true，则入参默认增加target_hosts, 出参增加succ_hosts</span></span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
 
-<h1 id="语法"><a href="#语法" class="headerlink" title="语法"></a>语法</h1><p><a target="_blank" rel="noopener" href="https://www.runoob.com/regexp/regexp-intro.html">菜鸟教程</a></p>
-<h2 id="常见例子"><a href="#常见例子" class="headerlink" title="常见例子"></a>常见例子</h2><h3 id="简单例子"><a href="#简单例子" class="headerlink" title="简单例子"></a>简单例子</h3><figure class="highlight plaintext"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">^[a-zA-Z0-9_-]&#123;3,15&#125;$</span><br></pre></td></tr></table></figure>
+<p><img src="/2024-10-20-%E6%95%B0%E6%8D%AE%E5%BA%93%E7%AE%A1%E6%8E%A7%E5%B9%B3%E5%8F%B0%E8%AE%BE%E8%AE%A1%E4%B8%8E%E5%AE%9E%E7%8E%B0-%E6%9C%8D%E5%8A%A1%E7%AB%AF/seq_list.png"></p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">type</span> Sequence <span class="keyword">struct</span> &#123;</span><br><span class="line">    Source    <span class="type">string</span> <span class="string">`json:&quot;source&quot; bson:&quot;source&quot;`</span>       <span class="comment">// 源activity name</span></span><br><span class="line">    Target    <span class="type">string</span> <span class="string">`json:&quot;target&quot; bson:&quot;target&quot;`</span>       <span class="comment">// 目标activity name</span></span><br><span class="line">    Condition <span class="type">string</span> <span class="string">`json:&quot;condition&quot; bson:&quot;condition&quot;`</span> <span class="comment">// 条件表达式</span></span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
 
-<p><img src="/2024-09-18-%E6%AD%A3%E5%88%99%E8%A1%A8%E8%BE%BE%E5%BC%8F/regexp-cn.png"></p>
-<ul>
-<li>^ 表示匹配字符串的开头。</li>
-<li>[a-zA-Z0-9_-] 表示字符集，包含小写字母、大写字母、数字、下划线和连接字符 -。</li>
-<li>{3,15} 表示前面的字符集最少出现 3 次，最多出现 15 次，从而限制了用户名的长度在 3 到 15 个字符之间。</li>
-<li>$ 表示匹配字符串的结尾。</li>
-</ul>
-<p>以上的正则表达式可以匹配 runoob、runoob1、run-oob、run_oob， 但不匹配 ru，因为它包含的字母太短了，小于 3 个无法匹配。也不匹配 runoob$, 因为它包含特殊字符。</p>
-<h3 id="贪婪与非贪婪"><a href="#贪婪与非贪婪" class="headerlink" title="贪婪与非贪婪"></a>贪婪与非贪婪</h3><p>* 和 + 限定符都是贪婪的，因为它们会尽可能多的匹配文字，只有在它们的后面加上一个 ? 就可以实现非贪婪或最小匹配。</p>
-<p>对于以下字符串</p>
-<figure class="highlight html"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line"><span class="tag">&lt;<span class="name">h1</span>&gt;</span>RUNOOB-菜鸟教程<span class="tag">&lt;/<span class="name">h1</span>&gt;</span></span><br></pre></td></tr></table></figure>
-<figure class="highlight plaintext"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br></pre></td><td class="code"><pre><span class="line">匹配全部</span><br><span class="line">/&lt;.*&gt;/</span><br><span class="line">只匹配&lt;h1&gt;</span><br><span class="line">/&lt;.*?&gt;/</span><br><span class="line">也可以使用</span><br><span class="line">/&lt;\w+?&gt;/</span><br></pre></td></tr></table></figure>
+<h5 id="ProcessInstance"><a href="#ProcessInstance" class="headerlink" title="ProcessInstance"></a>ProcessInstance</h5><p>开始运行流程时，会根据全局传参和默认参数，合成一个最终流程全局入参，创建一个<code>processInstance</code>对象，并将该对象插入mongo中<code>process_instance</code>表内</p>
+<p><img src="/2024-10-20-%E6%95%B0%E6%8D%AE%E5%BA%93%E7%AE%A1%E6%8E%A7%E5%B9%B3%E5%8F%B0%E8%AE%BE%E8%AE%A1%E4%B8%8E%E5%AE%9E%E7%8E%B0-%E6%9C%8D%E5%8A%A1%E7%AB%AF/process_instance.png"></p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br></pre></td><td class="code"><pre><span class="line"><span class="comment">// ProcessInstance 流程实例</span></span><br><span class="line"><span class="keyword">type</span> ProcessInstance <span class="keyword">struct</span> &#123;</span><br><span class="line">    ID                 <span class="type">string</span>                 <span class="string">`json:&quot;id&quot; bson:&quot;_id&quot;`</span>                                      <span class="comment">// 流程实例ID</span></span><br><span class="line">    ParentID           <span class="type">string</span>                 <span class="string">`json:&quot;parent_id&quot; bson:&quot;parent_id&quot;`</span>                         <span class="comment">// 父流程实例ID</span></span><br><span class="line">    Name               <span class="type">string</span>                 <span class="string">`json:&quot;name&quot; bson:&quot;name&quot;`</span>                                   <span class="comment">// 流程名</span></span><br><span class="line">    Params             <span class="keyword">map</span>[<span class="type">string</span>]<span class="keyword">interface</span>&#123;&#125; <span class="string">`json:&quot;params&quot; bson:&quot;params&quot;`</span>                               <span class="comment">// 流程的入参</span></span><br><span class="line">    Result             <span class="keyword">map</span>[<span class="type">string</span>]<span class="keyword">interface</span>&#123;&#125; <span class="string">`json:&quot;result&quot; bson:&quot;result&quot;`</span>                               <span class="comment">// 流程从执行结果</span></span><br><span class="line">    Status             Status                 <span class="string">`json:&quot;status&quot; bson:&quot;status&quot;`</span>                               <span class="comment">// 状态</span></span><br><span class="line">    RunStack           []<span class="type">string</span>               <span class="string">`json:&quot;run_stack&quot; bson:&quot;run_stack&quot;`</span>                         <span class="comment">// 执行栈</span></span><br><span class="line">    RunIndex           <span class="type">int</span>                    <span class="string">`json:&quot;run_index&quot; bson:&quot;run_index&quot;`</span>                         <span class="comment">// 指向执行栈的索引，从0开始，譬如停留在3，表明0、1、2已经顺利执行，3未执行或未彻底完成</span></span><br><span class="line">    Runner             <span class="type">string</span>                 <span class="string">`json:&quot;runner&quot; bson:&quot;runner&quot;`</span>                               <span class="comment">// 执行人</span></span><br><span class="line">    CreatedAt          <span class="type">int64</span>                  <span class="string">`json:&quot;created_at&quot; bson:&quot;created_at&quot;`</span>                       <span class="comment">// 创建时间</span></span><br><span class="line">    UpdatedAt          <span class="type">int64</span>                  <span class="string">`json:&quot;updated_at&quot; bson:&quot;updated_at&quot;`</span>                       <span class="comment">// 更新时间</span></span><br><span class="line">    Labels             <span class="keyword">map</span>[<span class="type">string</span>]<span class="keyword">interface</span>&#123;&#125; <span class="string">`json:&quot;labels&quot; bson:&quot;labels&quot;`</span>                               <span class="comment">// 流程实例标签</span></span><br><span class="line">    Audit              <span class="type">bool</span>                   <span class="string">`json:&quot;audit&quot; bson:&quot;audit&quot;`</span>                                 <span class="comment">// 是否审计</span></span><br><span class="line">    StartEventStack    []<span class="type">string</span>               <span class="string">`json:&quot;start_event_stack&quot; bson:&quot;start_event_stack&quot;`</span>         <span class="comment">// 开始执行事件堆栈</span></span><br><span class="line">    StartEventRunIndex <span class="type">int</span>                    <span class="string">`json:&quot;start_event_run_index&quot; bson:&quot;start_event_run_index&quot;`</span> <span class="comment">// 开始事件执行栈的索引</span></span><br><span class="line">    ExitEventStack     []<span class="type">string</span>               <span class="string">`json:&quot;exit_event_stack&quot; bson:&quot;exit_event_stack&quot;`</span>           <span class="comment">// 退出事件执行栈</span></span><br><span class="line">    ExitEventRunIndex  <span class="type">int</span>                    <span class="string">`json:&quot;exit_event_run_index&quot; bson:&quot;exit_event_run_index&quot;`</span>   <span class="comment">// 退出执行栈索引</span></span><br><span class="line">    Event              <span class="type">bool</span>                   <span class="string">`json:&quot;event&quot; bson:&quot;event&quot;`</span>                                 <span class="comment">// 是否触发事件的开关</span></span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
 
-<h3 id="匹配markdown图片"><a href="#匹配markdown图片" class="headerlink" title="匹配markdown图片"></a>匹配markdown图片</h3><figure class="highlight bash"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br></pre></td><td class="code"><pre><span class="line">$ <span class="built_in">cat</span> redis-sds.md | grep -E <span class="string">&#x27;^!\[[^]]*\]\([^)]+\.svg\)$&#x27;</span></span><br><span class="line">![sds内存结构](sds_mem_view.drawio.svg)</span><br><span class="line">![object-sds](object-sds.drawio.svg)</span><br></pre></td></tr></table></figure>
-
-<p>解释</p>
-<figure class="highlight bash"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br></pre></td><td class="code"><pre><span class="line">^ 表示行的开始。</span><br><span class="line">!\[ 匹配字符串 ![</span><br><span class="line">[^]]* 匹配任意字符（除了 ]），零次或多次（用于匹配图片的描述）。</span><br><span class="line">\] 匹配 ] 字符。</span><br><span class="line">\( 匹配 ( 字符。</span><br><span class="line">[^)]+ 匹配任意字符（除了 )），至少一次（用于匹配文件名）。</span><br><span class="line">\.svg 匹配字符串 .svg。</span><br><span class="line">\) 匹配 ) 字符。</span><br><span class="line">$ 表示行的结束。</span><br></pre></td></tr></table></figure>
-
-<p>反向捕获并修改</p>
-<figure class="highlight bash"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">sed -E <span class="string">&#x27;s/(!\[[^]]*\]\([^)]+)\.svg/\1.png/&#x27;</span> redis-sds.md &gt; redis-sds_bak.md</span><br></pre></td></tr></table></figure>
-
-<p>匹配串<code>()</code>表示捕获<code>.svg</code>的前面部分， <code>\1</code>表示捕获的这部分，再拼接<code>.png</code>。</p>
-<h2 id="正则表达式元字符和特性"><a href="#正则表达式元字符和特性" class="headerlink" title="正则表达式元字符和特性"></a>正则表达式元字符和特性</h2><h3 id="字符匹配"><a href="#字符匹配" class="headerlink" title="字符匹配"></a>字符匹配</h3><ul>
-<li>普通字符：普通字符按照字面意义进行匹配，例如匹配字母 “a” 将匹配到文本中的 “a” 字符。</li>
-<li>元字符：元字符具有特殊的含义，例如 \d 匹配任意数字字符，\w 匹配任意字母数字字符，. 匹配任意字符（除了换行符）等。</li>
-</ul>
-<h3 id="量词"><a href="#量词" class="headerlink" title="量词"></a>量词</h3><ul>
-<li>*：匹配前面的模式零次或多次。</li>
-<li>+：匹配前面的模式一次或多次。</li>
-<li>?：匹配前面的模式零次或一次。</li>
-<li>{* n}：匹配前面的模式恰好 n 次。</li>
-<li>{n,}：匹配前面的模式至少 n 次。</li>
-<li>{n,m}：匹配前面的模式至少 n 次且不超过 m 次。</li>
-</ul>
-<h3 id="字符类"><a href="#字符类" class="headerlink" title="字符类"></a>字符类</h3><ul>
-<li>[ ]：匹配括号内的任意一个字符。例如，[abc] 匹配字符 “a”、”b” 或 “c”。</li>
-<li>[^ ]：匹配除了括号内的字符以外的任意一个字符。例如，[^abc] 匹配除了字符 “a”、”b” 或 “c” 以外的任意字符。</li>
-</ul>
-<h3 id="边界匹配"><a href="#边界匹配" class="headerlink" title="边界匹配"></a>边界匹配</h3><ul>
-<li>^：匹配字符串的开头。</li>
-<li>$：匹配字符串的结尾。</li>
-<li>\b：匹配单词边界。</li>
-<li>\B：匹配非单词边界。</li>
-</ul>
-<h3 id="分组和捕获"><a href="#分组和捕获" class="headerlink" title="分组和捕获"></a>分组和捕获</h3><p>( )：用于分组和捕获子表达式。<br>(?: )：用于分组但不捕获子表达式。</p>
-<h3 id="特殊字符"><a href="#特殊字符" class="headerlink" title="特殊字符"></a>特殊字符</h3><p>\：转义字符，用于匹配特殊字符本身。<br>.：匹配任意字符（除了换行符）。<br>|：用于指定多个模式的选择。</p>
-<h2 id="反向捕获"><a href="#反向捕获" class="headerlink" title="反向捕获"></a>反向捕获</h2><p>对一个正则表达式模式或部分模式两边添加圆括号将导致相关匹配存储到一个临时缓冲区中，所捕获的每个子匹配都按照在正则表达式模式中从左到右出现的顺序存储。</p>
-<figure class="highlight js"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">var</span> str = <span class="string">&quot;https://www.runoob.com:80/html/html-tutorial.html&quot;</span>;</span><br><span class="line"><span class="keyword">var</span> patt1 = <span class="regexp">/(\w+):\/\/([^/:]+)(:\d*)?([^# ]*)/</span>;</span><br><span class="line">arr = str.<span class="title function_">match</span>(patt1);</span><br><span class="line"><span class="keyword">for</span> (<span class="keyword">var</span> i = <span class="number">0</span>; i &lt; arr.<span class="property">length</span> ; i++) &#123;</span><br><span class="line">    <span class="variable language_">document</span>.<span class="title function_">write</span>(arr[i]);</span><br><span class="line">    <span class="variable language_">document</span>.<span class="title function_">write</span>(<span class="string">&quot;&lt;br&gt;&quot;</span>);</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
-
-<p>第三行代码 str.match(patt1) 返回一个数组，实例中的数组包含 5 个元素，索引 0 对应的是整个字符串，索引 1 对应第一个匹配符（括号内），以此类推。</p>
-<p>第一个括号子表达式捕获 Web 地址的协议部分。该子表达式匹配在冒号和两个正斜杠前面的任何单词。</p>
-<p>第二个括号子表达式捕获地址的域地址部分。子表达式匹配非 : 和 &#x2F; 之后的一个或多个字符。</p>
-<p>第三个括号子表达式捕获端口号（如果指定了的话）。该子表达式匹配冒号后面的零个或多个数字。只能重复一次该子表达式。</p>
-<p>最后，第四个括号子表达式捕获 Web 地址指定的路径和 &#x2F; 或页信息。该子表达式能匹配不包括 # 或空格字符的任何字符序列。</p>
-<p>将正则表达式应用到上面的 URI，各子匹配项包含下面的内容：</p>
-<ul>
-<li>第一个括号子表达式包含 https</li>
-<li>第二个括号子表达式包含 <a target="_blank" rel="noopener" href="http://www.runoob.com/">www.runoob.com</a></li>
-<li>第三个括号子表达式包含 :80</li>
-<li>第四个括号子表达式包含 &#x2F;html&#x2F;html-tutorial.html</li>
-</ul>
+<h1 id="基础模块"><a href="#基础模块" class="headerlink" title="基础模块"></a>基础模块</h1><h2 id="选主与切换"><a href="#选主与切换" class="headerlink" title="选主与切换"></a>选主与切换</h2><p>manager作为管控中心，本身存在leader与follower，leader会遇到宕机的风险，有时也需要主动切主从使得leader部署到某个机房。因此必须具备选主的能力。</p>
+<p>为了实现manager某种程度的无状态，一般将集群信息与主从信息记录到外部分布式数据库中。agent可直接查询数据库获得通信的主manager。</p>
+<p>一般agent只需要与主mgr进行交流，若存在主mgr性能瓶颈，大多是因为数据库运维设置的定时调度运行过于频繁，经测试，一台manager管理数千台agent是没有压力的。</p>
+<h2 id="自身版本升级"><a href="#自身版本升级" class="headerlink" title="自身版本升级"></a>自身版本升级</h2><p>在数据库管控中，升级操作一般就是下掉原来的进程，上一个新的进程。对于mgr同样可以如此做，而对于agent，甚至只需要重启即可，当然重启前并不是直接杀死再启动进程，需要设计一种信号机制，让agent捕获该信号，在处理完当前任务后，平滑退出。如使用go的context管理上下文协程。</p>
+<blockquote>
+<p>在实际实现中，这里的设计较为复杂。</p>
+</blockquote>
+<h2 id="机器资源监控"><a href="#机器资源监控" class="headerlink" title="机器资源监控"></a>机器资源监控</h2><p>agent组件实现机器资源的定期探测和上报是必不可少的。这对后续部署数据库节点的判断具有决定性的意义，也能够给前端直接展示相应的资源使用会存量，以供运维人员或自动化运维工具判断。</p>
+<h2 id="日志模块"><a href="#日志模块" class="headerlink" title="日志模块"></a>日志模块</h2><p>需要设计与选型好日志组件，因为管控过程中有相当多不同的逻辑流，如执行任务，执行流程，定时调度，具体的数据库管控插件日志，为了方便后续定位位置，需要对不同的逻辑流写不同的滚动日志文件。</p>
+<h1 id="外部管理模块"><a href="#外部管理模块" class="headerlink" title="外部管理模块"></a>外部管理模块</h1><h2 id="文件管理"><a href="#文件管理" class="headerlink" title="文件管理"></a>文件管理</h2><p>为了方便管理，我们可让具体的数据库管控脚本在mgr和agent同步，这种好处在于我们写了一个新的管控脚本，只需要下发给对应的mgr，便可以直接使用，无需在手动分发给各个agent。</p>
+<p>这个模块实现文件夹同步，需要定期检测同步文件夹，具备压缩能力，具备md5计算能力防止重复发送。一般具体数据库管控版本不升级，这里只会调用发送md5检查的接口。</p>
+<blockquote>
+<p>文件下发底层具体实现，直接用gin或者http即可</p>
+</blockquote>
+<h2 id="配置下发"><a href="#配置下发" class="headerlink" title="配置下发"></a>配置下发</h2><p>数据库节点部署，配置文件的管理与下发是难点之一，一般是将当前集群的多版本配置文件存在管控数据库中，供前端展示和编写。前端负责管理相应的模版，和特异化的参数，负责渲染拼接，再存于数据库中，记录对应配置版本。mgr需要提供相应的接口将对应的配置文件下发到agent指定位置，供相应进程启动使用。</p>
+<p>其与文件管理不同的点在于，配置是mgr从数据库中拉下来下发给agent的，不经过磁盘。</p>
+<h1 id="公共功能"><a href="#公共功能" class="headerlink" title="公共功能"></a>公共功能</h1><h2 id="分布式锁"><a href="#分布式锁" class="headerlink" title="分布式锁"></a>分布式锁</h2><p>在写数据库运维逻辑时，必定面对多运维操作并发的风险，如同时发起了对一个集群做扩容和缩容的流程，这种长时间运行的较重量级的流程不会允许并行。因此需要在Manager实现分布式锁，该锁需要考虑容量，因为有的操作是允许同时进行多个，如节点部署。</p>
+<p>该锁的实现一种简单的方法是，将锁与其过期信息存于分布式数据库中（mongodb等，mysql主从强一致），加锁时检查数据库即可。</p>
 
       
     </div>
@@ -305,7 +282,7 @@
 
 
   <nav class="pagination">
-    <a class="extend prev" rel="prev" title="上一页" aria-label="上一页" href="/page/29/"><i class="fa fa-angle-left"></i></a><a class="page-number" href="/">1</a><span class="space">&hellip;</span><a class="page-number" href="/page/29/">29</a><span class="page-number current">30</span><a class="page-number" href="/page/31/">31</a><span class="space">&hellip;</span><a class="page-number" href="/page/38/">38</a><a class="extend next" rel="next" title="下一页" aria-label="下一页" href="/page/31/"><i class="fa fa-angle-right"></i></a>
+    <a class="extend prev" rel="prev" title="上一页" aria-label="上一页" href="/page/29/"><i class="fa fa-angle-left"></i></a><a class="page-number" href="/">1</a><span class="space">&hellip;</span><a class="page-number" href="/page/29/">29</a><span class="page-number current">30</span><a class="page-number" href="/page/31/">31</a><span class="space">&hellip;</span><a class="page-number" href="/page/39/">39</a><a class="extend next" rel="next" title="下一页" aria-label="下一页" href="/page/31/"><i class="fa fa-angle-right"></i></a>
   </nav>
 
 </div>

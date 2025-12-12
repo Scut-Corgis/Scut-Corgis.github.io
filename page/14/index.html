@@ -123,7 +123,7 @@
   <nav class="site-state">
       <div class="site-state-item site-state-posts">
         <a href="/archives/">
-          <span class="site-state-item-count">38</span>
+          <span class="site-state-item-count">39</span>
           <span class="site-state-item-name">日志</span>
         </a>
       </div>
@@ -159,7 +159,7 @@
   
 
   <article itemscope itemtype="http://schema.org/Article" class="post-content" lang="">
-    <link itemprop="mainEntityOfPage" href="https://scut-corgis.github.io/2025-06-27-memcached%E8%BF%81%E7%A7%BBredis%E5%AE%9E%E8%B7%B5/">
+    <link itemprop="mainEntityOfPage" href="https://scut-corgis.github.io/2025-07-20-redis%E5%93%A8%E5%85%B5-%E6%BA%90%E7%A0%81%E7%AC%94%E8%AE%B0/">
 
     <span hidden itemprop="author" itemscope itemtype="http://schema.org/Person">
       <meta itemprop="image" content="/images/corgis.jpg">
@@ -177,7 +177,7 @@
     </span>
       <header class="post-header">
         <h2 class="post-title" itemprop="name headline">
-          <a href="/2025-06-27-memcached%E8%BF%81%E7%A7%BBredis%E5%AE%9E%E8%B7%B5/" class="post-title-link" itemprop="url">memcached迁移redis实践</a>
+          <a href="/2025-07-20-redis%E5%93%A8%E5%85%B5-%E6%BA%90%E7%A0%81%E7%AC%94%E8%AE%B0/" class="post-title-link" itemprop="url">redis哨兵笔记</a>
         </h2>
 
         <div class="post-meta-container">
@@ -188,7 +188,7 @@
       </span>
       <span class="post-meta-item-text">发表于</span>
 
-      <time title="创建时间：2025-06-27 23:02:05" itemprop="dateCreated datePublished" datetime="2025-06-27T23:02:05+08:00">2025-06-27</time>
+      <time title="创建时间：2025-07-20 21:05:03" itemprop="dateCreated datePublished" datetime="2025-07-20T21:05:03+08:00">2025-07-20</time>
     </span>
     <span class="post-meta-item">
       <span class="post-meta-item-icon">
@@ -210,114 +210,52 @@
     
     
     <div class="post-body" itemprop="articleBody">
-          <h1 id="背景"><a href="#背景" class="headerlink" title="背景"></a>背景</h1><p>memcached作为历史上重要的缓存组件，以高qps著称，主要是以多线程的特性能做到抗热key，而这点redis无法做到。</p>
-<p>除去抗热key以外，似乎memcached已经越来越丧失对redis的优势，即使在qps领域，经过个人测试，中小key的qps承载量甚至被redis远远甩开。</p>
-<p>在加上memcached过于简单，只有简单string操作，没有高可用（主从），强依赖sdk做一致性哈希，难以水平扩容，以及在企业级能力如逃生、单元化等方面都难以建设。</p>
-<p>并考虑到redis8的展现的多线程能力已经可以抗超大并发的qps，据测试，redis8抗热key qps的量已经是redis6开单工作线程的3倍了。</p>
-<p>因此将memcached迁移到redis提上了日程，在笔者公司，有几千个memcached集群，业务代码历史悠久繁重，因此业务需求是不改一行代码，自身无需重新做任何发布部署便能成迁移成功。</p>
-<h1 id="详细方案"><a href="#详细方案" class="headerlink" title="详细方案"></a>详细方案</h1><p>笔者最终了选择twemproxy + redis-server到组合替换掉memcached集群。在改造过程中有两种路线</p>
-<ul>
-<li>让redis支持memcached协议，使得可以直接用memcached协议访问redis，用可配配置来作为开关，学习阿里云某个开源项目的做法（该项目已经无人维护）。</li>
-<li>改造twemproxy，使其做memcached到redis的协议转换，并在redis上实现一套memcached命令</li>
-</ul>
-<p>最终选择了改造twemproxy，并使用redis-module的方式实现以上迁移需求。</p>
-<h2 id="基本原理"><a href="#基本原理" class="headerlink" title="基本原理"></a>基本原理</h2><p><img src="/2025-06-27-memcached%E8%BF%81%E7%A7%BBredis%E5%AE%9E%E8%B7%B5/%E5%9F%BA%E6%9C%AC%E5%8E%9F%E7%90%86.drawio.svg"></p>
-<p>每一个mc命令均对应一个相同前缀的redis命令</p>
-<figure class="highlight shell"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br></pre></td><td class="code"><pre><span class="line">get -&gt; kcc_mc.get</span><br><span class="line">add -&gt; kcc_mc.add</span><br><span class="line">replace -&gt; kcc_mc.replace</span><br><span class="line">...</span><br></pre></td></tr></table></figure>
+          <h1 id="redis哨兵笔记"><a href="#redis哨兵笔记" class="headerlink" title="redis哨兵笔记"></a>redis哨兵笔记</h1><h2 id="前言"><a href="#前言" class="headerlink" title="前言"></a>前言</h2><p>最近组内对哨兵的能力做了增加，实现了failover safe的能力，其实就是让master去做failover，哨兵不再做<code>slave of noone</code>等操作。感觉是一个很好的思路。</p>
+<p>考虑到之前没有认真读过哨兵的源码，这次仔细的把全流程都读了一遍，特此做笔记。</p>
+<p>redis版本为开源的7.0.15。</p>
+<h2 id="逻辑笔记"><a href="#逻辑笔记" class="headerlink" title="逻辑笔记"></a>逻辑笔记</h2><p>先总结一些逻辑，便于快速查找</p>
+<h3 id="启动时"><a href="#启动时" class="headerlink" title="启动时"></a>启动时</h3><p>哨兵启动时会读取配置文件，如下是一个完整的运行时配置文件，包括自动生成的部份</p>
+<figure class="highlight plaintext"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br><span class="line">27</span><br><span class="line">28</span><br><span class="line">29</span><br><span class="line">30</span><br><span class="line">31</span><br><span class="line">32</span><br><span class="line">33</span><br><span class="line">34</span><br></pre></td><td class="code"><pre><span class="line">daemonize yes</span><br><span class="line">pidfile &quot;./sentinel.pid&quot;</span><br><span class="line">logfile &quot;./sentinel.log&quot;</span><br><span class="line">loglevel notice</span><br><span class="line">dir &quot;/data/huangjiegang/running-test/sentinel/12001&quot;</span><br><span class="line">protected-mode no</span><br><span class="line">maxclients 4064</span><br><span class="line">port 12001</span><br><span class="line">sentinel monitor server-11102 127.0.0.1 11102 2</span><br><span class="line">sentinel down-after-milliseconds server-11102 20000</span><br><span class="line">sentinel failover-timeout server-11102 60000</span><br><span class="line">sentinel monitor server-11101 127.0.0.1 11101 2</span><br><span class="line">sentinel down-after-milliseconds server-11101 20000</span><br><span class="line">sentinel failover-timeout server-11101 60000</span><br><span class="line"></span><br><span class="line"># Generated by CONFIG REWRITE</span><br><span class="line">latency-tracking-info-percentiles 50 99 99.9</span><br><span class="line">user default on nopass ~* &amp;* +@all</span><br><span class="line">sentinel myid ff835e7c7c614a33fe72eae2e7b37fe4638a8876</span><br><span class="line">sentinel takeover-az-enabled no</span><br><span class="line">sentinel takeover-az none</span><br><span class="line">sentinel config-epoch server-11102 0</span><br><span class="line">sentinel leader-epoch server-11102 0</span><br><span class="line">sentinel config-epoch server-11101 4</span><br><span class="line">sentinel leader-epoch server-11101 4</span><br><span class="line">sentinel current-epoch 4</span><br><span class="line"></span><br><span class="line">sentinel known-sentinel server-11102 127.0.0.1 12002 88f04da1e3e5828d0cbfe9574476be8b8e4da1ab</span><br><span class="line"></span><br><span class="line">sentinel known-sentinel server-11101 127.0.0.1 12002 88f04da1e3e5828d0cbfe9574476be8b8e4da1ab</span><br><span class="line"></span><br><span class="line">sentinel known-replica server-11102 127.0.0.1 11202</span><br><span class="line"></span><br><span class="line">sentinel known-replica server-11101 127.0.0.1 11201</span><br></pre></td></tr></table></figure>
 
-<p>除了多key命令，每一个mc命令解析后都会原样的按resp协议转发给redis</p>
-<figure class="highlight shell"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br></pre></td><td class="code"><pre><span class="line">set key 0 0 3\r\n</span><br><span class="line">val\r\n </span><br><span class="line"><span class="meta prompt_"></span></span><br><span class="line"><span class="meta prompt_">------&gt;</span><span class="language-bash"></span></span><br><span class="line"><span class="language-bash"></span></span><br><span class="line">*6\r\n</span><br><span class="line"><span class="meta prompt_">$</span><span class="language-bash">10\r\n</span></span><br><span class="line">kcc_mc.set\r\n</span><br><span class="line"><span class="meta prompt_">$</span><span class="language-bash">3\r\n</span></span><br><span class="line">key\r\n</span><br><span class="line"><span class="meta prompt_">$</span><span class="language-bash">1\r\n</span></span><br><span class="line">0\r\n</span><br><span class="line"><span class="meta prompt_">$</span><span class="language-bash">1\r\n</span></span><br><span class="line">0\r\n</span><br><span class="line"><span class="meta prompt_">$</span><span class="language-bash">1\r\n</span></span><br><span class="line">3\r\n</span><br><span class="line"><span class="meta prompt_">$</span><span class="language-bash">3\r\n</span></span><br><span class="line">val\r\n</span><br></pre></td></tr></table></figure>
+<p>启动时主要关注<code>sentinel monitor</code>，这里是设置主节点。</p>
+<ol>
+<li>配置文件解析完毕后，会对主节点建立命令连接和订阅连接，订阅连接即订阅<code>__sentinel__:hello</code>频道。</li>
+<li>每2秒会往上述频道pubnish自己的ip:port信息，因此各个哨兵能发现彼此，并只建立命令连接。</li>
+<li>master节点的从节点信息是通过每10秒发送一次<code>INFO</code>命令拿到的，可以拿到该master的所有信息。</li>
+<li>拿到从节点后，哨兵同样会建立好两个连接以及订阅相应频道。注意hello频道发布只会往主节点发，但是INFO和PING主从都会发。PING还会发哨兵节点。</li>
+</ol>
+<h3 id="故障时"><a href="#故障时" class="headerlink" title="故障时"></a>故障时</h3><ol>
+<li>每一轮cron时都会检查对应server节点是否主观下线</li>
+<li>当发现master主观下线时，会开始定期发送<code>is-master-down-by-addr</code>给其他所有监听该master的哨兵，获取其他哨兵对其的主观下线的判断</li>
+<li>一旦某一轮的一个哨兵发现了达到客观下线的数量了，则开始进入故障转移状态机，并立马发带投票的<code>is-master-down-by-addr</code>给其他哨兵要投票</li>
+<li>假如自己拿到大多数后，开始继续往下走故障状态机流程。注意在故障转移完成前，<code>is-master-down-by-addr</code>请求是不会停的，为了让其他哨兵不重新开始投票，因为其他哨兵收到该请求后会重置自己的投票计时器。</li>
+<li>注意其他哨兵假如也进入了故障状态机流程，会在10秒后退出该流程，并因为leader的定期<code>is-master-down-by-addr</code>而不会进入下一个epoch投票。他会通过定期的INFO命令获取到master的变化，最终触发<code>switch-master</code>频道。</li>
+<li>主leader会依次做以下事情，选一个最好的从节点，然后对其发SLAVEOF_ONONE，然后通过INFO命令得到晋升完成的消息，最终将原主节点置为新主的从节点，并触发<code>switch-master</code>。</li>
+</ol>
+<h2 id="failover-safe"><a href="#failover-safe" class="headerlink" title="#failover safe"></a>#failover safe</h2><p>那么当前有一个优化思路是这样的，即哨兵新命令，safe的failover，即通过redis的单实例的failover命令让master去做failover。</p>
+<p>那么哨兵leader实际的过程会变成如下这样</p>
+<ol>
+<li>选从</li>
+<li>对主调用<code>failover to slave_host port ... timeout force</code>的命令</li>
+<li>等待info的回复得到是否完成即可</li>
+</ol>
+<p>这样的好处在于failover命令可以让原主节点直接接上新主，而不需要全量同步，因failover命令会暂停写操作等待同步队列完成后再主备切换。</p>
+<h2 id="源码"><a href="#源码" class="headerlink" title="源码"></a>源码</h2><p>定时函数（可以认为是哨兵main函数）</p>
+<figure class="highlight c"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br><span class="line">27</span><br><span class="line">28</span><br><span class="line">29</span><br><span class="line">30</span><br><span class="line">31</span><br><span class="line">32</span><br><span class="line">33</span><br><span class="line">34</span><br><span class="line">35</span><br></pre></td><td class="code"><pre><span class="line"><span class="comment">/* ======================== SENTINEL timer handler ==========================</span></span><br><span class="line"><span class="comment"> * This is the &quot;main&quot; our Sentinel, being sentinel completely non blocking</span></span><br><span class="line"><span class="comment"> * in design.</span></span><br><span class="line"><span class="comment"> * -------------------------------------------------------------------------- */</span></span><br><span class="line"></span><br><span class="line"><span class="comment">/* Perform scheduled operations for the specified Redis instance. */</span></span><br><span class="line"><span class="type">void</span> <span class="title function_">sentinelHandleRedisInstance</span><span class="params">(sentinelRedisInstance *ri)</span> &#123;</span><br><span class="line">    <span class="comment">/* ========== MONITORING HALF ============ */</span></span><br><span class="line">    <span class="comment">/* Every kind of instance */</span></span><br><span class="line">    <span class="comment">// 对于所有检测到的新Instance(包括主、从、哨兵)发起重连</span></span><br><span class="line">    sentinelReconnectInstance(ri);</span><br><span class="line">    <span class="comment">// 发起周期命令，如INFO、PING、HELLO频道</span></span><br><span class="line">    sentinelSendPeriodicCommands(ri);</span><br><span class="line"></span><br><span class="line">    <span class="comment">/* ============== ACTING HALF ============= */</span></span><br><span class="line">    ...</span><br><span class="line">    <span class="comment">/* Every kind of instance */</span></span><br><span class="line">    sentinelCheckSubjectivelyDown(ri);</span><br><span class="line">    ...</span><br><span class="line">    <span class="comment">/* Only masters */</span></span><br><span class="line">    <span class="keyword">if</span> (ri-&gt;flags &amp; SRI_MASTER) &#123;</span><br><span class="line">        <span class="comment">// 检查是否已经客观下线</span></span><br><span class="line">        sentinelCheckObjectivelyDown(ri);</span><br><span class="line">        <span class="comment">// 如果触发了客观下线，开始状态机流程</span></span><br><span class="line">        <span class="keyword">if</span> (sentinelStartFailoverIfNeeded(ri))</span><br><span class="line">            <span class="comment">//立马发一个要求投票的请求</span></span><br><span class="line">            sentinelAskMasterStateToOtherSentinels(ri,SENTINEL_ASK_FORCED);</span><br><span class="line">        <span class="comment">// 状态机主流程</span></span><br><span class="line">        sentinelFailoverStateMachine(ri);</span><br><span class="line">        <span class="comment">// 定期发送is-master-down-by-addr，两个目的</span></span><br><span class="line">        <span class="comment">// 1. 获取主观下线的数量</span></span><br><span class="line">        <span class="comment">// 2. 重置其他哨兵的投票计时器</span></span><br><span class="line">        sentinelAskMasterStateToOtherSentinels(ri,SENTINEL_NO_FLAGS);</span><br><span class="line">    &#125;</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
 
-<p>而redis-module处理的返回，只会有两种情况，即redis自身错误-ERR或字符串回复。</p>
-<figure class="highlight shell"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br></pre></td><td class="code"><pre><span class="line">-ERR xxxx\r\n</span><br><span class="line">或者</span><br><span class="line"><span class="meta prompt_">$</span><span class="language-bash">5\r\n</span></span><br><span class="line">xxxxx\r\n</span><br></pre></td></tr></table></figure>
+<p>状态机，很清晰</p>
+<figure class="highlight c"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br><span class="line">27</span><br><span class="line">28</span><br><span class="line">29</span><br></pre></td><td class="code"><pre><span class="line"><span class="type">void</span> <span class="title function_">sentinelFailoverStateMachine</span><span class="params">(sentinelRedisInstance *ri)</span> &#123;</span><br><span class="line">    serverAssert(ri-&gt;flags &amp; SRI_MASTER);</span><br><span class="line"></span><br><span class="line">    <span class="keyword">if</span> (!(ri-&gt;flags &amp; SRI_FAILOVER_IN_PROGRESS)) <span class="keyword">return</span>;</span><br><span class="line"></span><br><span class="line">    <span class="keyword">switch</span>(ri-&gt;failover_state) &#123;</span><br><span class="line">        <span class="keyword">case</span> SENTINEL_FAILOVER_STATE_WAIT_START:</span><br><span class="line">            <span class="comment">// 这个状态，leader哨兵会直接越过，非leader哨兵会卡在这个状态约10秒后abort状态机。</span></span><br><span class="line">            sentinelFailoverWaitStart(ri);</span><br><span class="line">            <span class="keyword">break</span>;</span><br><span class="line">        <span class="keyword">case</span> SENTINEL_FAILOVER_STATE_SELECT_SLAVE:</span><br><span class="line">            <span class="comment">// 选从</span></span><br><span class="line">            sentinelFailoverSelectSlave(ri);</span><br><span class="line">            <span class="keyword">break</span>;</span><br><span class="line">        <span class="keyword">case</span> SENTINEL_FAILOVER_STATE_SEND_SLAVEOF_NOONE:</span><br><span class="line">            <span class="comment">// 发slaveof onone</span></span><br><span class="line">            sentinelFailoverSendSlaveOfNoOne(ri);</span><br><span class="line">            <span class="keyword">break</span>;</span><br><span class="line">        <span class="keyword">case</span> SENTINEL_FAILOVER_STATE_WAIT_PROMOTION:</span><br><span class="line">            <span class="comment">// 等待info命令的结果</span></span><br><span class="line">            sentinelFailoverWaitPromotion(ri);</span><br><span class="line">            <span class="keyword">break</span>;</span><br><span class="line">        <span class="keyword">case</span> SENTINEL_FAILOVER_STATE_RECONF_SLAVES:</span><br><span class="line">            <span class="comment">// 将自己的从节点逐个移交给新主</span></span><br><span class="line">            sentinelFailoverReconfNextSlave(ri);</span><br><span class="line">            <span class="keyword">break</span>;</span><br><span class="line">    &#125;</span><br><span class="line">&#125;</span><br><span class="line"></span><br></pre></td></tr></table></figure>
 
-<p>redis module的实现为，对于每一个mc的命令，其生成回复为resp的字符串回复，中间嵌套mc回复，如mc的get命令回复如下</p>
-<figure class="highlight shell"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br></pre></td><td class="code"><pre><span class="line"><span class="meta prompt_">$</span><span class="language-bash">25\r\n</span></span><br><span class="line">VALUE 0 0 5\r\n</span><br><span class="line">hello\r\n</span><br><span class="line">END\r\n</span><br><span class="line">\r\n</span><br></pre></td></tr></table></figure>
+<p>上面函数状态走完后，会到最终一个状态<code>SENTINEL_FAILOVER_STATE_UPDATE_CONFIG</code>，在<code>sentinelHandleDictOfRedisInstances</code>函数中</p>
+<figure class="highlight c"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br><span class="line">27</span><br><span class="line">28</span><br><span class="line">29</span><br></pre></td><td class="code"><pre><span class="line"><span class="type">void</span> <span class="title function_">sentinelTimer</span><span class="params">(<span class="type">void</span>)</span> &#123;</span><br><span class="line">    ...</span><br><span class="line">    sentinelHandleDictOfRedisInstances(sentinel.masters);</span><br><span class="line">    ...</span><br><span class="line">&#125;</span><br><span class="line"></span><br><span class="line"><span class="type">void</span> <span class="title function_">sentinelHandleDictOfRedisInstances</span><span class="params">(dict *instances)</span> &#123;</span><br><span class="line">    dictIterator *di;</span><br><span class="line">    dictEntry *de;</span><br><span class="line">    sentinelRedisInstance *switch_to_promoted = <span class="literal">NULL</span>;</span><br><span class="line"></span><br><span class="line">    <span class="comment">/* There are a number of things we need to perform against every master. */</span></span><br><span class="line">    di = dictGetIterator(instances);</span><br><span class="line">    <span class="keyword">while</span>((de = dictNext(di)) != <span class="literal">NULL</span>) &#123;</span><br><span class="line">        sentinelRedisInstance *ri = dictGetVal(de);</span><br><span class="line"></span><br><span class="line">        sentinelHandleRedisInstance(ri);</span><br><span class="line">        <span class="keyword">if</span> (ri-&gt;flags &amp; SRI_MASTER) &#123;</span><br><span class="line">            sentinelHandleDictOfRedisInstances(ri-&gt;slaves);</span><br><span class="line">            sentinelHandleDictOfRedisInstances(ri-&gt;sentinels);</span><br><span class="line">            <span class="keyword">if</span> (ri-&gt;failover_state == SENTINEL_FAILOVER_STATE_UPDATE_CONFIG) &#123;</span><br><span class="line">                switch_to_promoted = ri;</span><br><span class="line">            &#125;</span><br><span class="line">        &#125;</span><br><span class="line">    &#125;</span><br><span class="line">    <span class="keyword">if</span> (switch_to_promoted)</span><br><span class="line">        sentinelFailoverSwitchToPromotedSlave(switch_to_promoted);</span><br><span class="line">    dictReleaseIterator(di);</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
 
-<p>对于应该返回mc的错误场景，同样用字符串回复嵌套</p>
-<figure class="highlight shell"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br></pre></td><td class="code"><pre><span class="line"><span class="meta prompt_">$</span><span class="language-bash">22\r\n</span></span><br><span class="line">SERVER_ERROR unknown\r\n</span><br><span class="line">\r\n</span><br></pre></td></tr></table></figure>
+<p>即最终触发<code>sentinelFailoverSwitchToPromotedSlave()</code>函数，触发<code>+switch-master</code>事件，并将自己作为从节点接到新主上</p>
+<figure class="highlight c"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br></pre></td><td class="code"><pre><span class="line"><span class="comment">/* This function is called when the slave is in</span></span><br><span class="line"><span class="comment"> * SENTINEL_FAILOVER_STATE_UPDATE_CONFIG state. In this state we need</span></span><br><span class="line"><span class="comment"> * to remove it from the master table and add the promoted slave instead. */</span></span><br><span class="line"><span class="type">void</span> <span class="title function_">sentinelFailoverSwitchToPromotedSlave</span><span class="params">(sentinelRedisInstance *master)</span> &#123;</span><br><span class="line">    sentinelRedisInstance *ref = master-&gt;promoted_slave ?</span><br><span class="line">                                 master-&gt;promoted_slave : master;</span><br><span class="line"></span><br><span class="line">    sentinelEvent(LL_WARNING,<span class="string">&quot;+switch-master&quot;</span>,master,<span class="string">&quot;%s %s %d %s %d&quot;</span>,</span><br><span class="line">        master-&gt;name, announceSentinelAddr(master-&gt;addr), master-&gt;addr-&gt;port,</span><br><span class="line">        announceSentinelAddr(ref-&gt;addr), ref-&gt;addr-&gt;port);</span><br><span class="line"></span><br><span class="line">    sentinelResetMasterAndChangeAddress(master,ref-&gt;addr-&gt;hostname,ref-&gt;addr-&gt;port);</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
 
-<h2 id="proxy实现"><a href="#proxy实现" class="headerlink" title="proxy实现"></a>proxy实现</h2><p>以下说明皆基于最新twemproxy开源版本0.5.0release</p>
-<h3 id="基本处理"><a href="#基本处理" class="headerlink" title="基本处理"></a>基本处理</h3><p>在配置文件中引入新的配置项，该配置为bool值，一旦该值置为1，原先proxy的决定工况(redis or mc)的变量将失效。</p>
-<p><img src="/2025-06-27-memcached%E8%BF%81%E7%A7%BBredis%E5%AE%9E%E8%B7%B5/%E5%9F%BA%E6%9C%AC%E5%A4%84%E7%90%86.png"></p>
-<p>对于每一个发送过来的mc命令，在命令完全解析完毕后，确定要往redis一侧发送前，做协议转换。具体操作为</p>
-<ol>
-<li>确定参数个数n，生成*n\r\n</li>
-<li>根据原mc的命令字符串，生成增加前缀“kcc_mc.”的字符串，并以resp协议的方式追加到缓冲区中</li>
-<li>每一个mc的参数逐个追加到缓冲区中</li>
-<li>对于写命令的value字段，考虑其长度可能会超过一个缓冲区，直接将原缓冲区mbuf整体移动赋予目标。</li>
-</ol>
-<p>在收到redis的回复命令后，在回包给客户端之前，做协议转换，具体操作为</p>
-<ol>
-<li>对于-ERR xxx的redis错误，直接去除前4个字节”-ERR”, 并在缓冲区前追加”SERVER_ERROR”,以符合mc的错误格式</li>
-<li>对于约定好的字符串回复（$xx\r\n），去除第一行，以及最后的”\r\n”字符。</li>
-</ol>
-<h3 id="命令分段"><a href="#命令分段" class="headerlink" title="命令分段"></a>命令分段</h3><p>mc的多key命令只有两种，即get和gets。</p>
-<p>需要在协议转换后，做预处理和后处理。</p>
-<p>整体流程如下</p>
-<p><img src="/2025-06-27-memcached%E8%BF%81%E7%A7%BBredis%E5%AE%9E%E8%B7%B5/%E5%91%BD%E4%BB%A4%E5%88%86%E6%AE%B5.drawio.svg"></p>
-<p>错误处理</p>
-<p>我们将错误归为两类</p>
-<ul>
-<li>redis原生错误，即”-ERR xxx”</li>
-<li>mc格式的错误，即用resp协议的字符串套用的mc错误，如”$18\r\nSERVER_ERROR xxx\r\n\r\n”</li>
-</ul>
-<p>对于非分段命令，只要是redis一侧成功发回来的回复，我们均在协议处理后直接返回给客户端</p>
-<p>对于分段命令，只要出现了其中一个sub_msg错误，我们将返回给客户端</p>
-<p><img src="/2025-06-27-memcached%E8%BF%81%E7%A7%BBredis%E5%AE%9E%E8%B7%B5/%E9%94%99%E8%AF%AF%E4%BF%A1%E6%81%AF.png"></p>
-<h3 id="mc-redis双协议支持"><a href="#mc-redis双协议支持" class="headerlink" title="mc+redis双协议支持"></a>mc+redis双协议支持</h3><p>实际上，笔者最终在twemproxy上实现了同时支持redis协议和mc协议的方案。主要思路是通过请求的第一个字节是否为<code>*</code>或<code>+</code>来更换处理协议函数集。</p>
-<p>对于不转发到redis-server的命令可以无条件直接处理，而对于需要转发到redis-server的命令集可以设置一个拦截函数，规定哪些命令可以通过proxy转发，如可以允许scan命令转发用于集群扫表。</p>
-<p>总体目标:</p>
-<ol>
-<li>proxy实现支持redis和memcached的协议包混合，即一个客户端连接，既可以发送redis命令，又可以发送mc命令。</li>
-<li>需要对redis透传命令实现拦截器，即从稳定性考虑，必须能够支持选择性的透传redis命令，如当前只需要透传kcc_scan命令即可。</li>
-</ol>
-<p>难点:</p>
-<ol>
-<li>对于一个新的命令请求，我们无法判断使用哪种协议解析函数对其解析</li>
-<li>对于s_conn(proxy与redis-server的连接)，两种命令请求都在同一条tcp上，收到redis-server的回包时难以判断该回包是哪种类型。对于mc的命令需要做redis2mc的协议转换，而redis的回复可直接透传或多key命令聚合后再透传。</li>
-</ol>
-<p>实现方案:</p>
-<ol>
-<li>对于mc2redis的proxy集群，收到一个命令包时先默认使用mc的解析函数解析，在状态机初始处判断该命令包的第一个字符是否为“*”或”+”，如果是，完全替换该msg的所有处理函数，并重入命令解析函数。</li>
-<li>彻底区分redis与mc命令集，并提供拦截函数用于判断可透传的redis命令集，在请求向redis-server发送前进行判断，若不能进行转发，返回客户端错误。<br>对于s_conn的回包，利用tcp的有序性，取出挂在等待其回复队列的第一条msg作为对端请求msg，通过对端msg的”mc2redis”标识判断其是否需要做redis到memcached的协议转换。</li>
-</ol>
-<p><img src="/2025-06-27-memcached%E8%BF%81%E7%A7%BBredis%E5%AE%9E%E8%B7%B5/%E5%8F%8C%E5%8D%8F%E8%AE%AE%E6%94%AF%E6%8C%81.svg"></p>
-<h2 id="redis-module实现"><a href="#redis-module实现" class="headerlink" title="redis-module实现"></a>redis-module实现</h2><p>对应每一个mc命令，我们需要调研清楚其语义，如参数范围和对应的返回值表现。</p>
-<p>这里不叙述任何的语义细节。主要阐述一下跟架构设计相关的实现思想。</p>
-<ol>
-<li>维护cas_id的全局递增</li>
-</ol>
-<p>对于每一个module的object，很显然可以跟随RdbSave将其flag和cas_id存放到到rdb中，但是全局cas_id如何维护递增？比如主从复制，从节点是需要拿到主节点的全局cas_id大小的。</p>
-<p>实际上可以放到<code>aux_save()</code>里面，将这个全局id存进去，在<code>aux_load()</code>时再取出来。</p>
-<ol start="2">
-<li>AOF重写怎么处理？</li>
-</ol>
-<p>如果我们是用原命令来做aof重写，势必会丢失该对象的cas_id。实际上，我们可以实现一个新命令如<code>mc.restore</code>。用这个新命令把flag、对象的cas_id，和全局cas_id一起存进去。</p>
-<h1 id="QA"><a href="#QA" class="headerlink" title="QA"></a>QA</h1><ol>
-<li>二进制协议怎么处理？</li>
-</ol>
-<p>proxy后续可以处理两种命令，但转化为相同的文本redis命令，即redis命令只给出文本回复。据分析，所有的命令的文本回复在原理上，可以转换为二进制回复。只是实现问题。<br>附录(协议):<br><a target="_blank" rel="noopener" href="https://github.com/memcached/memcached/blob/master/doc/protocol.txt">https://github.com/memcached/memcached/blob/master/doc/protocol.txt</a><br><a target="_blank" rel="noopener" href="https://github.com/memcached/memcached/blob/master/doc/protocol-binary.txt">https://github.com/memcached/memcached/blob/master/doc/protocol-binary.txt</a></p>
-<ol start="2">
-<li>为什么采用redis-module？</li>
-</ol>
-<p>答：考虑到mc每一个命令都需要开发对应的redis命令，为了代码集中统一管理迭代，也符合redis官方的推荐实现。</p>
-<ol start="3">
-<li>为什么不采用哈希表实现？</li>
-</ol>
-<p>这样每一个mc的key都会变成哈希表，无论从性能开销还是内存开销上来说，都是完全没有经过测试和难以估量的。</p>
-<ol start="4">
-<li>为什么不在module中直接用原生字符串，而是引入了新类型？</li>
-</ol>
-<p>假如未来redis-sdk可以直接访问该redis，如果业务用string的get、set命令访问了mc的key，会有安全性风险。而引入新类型保证了原生string命令无法访问mc迁移过来的key，会返回类型错误。</p>
-<ol start="5">
-<li>为什么采用proxy做协议转换，而不是redis内核直接处理mc协议的方式，仿造ApsaraCache？</li>
-</ol>
-<ul>
-<li>redis内核侵入大，影响范围大。比如将引入新的redis配置参数。</li>
-<li>后续每次跟随开源社区升级redis版本都需要搬运迁移，有额外工作量且有稳定性风险。</li>
-<li>当前twemproxy开源社区已不维护，可以完全自研修改，无升级后顾之忧。</li>
-</ul>
+<p>对于非leader节点的哨兵，是在leader发hello消息时得知了master的改变，触发了<code>+switch-master</code>。所以非leader会忽略info得到的master节点的改变，让leader用hello来通知他。</p>
+<figure class="highlight c"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br><span class="line">27</span><br></pre></td><td class="code"><pre><span class="line"><span class="type">void</span> <span class="title function_">sentinelProcessHelloMessage</span><span class="params">(<span class="type">char</span> *hello, <span class="type">int</span> hello_len)</span> &#123;</span><br><span class="line">    ...</span><br><span class="line">        <span class="comment">/* Update master info if received configuration is newer. */</span></span><br><span class="line">        <span class="keyword">if</span> (si &amp;&amp; master-&gt;config_epoch &lt; master_config_epoch) &#123;</span><br><span class="line">            master-&gt;config_epoch = master_config_epoch;</span><br><span class="line">            <span class="keyword">if</span> (master_port != master-&gt;addr-&gt;port ||</span><br><span class="line">                !sentinelAddrEqualsHostname(master-&gt;addr, token[<span class="number">5</span>]))</span><br><span class="line">            &#123;</span><br><span class="line">                sentinelAddr *old_addr;</span><br><span class="line"></span><br><span class="line">                sentinelEvent(LL_WARNING,<span class="string">&quot;+config-update-from&quot;</span>,si,<span class="string">&quot;%@&quot;</span>);</span><br><span class="line">                sentinelEvent(LL_WARNING,<span class="string">&quot;+switch-master&quot;</span>,</span><br><span class="line">                    master,<span class="string">&quot;%s %s %d %s %d&quot;</span>,</span><br><span class="line">                    master-&gt;name,</span><br><span class="line">                    announceSentinelAddr(master-&gt;addr), master-&gt;addr-&gt;port,</span><br><span class="line">                    token[<span class="number">5</span>], master_port);</span><br><span class="line"></span><br><span class="line">                old_addr = dupSentinelAddr(master-&gt;addr);</span><br><span class="line">                sentinelResetMasterAndChangeAddress(master, token[<span class="number">5</span>], master_port);</span><br><span class="line">                sentinelCallClientReconfScript(master,</span><br><span class="line">                    SENTINEL_OBSERVER,<span class="string">&quot;start&quot;</span>,</span><br><span class="line">                    old_addr,master-&gt;addr);</span><br><span class="line">                releaseSentinelAddr(old_addr);</span><br><span class="line">            &#125;</span><br><span class="line">        &#125;</span><br><span class="line">    ...</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+
 
       
     </div>
@@ -337,7 +275,7 @@
 
 
   <nav class="pagination">
-    <a class="extend prev" rel="prev" title="上一页" aria-label="上一页" href="/page/13/"><i class="fa fa-angle-left"></i></a><a class="page-number" href="/">1</a><span class="space">&hellip;</span><a class="page-number" href="/page/13/">13</a><span class="page-number current">14</span><a class="page-number" href="/page/15/">15</a><span class="space">&hellip;</span><a class="page-number" href="/page/38/">38</a><a class="extend next" rel="next" title="下一页" aria-label="下一页" href="/page/15/"><i class="fa fa-angle-right"></i></a>
+    <a class="extend prev" rel="prev" title="上一页" aria-label="上一页" href="/page/13/"><i class="fa fa-angle-left"></i></a><a class="page-number" href="/">1</a><span class="space">&hellip;</span><a class="page-number" href="/page/13/">13</a><span class="page-number current">14</span><a class="page-number" href="/page/15/">15</a><span class="space">&hellip;</span><a class="page-number" href="/page/39/">39</a><a class="extend next" rel="next" title="下一页" aria-label="下一页" href="/page/15/"><i class="fa fa-angle-right"></i></a>
   </nav>
 
 </div>

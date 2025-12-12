@@ -123,7 +123,7 @@
   <nav class="site-state">
       <div class="site-state-item site-state-posts">
         <a href="/archives/">
-          <span class="site-state-item-count">38</span>
+          <span class="site-state-item-count">39</span>
           <span class="site-state-item-name">日志</span>
         </a>
       </div>
@@ -159,7 +159,7 @@
   
 
   <article itemscope itemtype="http://schema.org/Article" class="post-content" lang="">
-    <link itemprop="mainEntityOfPage" href="https://scut-corgis.github.io/2025-11-24-%E7%94%A8CMS%E5%AE%9E%E7%8E%B0redis%E7%83%ADkey%E9%87%87%E9%9B%86.md/%E7%94%A8CMS%E5%AE%9E%E7%8E%B0redis%E7%83%ADkey%E9%87%87%E9%9B%86/">
+    <link itemprop="mainEntityOfPage" href="https://scut-corgis.github.io/2025-11-26-leveldb%E6%BA%90%E7%A0%81%E5%AD%A6%E4%B9%A0(1)-%E8%83%8C%E6%99%AF%E7%9F%A5%E8%AF%86/">
 
     <span hidden itemprop="author" itemscope itemtype="http://schema.org/Person">
       <meta itemprop="image" content="/images/corgis.jpg">
@@ -177,7 +177,7 @@
     </span>
       <header class="post-header">
         <h2 class="post-title" itemprop="name headline">
-          <a href="/2025-11-24-%E7%94%A8CMS%E5%AE%9E%E7%8E%B0redis%E7%83%ADkey%E9%87%87%E9%9B%86.md/%E7%94%A8CMS%E5%AE%9E%E7%8E%B0redis%E7%83%ADkey%E9%87%87%E9%9B%86/" class="post-title-link" itemprop="url">用CMS实现redis热key采集</a>
+          <a href="/2025-11-26-leveldb%E6%BA%90%E7%A0%81%E5%AD%A6%E4%B9%A0(1)-%E8%83%8C%E6%99%AF%E7%9F%A5%E8%AF%86/" class="post-title-link" itemprop="url">leveldb源码学习(1)-背景知识</a>
         </h2>
 
         <div class="post-meta-container">
@@ -188,7 +188,7 @@
       </span>
       <span class="post-meta-item-text">发表于</span>
 
-      <time title="创建时间：2025-11-24 14:27:05" itemprop="dateCreated datePublished" datetime="2025-11-24T14:27:05+08:00">2025-11-24</time>
+      <time title="创建时间：2025-11-26 15:21:12" itemprop="dateCreated datePublished" datetime="2025-11-26T15:21:12+08:00">2025-11-26</time>
     </span>
     <span class="post-meta-item">
       <span class="post-meta-item-icon">
@@ -196,7 +196,7 @@
       </span>
       <span class="post-meta-item-text">分类于</span>
         <span itemprop="about" itemscope itemtype="http://schema.org/Thing">
-          <a href="/categories/redis/" itemprop="url" rel="index"><span itemprop="name">redis</span></a>
+          <a href="/categories/leveldb/" itemprop="url" rel="index"><span itemprop="name">leveldb</span></a>
         </span>
     </span>
 
@@ -210,40 +210,110 @@
     
     
     <div class="post-body" itemprop="articleBody">
-          <h1 id="背景"><a href="#背景" class="headerlink" title="背景"></a>背景</h1><p>之前其实已经看过了非常多种的热key算法，自己也用space-saving实现过一套proxy上的热key收集和缓存。但是最近看到的CMS算法，我觉得也非常好，时间复杂度低，原理清晰简单，空间消耗也是常数。</p>
-<p>CMS算法的全称叫Count-Min Sketch，redis的开源module布隆过滤器RedisBloom就是基于它实现的统计元素的使用计数。</p>
-<h1 id="Count-Min-Sketch"><a href="#Count-Min-Sketch" class="headerlink" title="Count-Min Sketch"></a>Count-Min Sketch</h1><h2 id="核心原理"><a href="#核心原理" class="headerlink" title="核心原理"></a>核心原理</h2><p>基于哈希函数和二维数组（矩阵），通过多个哈希函数将元素映射到二维数组的不同位置，并对对应位置的计数器进行累加，以此来估算元素的频率。</p>
-<p><img src="/%E5%8E%9F%E7%90%86.png"></p>
-<h2 id="具体逻辑"><a href="#具体逻辑" class="headerlink" title="具体逻辑"></a>具体逻辑</h2><p><img src="/%E5%8E%9F%E7%90%862.png"></p>
+          <h1 id="学习背景"><a href="#学习背景" class="headerlink" title="学习背景"></a>学习背景</h1><p>虽然我的工作内容是纯缓存redis，但是也经常跟做磁盘数据库的同学交流沟通，我发现深入的理解rocksdb这种十分常用的kv数据库是相当有必要的。它能补齐我磁盘数据库知识缺失的一块。</p>
+<p>并且，不能只从宏观原理上理解，比如只理解lsm-tree就可以了，我渴望从更深层的底层源码理解它的运作。</p>
+<p>考虑到rocksdb过于复杂以至于并不适合新手学习lsm-tree的kv引擎，加上有句话说：“跟leveldb学习c++”，我决定开始学习leveldb。</p>
+<p>几个链接：</p>
+<ul>
+<li>文档与github链接：<a target="_blank" rel="noopener" href="https://github.com/google/leveldb/tree/main/doc">https://github.com/google/leveldb/tree/main/doc</a></li>
+<li>知乎一篇讲解lsm的文章，非常简单 <a target="_blank" rel="noopener" href="https://zhuanlan.zhihu.com/p/415799237">https://zhuanlan.zhihu.com/p/415799237</a></li>
+<li>某个大佬的学习笔记，但是我觉得写的太少了，不够深入和细致。<a target="_blank" rel="noopener" href="https://sf-zhou.github.io/#/LevelDB">https://sf-zhou.github.io/#/LevelDB</a></li>
+</ul>
+<h1 id="基础术语与宏观理解"><a href="#基础术语与宏观理解" class="headerlink" title="基础术语与宏观理解"></a>基础术语与宏观理解</h1><p>这里更多是翻译的其<code>doc/impl.md</code>的内容，并增加自己的一些理解。</p>
+<h2 id="核心文件类型（精简核心组件）"><a href="#核心文件类型（精简核心组件）" class="headerlink" title="核心文件类型（精简核心组件）"></a>核心文件类型（精简核心组件）</h2><h3 id="WAL-日志文件（Write-Ahead-Log，-log）"><a href="#WAL-日志文件（Write-Ahead-Log，-log）" class="headerlink" title="WAL 日志文件（Write-Ahead Log，*.log）"></a>WAL 日志文件（Write-Ahead Log，*.log）</h3><ul>
+<li>定义：LevelDB 的预写日志文件，是保障崩溃一致性的核心组件。</li>
+<li>核心机制：所有写操作（Put&#x2F;Delete）会先以追加方式写入当前 WAL 日志，再写入内存中的 MemTable。这种 “先写日志，后写内存” 的设计，确保崩溃后可通过日志恢复 MemTable 数据。</li>
+<li>触发切换：当日志文件达到预设阈值（默认 4MB）时，触发 MemTable 刷盘（生成 sstable），同时创建新 WAL 日志承接后续写操作。</li>
+<li>关键解析：WAL 日志与 MemTable 是 “逻辑绑定” 关系，同一时段内一个 WAL 对应一个活跃 MemTable，刷盘后旧 WAL 会被标记为过期，等待垃圾回收。</li>
+</ul>
+<h3 id="排序字符串表（SSTable，-ldb，-sst）"><a href="#排序字符串表（SSTable，-ldb，-sst）" class="headerlink" title="排序字符串表（SSTable，*.ldb，*.sst）"></a>排序字符串表（SSTable，*.ldb，*.sst）</h3><ul>
+<li>定义：LevelDB 的持久化存储核心，是按键有序排列的不可变数据文件。</li>
+<li>存储内容：每个条目包含 InternalKey（用户键 + 序列号 + 操作类型）与对应值，或键的删除标记（tombstone）—— 删除标记用于屏蔽旧 sstable 中已过时的键值对，避免读取时返回无效数据。</li>
+</ul>
+<p>层级组织规则：</p>
+<ul>
+<li>0 级（Level-0）：由 MemTable 刷盘直接生成，特点是文件可能存在键范围重叠（因 MemTable 刷盘是独立触发的），读取时需合并所有重叠文件。</li>
+<li>1 级及以上（Level-L，L≥1）：文件键范围互不重叠，层级越高，单文件数据量越大，Level-1 为 10MB，Level-2 为 100MB，以此类推。</li>
+</ul>
+<p>核心价值：不可变特性避免了写时冲突，用于只允许追加写，为磁盘高效写设计。</p>
+<h3 id="清单文件（MANIFEST）"><a href="#清单文件（MANIFEST）" class="headerlink" title="清单文件（MANIFEST）"></a>清单文件（MANIFEST）</h3><ul>
+<li>定义：数据库元数据的 “变更日志”，记录全量层级信息与文件元数据。</li>
+<li>存储内容：各层级包含的 sstable 列表、每个 sstable 的键范围（smallest_key&#x2F;largest_key）、当前 WAL 日志号（log_number）、最大序列号（last_sequence）等核心元数据。</li>
+<li>更新机制：采用追加写（Append-Only）模式，数据库重启或元数据变更（如 Compaction、sstable 增减）时，不会修改原有文件，而是生成新 MANIFEST 文件并更新 CURRENT 指向。</li>
+</ul>
+<p>manifest的内容实际上可以理解为<code>VersionEdit</code>数组，每次版本更替时（比如memtable刷盘成sst），会往文件里面追加写入一条<code>VersionEdit</code>。因此重放时，从头到尾依次读出<code>VersionEdit</code>，最后整合为当前的<code>Version</code>，涵盖了每个<code>level</code>的文件列表。</p>
+<h3 id="当前指针文件（CURRENT）"><a href="#当前指针文件（CURRENT）" class="headerlink" title="当前指针文件（CURRENT）"></a>当前指针文件（CURRENT）</h3><ul>
+<li>定义：轻量级文本文件，仅存储最新 MANIFEST 文件的文件名。</li>
+<li>核心作用：简化恢复流程 —— 数据库启动时无需遍历所有 MANIFEST 文件，只需读取 CURRENT 即可定位最新元数据文件，提升启动效率。</li>
+</ul>
+<h3 id="辅助文件"><a href="#辅助文件" class="headerlink" title="辅助文件"></a>辅助文件</h3><ul>
+<li>LOCK 文件：进程级排他锁，防止多个进程同时操作同一数据库目录，避免数据损坏。</li>
+<li>INFO 日志（LOG&#x2F;LOG.old）：记录系统运行日志（如 Compaction 触发、错误信息），用于问题排查。</li>
+<li>临时文件（*.dbtmp）：Compaction 或刷盘过程中生成的中间文件，操作成功后会重命名为正式 sstable，失败则直接删除，不影响数据一致性。</li>
+</ul>
+<h2 id="压实操作（Compaction）"><a href="#压实操作（Compaction）" class="headerlink" title="压实操作（Compaction）"></a>压实操作（Compaction）</h2><h3 id="MemTable-刷盘与-Level-0-生成"><a href="#MemTable-刷盘与-Level-0-生成" class="headerlink" title="MemTable 刷盘与 Level-0 生成"></a>MemTable 刷盘与 Level-0 生成</h3><ul>
+<li>触发条件：当前活跃 MemTable 对应的 WAL 日志达到 4MB 阈值。</li>
+</ul>
+<p>核心流程：</p>
 <ol>
-<li>数据结构：假设有 d 个哈希函数h1, h2 … hd ，以及一个大小为w*d的二维数组（计数器矩阵） C 。这里 w 表示每个哈希函数映射的桶（bucket）的数量， d 表示哈希函数的个数。</li>
-<li>元素计数：当一个元素 x 出现时，分别通过 d 个哈希函数计算其在二维数组中的位置。即对于第 i 个哈希函数hi，计算hi(x) ，得到一个在 0 到 w 之间的索引值，然后将矩阵 C 中第 i 列、索引值对应的位置的计数器加 1 ，也就是 (C[i][hi(x)]++) 。</li>
-<li>频率估算：当需要估算元素 x 的出现频率时，分别计算 d 个哈希函数映射位置的计数器值，取其中的最小值作为元素 x 出现频率的近似值。</li>
+<li>原子创建新 MemTable 与新 WAL 日志，后续写操作直接导向新组件；</li>
+<li>后台线程将旧 MemTable 数据有序写入磁盘，生成 Level-0 sstable；</li>
+<li>刷盘成功后，释放旧 MemTable 内存，标记旧 WAL 日志为过期；</li>
+<li>将新 sstable 加入 Level-0 层级。</li>
 </ol>
-<p>时间窗口优化</p>
+<p>设计解析：刷盘过程采用 “后台异步 + 原子切换”，实际上在一个memtable写满后不会直接刷盘否则会阻塞前台写操作，而是变成immutable-memtable，等待后台线程刷盘和更新manifest，同时旧组件仅在刷盘成功后释放，确保崩溃时可通过旧 WAL 恢复数据。</p>
+<h3 id="核心流程"><a href="#核心流程" class="headerlink" title="核心流程"></a>核心流程</h3><p>定义：LevelDB 核心后台任务，用于解决 sstable 累积导致的读取性能下降，核心目标是 “合并数据、清理过期条目、维持层级结构”。</p>
+<p>触发条件：</p>
 <ul>
-<li>划分时间窗口(1s、5s)，每个新窗口开始时，重置 Count - Min Sketch 矩阵，并重新开始计数。假设窗口长度为 T 秒，某个键在上一个窗口中的计数为 count，则其 QPS 为 count &#x2F; T。</li>
+<li>Level-0：文件数量超过 4 个（因文件重叠，数量过多会导致读取时需合并大量文件）；</li>
+<li>Level-L（L≥1）：总数据量超过10^L MB 阈值。</li>
 </ul>
-<h2 id="讨论"><a href="#讨论" class="headerlink" title="讨论"></a>讨论</h2><p>优势</p>
-<ul>
-<li>内存高效：只需要存储一个大小固定的二维数组和少量的哈希函数，占用的内存空间小。</li>
-<li>快速计算：对元素的计数和频率估算操作的时间复杂度低，均为 O(d) ，可以实时处理大量的元素</li>
-</ul>
-<p>局限</p>
-<ul>
-<li>个人感觉就是哈希桶的数量不太好确定。且计算哈希函数不能太慢，但一般密码算法都不算快。</li>
-<li>估算误差：由于哈希冲突的存在，对元素频率的估算结果可能会高估实际频率。</li>
-</ul>
-<p>内存占用</p>
-<ul>
-<li>O (d×w)，其中 d 是哈希函数的数量，w 是每个哈希函数对应的桶数量。</li>
-<li>例如：d 个哈希函数 × 4 字节 int 计数器 × w 个桶 ：4 × 4 × 10000 &#x3D; 160,000B ≈ 156.25KB.</li>
-</ul>
-<h1 id="具体实现方式"><a href="#具体实现方式" class="headerlink" title="具体实现方式"></a>具体实现方式</h1><ol>
-<li>对于某个统计时间窗口，当发现热key时，可以直接用字典来保存当前热key的【key-&gt;次数】的映射</li>
-<li>对于历史数据统计，可以采用lru，比如使用双向链表+字典来实现，比如每个统计时间窗口到达时，倾倒当前的热key字典到lru结构中。</li>
-<li>历史数据记录保持多久有一个时间窗口，可以定期遍历lru双向链表来清理过期的热key历史数据。</li>
+<p>核心逻辑：</p>
+<ol>
+<li>选文件：Level-0 压实会选取所有含有重叠key范围的文件，Level-L（L≥1）仅选取一个文件及 Level-L+1 中所有有key范围重叠的文件；</li>
+<li>归并排序：将选中文件的键值对按 InternalKey 重新排序，过滤过期值（被覆盖的键）与无效删除标记（无更高层级文件包含该键范围）；</li>
+<li>生成新文件：按 2MB 分片生成 Level-L+1 新 sstable，确保新文件键范围不重叠；</li>
+<li>原子替换：新文件写入成功后，将旧文件标记为过期，更新 MANIFEST 元数据。</li>
 </ol>
+<p>特定层级的压实操作会按键空间（key space）循环执行。具体来说，对于每个层级 L，系统会记录该层级上一次压实操作的结束键；下一次 L 层级的压实操作会选取第一个起始键位于该结束键之后的文件（若不存在此类文件，则循环回到键空间的起始位置）。</p>
+<p>压实操作会丢弃被覆盖的值（overwritten values）；若不存在更高编号的层级包含与当前键范围重叠的文件，则会一并丢弃该键的删除标记（deletion markers）。</p>
+<h3 id="时间开销-Timing"><a href="#时间开销-Timing" class="headerlink" title="时间开销 Timing"></a>时间开销 Timing</h3><p>Level-0 压实操作最多会从 Level-0 读取 4 个 1MB 大小的文件，最坏情况下需读取所有 Level-1 文件（总计 10MB）。即，压实过程需读取 14MB 数据并写入 14MB 数据。</p>
+<p>除特殊的 Level-0 压实外，会从 L 层级选取 1 个 2MB 大小的文件。最坏情况下，该文件会与 L+1 层级的约 12 个文件重叠（其中 10 个源于 L+1 层级的总大小是 L 层级的 10 倍，另外 2 个源于 L 层级与 L+1 层级的文件键范围通常无法对齐，导致边界处额外重叠）。因此，压实操作需读取 26MB 数据并写入 26MB 数据。假设现代硬盘的 I&#x2F;O 速率为 100MB&#x2F;s（常规水平），最坏情况下压实耗时约 0.5 秒。</p>
+<p>若将后台写入速率限制在较低水平（例如，硬盘峰值速率 100MB&#x2F;s 的 10%），一次压实操作可能耗时长达 5 秒。若用户写入速率为 10MB&#x2F;s，Level-0 可能会累积大量文件（约 50 个文件，用于存储 5 秒内写入的 50MB 数据）。这会导致读取时需合并更多文件，显著增加读取开销。</p>
+<blockquote>
+<p>26MB&#x2F;(10MB&#x2F;s) &#x3D; 2.6秒，但这是最理想的情况，文档写5秒估计是测试结果。</p>
+</blockquote>
+<p>解决方案 </p>
+<ol>
+<li>当 Level-0 文件数量较多时，可提高日志切换阈值（即 WAL 日志触发刷盘的大小阈值）。但该方案的缺点是，阈值越大，对应的 MemTable 所需占用的内存就越多。</li>
+<li>当 Level-0 文件数量增加时，可人工降低写入速率。</li>
+<li>优化大范围合并的开销。实际上就是增加block_cache的大小，让level0的大部份文件的原始数据在内存中存在，就不用去磁盘读了。</li>
+</ol>
+<h2 id="恢复流程（Recovery）"><a href="#恢复流程（Recovery）" class="headerlink" title="恢复流程（Recovery）"></a>恢复流程（Recovery）</h2><ol>
+<li>读取 CURRENT 文件，获取最新已提交的 MANIFEST 文件名称；</li>
+<li>读取该 MANIFEST 文件，重建层级元数据；</li>
+<li>清理过期文件（未被任何层级引用的 sstable 及旧 WAL 日志）；</li>
+<li>此处可打开所有 sstable，但采用惰性加载（按需打开）或许更优 —— 避免启动时加载大量无关数据，提升恢复速度；</li>
+<li>将未过期的 WAL 日志片段转换为新的 Level-0 sstable；</li>
+<li>创建新的 WAL 日志文件，沿用恢复得到的最大序列号（sequence number），承接后续写入操作。</li>
+</ol>
+<h2 id="文件垃圾回收（Garbage-collection-of-files）"><a href="#文件垃圾回收（Garbage-collection-of-files）" class="headerlink" title="文件垃圾回收（Garbage collection of files）"></a>文件垃圾回收（Garbage collection of files）</h2><p>RemoveObsoleteFiles() 函数会在每次压实操作结束后及恢复流程完成后调用。该函数会遍历数据库目录下的所有文件，执行以下清理逻辑：</p>
+<ol>
+<li>删除所有非当前活跃 WAL 日志的日志文件；</li>
+<li>删除所有未被任何层级引用、且不属于活跃压实操作输出的 sstable 文件。</li>
+</ol>
+<h1 id="使用方法"><a href="#使用方法" class="headerlink" title="使用方法"></a>使用方法</h1><p>这里先不赘述了，有空用中文写一遍。</p>
+<p>我觉得官方文档的<code>index.md</code>文件写的非常好。能从对外能力上，全局视角理解它的使用。</p>
+<p>从它的使用方法上，我觉得后续有几个能力的内核实现方式需要重点关注</p>
+<ul>
+<li><code>WriteBatch</code>的具体实现</li>
+<li>并发读写的实现方式</li>
+<li>迭代器<code>Iterator</code>的实现</li>
+<li><code>block_cache</code>和<code>block_size</code>在内核中的表现</li>
+<li>布隆过滤器的<code>NewBloomFilterPolicy</code>实现，如何在sst文件的后面放<code>filter meta block</code>的。</li>
+<li>估计某个范围的key数量的实现<code>GetApproximateSizes</code></li>
+<li>快照的实现<code>GetSnapshot</code></li>
+</ul>
 
       
     </div>
@@ -263,7 +333,7 @@
 
 
   <nav class="pagination">
-    <a class="extend prev" rel="prev" title="上一页" aria-label="上一页" href="/page/5/"><i class="fa fa-angle-left"></i></a><a class="page-number" href="/">1</a><span class="space">&hellip;</span><a class="page-number" href="/page/5/">5</a><span class="page-number current">6</span><a class="page-number" href="/page/7/">7</a><span class="space">&hellip;</span><a class="page-number" href="/page/38/">38</a><a class="extend next" rel="next" title="下一页" aria-label="下一页" href="/page/7/"><i class="fa fa-angle-right"></i></a>
+    <a class="extend prev" rel="prev" title="上一页" aria-label="上一页" href="/page/5/"><i class="fa fa-angle-left"></i></a><a class="page-number" href="/">1</a><span class="space">&hellip;</span><a class="page-number" href="/page/5/">5</a><span class="page-number current">6</span><a class="page-number" href="/page/7/">7</a><span class="space">&hellip;</span><a class="page-number" href="/page/39/">39</a><a class="extend next" rel="next" title="下一页" aria-label="下一页" href="/page/7/"><i class="fa fa-angle-right"></i></a>
   </nav>
 
 </div>
