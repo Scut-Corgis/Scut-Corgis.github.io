@@ -123,13 +123,13 @@
   <nav class="site-state">
       <div class="site-state-item site-state-posts">
         <a href="/archives/">
-          <span class="site-state-item-count">39</span>
+          <span class="site-state-item-count">42</span>
           <span class="site-state-item-name">日志</span>
         </a>
       </div>
       <div class="site-state-item site-state-categories">
           <a href="/categories/">
-        <span class="site-state-item-count">14</span>
+        <span class="site-state-item-count">16</span>
         <span class="site-state-item-name">分类</span></a>
       </div>
   </nav>
@@ -159,7 +159,7 @@
   
 
   <article itemscope itemtype="http://schema.org/Article" class="post-content" lang="">
-    <link itemprop="mainEntityOfPage" href="https://scut-corgis.github.io/2025-06-27-memcached%E8%BF%81%E7%A7%BBredis%E5%AE%9E%E8%B7%B5/">
+    <link itemprop="mainEntityOfPage" href="https://scut-corgis.github.io/2025-08-19-proxy%E7%83%ADkey%E7%BC%93%E5%AD%98%E8%83%BD%E5%8A%9B/">
 
     <span hidden itemprop="author" itemscope itemtype="http://schema.org/Person">
       <meta itemprop="image" content="/images/corgis.jpg">
@@ -177,7 +177,7 @@
     </span>
       <header class="post-header">
         <h2 class="post-title" itemprop="name headline">
-          <a href="/2025-06-27-memcached%E8%BF%81%E7%A7%BBredis%E5%AE%9E%E8%B7%B5/" class="post-title-link" itemprop="url">memcached迁移redis实践</a>
+          <a href="/2025-08-19-proxy%E7%83%ADkey%E7%BC%93%E5%AD%98%E8%83%BD%E5%8A%9B/" class="post-title-link" itemprop="url">proxy热key缓存能力</a>
         </h2>
 
         <div class="post-meta-container">
@@ -188,7 +188,7 @@
       </span>
       <span class="post-meta-item-text">发表于</span>
 
-      <time title="创建时间：2025-06-27 23:02:05" itemprop="dateCreated datePublished" datetime="2025-06-27T23:02:05+08:00">2025-06-27</time>
+      <time title="创建时间：2025-08-19 21:30:52" itemprop="dateCreated datePublished" datetime="2025-08-19T21:30:52+08:00">2025-08-19</time>
     </span>
     <span class="post-meta-item">
       <span class="post-meta-item-icon">
@@ -210,114 +210,49 @@
     
     
     <div class="post-body" itemprop="articleBody">
-          <h1 id="背景"><a href="#背景" class="headerlink" title="背景"></a>背景</h1><p>memcached作为历史上重要的缓存组件，以高qps著称，主要是以多线程的特性能做到抗热key，而这点redis无法做到。</p>
-<p>除去抗热key以外，似乎memcached已经越来越丧失对redis的优势，即使在qps领域，经过个人测试，中小key的qps承载量甚至被redis远远甩开。</p>
-<p>在加上memcached过于简单，只有简单string操作，没有高可用（主从），强依赖sdk做一致性哈希，难以水平扩容，以及在企业级能力如逃生、单元化等方面都难以建设。</p>
-<p>并考虑到redis8的展现的多线程能力已经可以抗超大并发的qps，据测试，redis8抗热key qps的量已经是redis6开单工作线程的3倍了。</p>
-<p>因此将memcached迁移到redis提上了日程，在笔者公司，有几千个memcached集群，业务代码历史悠久繁重，因此业务需求是不改一行代码，自身无需重新做任何发布部署便能成迁移成功。</p>
-<h1 id="详细方案"><a href="#详细方案" class="headerlink" title="详细方案"></a>详细方案</h1><p>笔者最终了选择twemproxy + redis-server到组合替换掉memcached集群。在改造过程中有两种路线</p>
+          <h1 id="背景"><a href="#背景" class="headerlink" title="背景"></a>背景</h1><p>本文主要考虑的是redis的代理架构，即客户端连接proxy，proxy通过一定的哈希算法将对应的key路由到对应redis-server上。</p>
+<p>这种代理架构会将相同的key路由到同一个server上。而redis作为单线程程序，存在热key瓶颈问题，一般认为简单的string操作，热key的qps最多10w。</p>
+<p>但是业务有时存在一种诉求，比如电商库存场景，业务可能短时间内存在大量的热key读请求，使得存在热点。</p>
+<h1 id="方案"><a href="#方案" class="headerlink" title="方案"></a>方案</h1><p>在proxy上实现热key的自动探测和缓存能力，并能对外输出和展示热key列表和对应的qps。</p>
+<p>考虑到在redis数据结构下，如果缓存的是热key，proxy势必需要实现一整套的redis数据结构。因此最终实现的是缓存热cmd（命令）的回复。</p>
+<p>提供三个配置参数：</p>
 <ul>
-<li>让redis支持memcached协议，使得可以直接用memcached协议访问redis，用可配配置来作为开关，学习阿里云某个开源项目的做法（该项目已经无人维护）。</li>
-<li>改造twemproxy，使其做memcached到redis的协议转换，并在redis上实现一套memcached命令</li>
+<li>热cmd最小qps: min_qps</li>
+<li>缓存过期时间: expire_ms</li>
+<li>缓存命令条数：cache_count</li>
 </ul>
-<p>最终选择了改造twemproxy，并使用redis-module的方式实现以上迁移需求。</p>
-<h2 id="基本原理"><a href="#基本原理" class="headerlink" title="基本原理"></a>基本原理</h2><p><img src="/2025-06-27-memcached%E8%BF%81%E7%A7%BBredis%E5%AE%9E%E8%B7%B5/%E5%9F%BA%E6%9C%AC%E5%8E%9F%E7%90%86.drawio.svg"></p>
-<p>每一个mc命令均对应一个相同前缀的redis命令</p>
-<figure class="highlight shell"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br></pre></td><td class="code"><pre><span class="line">get -&gt; kcc_mc.get</span><br><span class="line">add -&gt; kcc_mc.add</span><br><span class="line">replace -&gt; kcc_mc.replace</span><br><span class="line">...</span><br></pre></td></tr></table></figure>
-
-<p>除了多key命令，每一个mc命令解析后都会原样的按resp协议转发给redis</p>
-<figure class="highlight shell"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br></pre></td><td class="code"><pre><span class="line">set key 0 0 3\r\n</span><br><span class="line">val\r\n </span><br><span class="line"><span class="meta prompt_"></span></span><br><span class="line"><span class="meta prompt_">------&gt;</span><span class="language-bash"></span></span><br><span class="line"><span class="language-bash"></span></span><br><span class="line">*6\r\n</span><br><span class="line"><span class="meta prompt_">$</span><span class="language-bash">10\r\n</span></span><br><span class="line">kcc_mc.set\r\n</span><br><span class="line"><span class="meta prompt_">$</span><span class="language-bash">3\r\n</span></span><br><span class="line">key\r\n</span><br><span class="line"><span class="meta prompt_">$</span><span class="language-bash">1\r\n</span></span><br><span class="line">0\r\n</span><br><span class="line"><span class="meta prompt_">$</span><span class="language-bash">1\r\n</span></span><br><span class="line">0\r\n</span><br><span class="line"><span class="meta prompt_">$</span><span class="language-bash">1\r\n</span></span><br><span class="line">3\r\n</span><br><span class="line"><span class="meta prompt_">$</span><span class="language-bash">3\r\n</span></span><br><span class="line">val\r\n</span><br></pre></td></tr></table></figure>
-
-<p>而redis-module处理的返回，只会有两种情况，即redis自身错误-ERR或字符串回复。</p>
-<figure class="highlight shell"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br></pre></td><td class="code"><pre><span class="line">-ERR xxxx\r\n</span><br><span class="line">或者</span><br><span class="line"><span class="meta prompt_">$</span><span class="language-bash">5\r\n</span></span><br><span class="line">xxxxx\r\n</span><br></pre></td></tr></table></figure>
-
-<p>redis module的实现为，对于每一个mc的命令，其生成回复为resp的字符串回复，中间嵌套mc回复，如mc的get命令回复如下</p>
-<figure class="highlight shell"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br></pre></td><td class="code"><pre><span class="line"><span class="meta prompt_">$</span><span class="language-bash">25\r\n</span></span><br><span class="line">VALUE 0 0 5\r\n</span><br><span class="line">hello\r\n</span><br><span class="line">END\r\n</span><br><span class="line">\r\n</span><br></pre></td></tr></table></figure>
-
-<p>对于应该返回mc的错误场景，同样用字符串回复嵌套</p>
-<figure class="highlight shell"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br></pre></td><td class="code"><pre><span class="line"><span class="meta prompt_">$</span><span class="language-bash">22\r\n</span></span><br><span class="line">SERVER_ERROR unknown\r\n</span><br><span class="line">\r\n</span><br></pre></td></tr></table></figure>
-
-<h2 id="proxy实现"><a href="#proxy实现" class="headerlink" title="proxy实现"></a>proxy实现</h2><p>以下说明皆基于最新twemproxy开源版本0.5.0release</p>
-<h3 id="基本处理"><a href="#基本处理" class="headerlink" title="基本处理"></a>基本处理</h3><p>在配置文件中引入新的配置项，该配置为bool值，一旦该值置为1，原先proxy的决定工况(redis or mc)的变量将失效。</p>
-<p><img src="/2025-06-27-memcached%E8%BF%81%E7%A7%BBredis%E5%AE%9E%E8%B7%B5/%E5%9F%BA%E6%9C%AC%E5%A4%84%E7%90%86.png"></p>
-<p>对于每一个发送过来的mc命令，在命令完全解析完毕后，确定要往redis一侧发送前，做协议转换。具体操作为</p>
-<ol>
-<li>确定参数个数n，生成*n\r\n</li>
-<li>根据原mc的命令字符串，生成增加前缀“kcc_mc.”的字符串，并以resp协议的方式追加到缓冲区中</li>
-<li>每一个mc的参数逐个追加到缓冲区中</li>
-<li>对于写命令的value字段，考虑其长度可能会超过一个缓冲区，直接将原缓冲区mbuf整体移动赋予目标。</li>
-</ol>
-<p>在收到redis的回复命令后，在回包给客户端之前，做协议转换，具体操作为</p>
-<ol>
-<li>对于-ERR xxx的redis错误，直接去除前4个字节”-ERR”, 并在缓冲区前追加”SERVER_ERROR”,以符合mc的错误格式</li>
-<li>对于约定好的字符串回复（$xx\r\n），去除第一行，以及最后的”\r\n”字符。</li>
-</ol>
-<h3 id="命令分段"><a href="#命令分段" class="headerlink" title="命令分段"></a>命令分段</h3><p>mc的多key命令只有两种，即get和gets。</p>
-<p>需要在协议转换后，做预处理和后处理。</p>
-<p>整体流程如下</p>
-<p><img src="/2025-06-27-memcached%E8%BF%81%E7%A7%BBredis%E5%AE%9E%E8%B7%B5/%E5%91%BD%E4%BB%A4%E5%88%86%E6%AE%B5.drawio.svg"></p>
-<p>错误处理</p>
-<p>我们将错误归为两类</p>
+<p>只有命令的qps大于min_qps时，该命令才会被缓存与展示，一条命令缓存成功后可以最小持续expire_ms的时间，一共允许缓存cache_count的命令数量。</p>
+<h2 id="数据结构"><a href="#数据结构" class="headerlink" title="数据结构"></a>数据结构</h2><p>一秒一次，通过<strong>统计红黑树</strong><code>hks_map</code>统计该1秒内的所有cmd的访问次数。即每秒都会清空<code>hks_map</code>。</p>
+<p>统计红黑树紧密关联的为<strong>缓存红黑树</strong><code>hkc_map</code>,其存放了缓存的热cmd对应的</p>
 <ul>
-<li>redis原生错误，即”-ERR xxx”</li>
-<li>mc格式的错误，即用resp协议的字符串套用的mc错误，如”$18\r\nSERVER_ERROR xxx\r\n\r\n”</li>
+<li>收到回复时的时间戳</li>
+<li>rsp回复</li>
+<li>该回复总延时，即发送过去时打个时间戳，收到时计算差值</li>
+<li>是否已经发送了<code>backup_req</code>（后文讲解）</li>
 </ul>
-<p>对于非分段命令，只要是redis一侧成功发回来的回复，我们均在协议处理后直接返回给客户端</p>
-<p>对于分段命令，只要出现了其中一个sub_msg错误，我们将返回给客户端</p>
-<p><img src="/2025-06-27-memcached%E8%BF%81%E7%A7%BBredis%E5%AE%9E%E8%B7%B5/%E9%94%99%E8%AF%AF%E4%BF%A1%E6%81%AF.png"></p>
-<h3 id="mc-redis双协议支持"><a href="#mc-redis双协议支持" class="headerlink" title="mc+redis双协议支持"></a>mc+redis双协议支持</h3><p>实际上，笔者最终在twemproxy上实现了同时支持redis协议和mc协议的方案。主要思路是通过请求的第一个字节是否为<code>*</code>或<code>+</code>来更换处理协议函数集。</p>
-<p>对于不转发到redis-server的命令可以无条件直接处理，而对于需要转发到redis-server的命令集可以设置一个拦截函数，规定哪些命令可以通过proxy转发，如可以允许scan命令转发用于集群扫表。</p>
-<p>总体目标:</p>
+<p>在每秒清空<code>hks_map</code>的同时，会对其遍历，以生成一个<strong>新的hkc_map</strong>。查看是否有访问次数大于<code>min_qps</code>的命令，如果有，将其导入<code>hkc_map</code>，如果此时老的<code>hkc_map</code>还有对应的rsp缓存，我们将其复制到新的以防止替换过程的缓存失效。</p>
+<p>以上为缓存功能的数据结构，为了展示热cmd，还存在一个<strong>聚合红黑树</strong><code>hk_record_map</code>:</p>
+<p>将每一秒的统计结果用求和的方式导入其中。假如每5秒，我们在<code>hk_record_map</code>中已经存入了5秒的数据，可以将其以访问次数转换为从大到小的队列，都附带当前导出的时间戳，输出该5秒的qps情况出去，即可以存放到一个总队列里。总队列可以设置一个允许存放的最长时间戳，超过时清理队列的队尾，即最老时间戳的数据。</p>
+<h2 id="命令处理流程"><a href="#命令处理流程" class="headerlink" title="命令处理流程"></a>命令处理流程</h2><p>一个请求到来时，有以下操作步骤</p>
 <ol>
-<li>proxy实现支持redis和memcached的协议包混合，即一个客户端连接，既可以发送redis命令，又可以发送mc命令。</li>
-<li>需要对redis透传命令实现拦截器，即从稳定性考虑，必须能够支持选择性的透传redis命令，如当前只需要透传kcc_scan命令即可。</li>
+<li>查看当前<code>hks_map</code>是否缓存了该热cmd，如果缓存了，直接将对应访问次数+1</li>
+<li>如果没有缓存，并达到了当前<code>hks_map</code>限制的数量(如1024)，直接将<code>hks_map</code>访问次数少的一半清理掉，然后将当前cmd的访问次数置为1，并加入<code>hks_map</code>。</li>
+<li>查看<code>hkc_map</code>是否有该cmd条目，并缓存有相应rsp回复，如果有，增加该cmd的命中次数hit_qps，并直接将对应的rsp返回给请求方。</li>
+<li>如果有该cmd条目，但没有rsp回复，说明请求没有命中缓存，如请求还在发送处理中，增加热key总qps次数但不增加命中次数。用于统计命中率。</li>
 </ol>
-<p>难点:</p>
+<p>一个回复到来时：</p>
 <ol>
-<li>对于一个新的命令请求，我们无法判断使用哪种协议解析函数对其解析</li>
-<li>对于s_conn(proxy与redis-server的连接)，两种命令请求都在同一条tcp上，收到redis-server的回包时难以判断该回包是哪种类型。对于mc的命令需要做redis2mc的协议转换，而redis的回复可直接透传或多key命令聚合后再透传。</li>
+<li>查看当前hkc_map是否有当前的cmd，如果有，直接更新其对应的rsp结构，并记录当前缓存时间，往返延迟。</li>
 </ol>
-<p>实现方案:</p>
+<h2 id="缓存真实时间"><a href="#缓存真实时间" class="headerlink" title="缓存真实时间"></a>缓存真实时间</h2><p>考虑这样一种场景，某个热cmd同时是大key，那么其请求往还延时会很长，如果我们只按设置的缓存时间缓存这个rsp，势必导致很长的一段时间比例中，回复没有被缓存（过期后等待新的rsp）。</p>
+<p>因此我们实际的缓存时间为，<code>expire_ms + latency_ms</code>。</p>
+<h2 id="backup-req"><a href="#backup-req" class="headerlink" title="backup_req"></a>backup_req</h2><p>backup_req是一种重要缓存保持机制。以上的方案当缓存过期时，会存在大量的流量穿透到redis-server，以获取新的rsp。</p>
+<p>因此可以在每一次请求的处理中增加一环逻辑：</p>
 <ol>
-<li>对于mc2redis的proxy集群，收到一个命令包时先默认使用mc的解析函数解析，在状态机初始处判断该命令包的第一个字符是否为“*”或”+”，如果是，完全替换该msg的所有处理函数，并重入命令解析函数。</li>
-<li>彻底区分redis与mc命令集，并提供拦截函数用于判断可透传的redis命令集，在请求向redis-server发送前进行判断，若不能进行转发，返回客户端错误。<br>对于s_conn的回包，利用tcp的有序性，取出挂在等待其回复队列的第一条msg作为对端请求msg，通过对端msg的”mc2redis”标识判断其是否需要做redis到memcached的协议转换。</li>
+<li>判断当前请求的rsp离过期时间是否大于一半的过期时间了，如果是的，我们可以把这次请求不用缓存返回，而是主动将其置为backup_req穿透到redis-server中，用于续约和获取新数据。</li>
 </ol>
-<p><img src="/2025-06-27-memcached%E8%BF%81%E7%A7%BBredis%E5%AE%9E%E8%B7%B5/%E5%8F%8C%E5%8D%8F%E8%AE%AE%E6%94%AF%E6%8C%81.svg"></p>
-<h2 id="redis-module实现"><a href="#redis-module实现" class="headerlink" title="redis-module实现"></a>redis-module实现</h2><p>对应每一个mc命令，我们需要调研清楚其语义，如参数范围和对应的返回值表现。</p>
-<p>这里不叙述任何的语义细节。主要阐述一下跟架构设计相关的实现思想。</p>
-<ol>
-<li>维护cas_id的全局递增</li>
-</ol>
-<p>对于每一个module的object，很显然可以跟随RdbSave将其flag和cas_id存放到到rdb中，但是全局cas_id如何维护递增？比如主从复制，从节点是需要拿到主节点的全局cas_id大小的。</p>
-<p>实际上可以放到<code>aux_save()</code>里面，将这个全局id存进去，在<code>aux_load()</code>时再取出来。</p>
-<ol start="2">
-<li>AOF重写怎么处理？</li>
-</ol>
-<p>如果我们是用原命令来做aof重写，势必会丢失该对象的cas_id。实际上，我们可以实现一个新命令如<code>mc.restore</code>。用这个新命令把flag、对象的cas_id，和全局cas_id一起存进去。</p>
-<h1 id="QA"><a href="#QA" class="headerlink" title="QA"></a>QA</h1><ol>
-<li>二进制协议怎么处理？</li>
-</ol>
-<p>proxy后续可以处理两种命令，但转化为相同的文本redis命令，即redis命令只给出文本回复。据分析，所有的命令的文本回复在原理上，可以转换为二进制回复。只是实现问题。<br>附录(协议):<br><a target="_blank" rel="noopener" href="https://github.com/memcached/memcached/blob/master/doc/protocol.txt">https://github.com/memcached/memcached/blob/master/doc/protocol.txt</a><br><a target="_blank" rel="noopener" href="https://github.com/memcached/memcached/blob/master/doc/protocol-binary.txt">https://github.com/memcached/memcached/blob/master/doc/protocol-binary.txt</a></p>
-<ol start="2">
-<li>为什么采用redis-module？</li>
-</ol>
-<p>答：考虑到mc每一个命令都需要开发对应的redis命令，为了代码集中统一管理迭代，也符合redis官方的推荐实现。</p>
-<ol start="3">
-<li>为什么不采用哈希表实现？</li>
-</ol>
-<p>这样每一个mc的key都会变成哈希表，无论从性能开销还是内存开销上来说，都是完全没有经过测试和难以估量的。</p>
-<ol start="4">
-<li>为什么不在module中直接用原生字符串，而是引入了新类型？</li>
-</ol>
-<p>假如未来redis-sdk可以直接访问该redis，如果业务用string的get、set命令访问了mc的key，会有安全性风险。而引入新类型保证了原生string命令无法访问mc迁移过来的key，会返回类型错误。</p>
-<ol start="5">
-<li>为什么采用proxy做协议转换，而不是redis内核直接处理mc协议的方式，仿造ApsaraCache？</li>
-</ol>
-<ul>
-<li>redis内核侵入大，影响范围大。比如将引入新的redis配置参数。</li>
-<li>后续每次跟随开源社区升级redis版本都需要搬运迁移，有额外工作量且有稳定性风险。</li>
-<li>当前twemproxy开源社区已不维护，可以完全自研修改，无升级后顾之忧。</li>
-</ul>
+<p>该机制在热key持续存在的情况下可以保持热key缓存一直存在，而不会引发缓存雪崩。</p>
+<p><img src="/2025-08-19-proxy%E7%83%ADkey%E7%BC%93%E5%AD%98%E8%83%BD%E5%8A%9B/backup_req.png"></p>
 
       
     </div>
@@ -337,7 +272,7 @@
 
 
   <nav class="pagination">
-    <a class="extend prev" rel="prev" title="上一页" aria-label="上一页" href="/page/14/"><i class="fa fa-angle-left"></i></a><a class="page-number" href="/">1</a><span class="space">&hellip;</span><a class="page-number" href="/page/14/">14</a><span class="page-number current">15</span><a class="page-number" href="/page/16/">16</a><span class="space">&hellip;</span><a class="page-number" href="/page/39/">39</a><a class="extend next" rel="next" title="下一页" aria-label="下一页" href="/page/16/"><i class="fa fa-angle-right"></i></a>
+    <a class="extend prev" rel="prev" title="上一页" aria-label="上一页" href="/page/14/"><i class="fa fa-angle-left"></i></a><a class="page-number" href="/">1</a><span class="space">&hellip;</span><a class="page-number" href="/page/14/">14</a><span class="page-number current">15</span><a class="page-number" href="/page/16/">16</a><span class="space">&hellip;</span><a class="page-number" href="/page/42/">42</a><a class="extend next" rel="next" title="下一页" aria-label="下一页" href="/page/16/"><i class="fa fa-angle-right"></i></a>
   </nav>
 
 </div>
@@ -348,7 +283,7 @@
 
   <div class="copyright">
     &copy; 
-    <span itemprop="copyrightYear">2025</span>
+    <span itemprop="copyrightYear">2026</span>
     <span class="with-love">
       <i class="fa fa-heart"></i>
     </span>

@@ -123,13 +123,13 @@
   <nav class="site-state">
       <div class="site-state-item site-state-posts">
         <a href="/archives/">
-          <span class="site-state-item-count">39</span>
+          <span class="site-state-item-count">42</span>
           <span class="site-state-item-name">日志</span>
         </a>
       </div>
       <div class="site-state-item site-state-categories">
           <a href="/categories/">
-        <span class="site-state-item-count">14</span>
+        <span class="site-state-item-count">16</span>
         <span class="site-state-item-name">分类</span></a>
       </div>
   </nav>
@@ -159,7 +159,7 @@
   
 
   <article itemscope itemtype="http://schema.org/Article" class="post-content" lang="">
-    <link itemprop="mainEntityOfPage" href="https://scut-corgis.github.io/2025-08-24-redis%E5%8D%95%E5%85%83%E5%8C%96/">
+    <link itemprop="mainEntityOfPage" href="https://scut-corgis.github.io/2025-09-23-k8s%E8%8A%82%E7%82%B9%E8%B0%83%E5%BA%A6%E7%AE%97%E6%B3%95%E7%A0%94%E7%A9%B6.md/k8s%E8%8A%82%E7%82%B9%E8%B0%83%E5%BA%A6%E7%AE%97%E6%B3%95%E7%A0%94%E7%A9%B6/">
 
     <span hidden itemprop="author" itemscope itemtype="http://schema.org/Person">
       <meta itemprop="image" content="/images/corgis.jpg">
@@ -177,7 +177,7 @@
     </span>
       <header class="post-header">
         <h2 class="post-title" itemprop="name headline">
-          <a href="/2025-08-24-redis%E5%8D%95%E5%85%83%E5%8C%96/" class="post-title-link" itemprop="url">redis单元化</a>
+          <a href="/2025-09-23-k8s%E8%8A%82%E7%82%B9%E8%B0%83%E5%BA%A6%E7%AE%97%E6%B3%95%E7%A0%94%E7%A9%B6.md/k8s%E8%8A%82%E7%82%B9%E8%B0%83%E5%BA%A6%E7%AE%97%E6%B3%95%E7%A0%94%E7%A9%B6/" class="post-title-link" itemprop="url">k8s节点调度算法研究</a>
         </h2>
 
         <div class="post-meta-container">
@@ -188,7 +188,7 @@
       </span>
       <span class="post-meta-item-text">发表于</span>
 
-      <time title="创建时间：2025-08-24 17:30:52" itemprop="dateCreated datePublished" datetime="2025-08-24T17:30:52+08:00">2025-08-24</time>
+      <time title="创建时间：2025-09-23 11:55:05" itemprop="dateCreated datePublished" datetime="2025-09-23T11:55:05+08:00">2025-09-23</time>
     </span>
     <span class="post-meta-item">
       <span class="post-meta-item-icon">
@@ -196,7 +196,7 @@
       </span>
       <span class="post-meta-item-text">分类于</span>
         <span itemprop="about" itemscope itemtype="http://schema.org/Thing">
-          <a href="/categories/redis/" itemprop="url" rel="index"><span itemprop="name">redis</span></a>
+          <a href="/categories/%E6%95%B0%E6%8D%AE%E5%BA%93%E7%AE%A1%E6%8E%A7/" itemprop="url" rel="index"><span itemprop="name">数据库管控</span></a>
         </span>
     </span>
 
@@ -210,75 +210,143 @@
     
     
     <div class="post-body" itemprop="articleBody">
-          <h1 id="背景"><a href="#背景" class="headerlink" title="背景"></a>背景</h1><p>单元化：指异地多活，比如两个相离很远的大区域，如北京与深圳两个副本，是两份相同的数据，业务上层保证指对自己本地的数据做写操作，可以读其他地数据。</p>
-<p>单元化主要有两个优势</p>
+          <h1 id="背景"><a href="#背景" class="headerlink" title="背景"></a>背景</h1><p>当前的运维平台节点选机器算法比较简陋，如cpu、内存够用的情况下选内存最小的，过滤算法也比较粗暴，只考虑内存、cpu和实例节点数小于某个阈值。最终造成了较大的资源浪费和不均衡，也经常选不出机器。</p>
+<p>当前目标是优化当前的总体机器资源利用率，防止选不出机器部署节点。</p>
+<p>本文调研了节点scheduler算法，或者称为装箱算法，需要找出一种适合我们管控平台的装箱算法，用于优化资源利用率。</p>
+<p>总的来说，主要参考k8s的思想，装箱算法可以简化为两个阶段，即filter和score。对于filter来说，相对简单很多，即过滤掉无法使用的机器，这里无需调研业界做法，按自身情况定义即可。</p>
+<p>通过filter阶段的机器，我们认为都是可以使用的机器，那么需要对这批机器做score打分，最终分数最高的机器选出。</p>
+<h1 id="filter"><a href="#filter" class="headerlink" title="filter"></a>filter</h1><p>暂不叙述，后续用自己的方法</p>
 <ul>
-<li>异地多活</li>
-<li>读写本地单元时，时延低。按常规的主从复制做的话，读写一个异地的idc时延会很高。</li>
+<li>机器cpu阈值</li>
+<li>机器内存阈值</li>
+<li>机器网卡阈值</li>
+<li>端口号不重复</li>
+<li>maxmemory的和小于总内存的百分比</li>
+<li>同集群的master在某个机器上的个数小于总master个数的百分比</li>
+<li>昨天一天的最高点参考等。</li>
 </ul>
-<p>本文不详细讨论单元化的优势、理念，主要讲解一种redis单元化的实现思路。</p>
-<p>方案总体如下</p>
-<ol>
-<li>通过一个<strong>同步工具</strong>将两个redis<strong>主节点</strong>构成一条单元化链接，该同步工具可以单向或双向的同步两者的写操作。</li>
-<li>将对端单元传过来的数据加上单元信息（如单元归属），本单元不允许对其他单元的key做任何的写操作（比如淘汰、过期本单元均不操作）。</li>
-</ol>
-<p><img src="/2025-08-24-redis%E5%8D%95%E5%85%83%E5%8C%96/%E5%8D%95%E5%85%83%E5%8C%96%E6%9E%B6%E6%9E%84.drawio.svg"></p>
-<h1 id="同步工具行为"><a href="#同步工具行为" class="headerlink" title="同步工具行为"></a>同步工具行为</h1><blockquote>
-<p>下文称单元1的redis-server为r1，同理单元2的为r2。以r1为源，r2为目标的情况下讲解。</p>
+<h1 id="score"><a href="#score" class="headerlink" title="score"></a>score</h1><h2 id="最小资源利用率-资源比例均衡-default"><a href="#最小资源利用率-资源比例均衡-default" class="headerlink" title="最小资源利用率&amp;资源比例均衡 (default)"></a>最小资源利用率&amp;资源比例均衡 (default)</h2><p>该算法插件是k8s提供的<strong>默认方法</strong>，其中最小资源利用率和资源比例均衡的权重相同。</p>
+<blockquote>
+<p>直接阅读的源码<code>/kubernetes/pkg/scheduler/framework/plugins/noderesources</code>。</p>
 </blockquote>
-<h2 id="理念"><a href="#理念" class="headerlink" title="理念"></a>理念</h2><p>首先redis引入单元化同步的进度结构，相当于在常规的repl_offset增加了一个单元化的unit_repl_offset。</p>
-<p>同步工具在配置文件中配置好两个单元的同步节点，规定好一条同步链路，比如源节点和目标节点的信息。</p>
-<p>同步工具有一个设计理念： 一条命令永远不会经过同步工具两次以防止命令回环。<br>其通过以下方法实现</p>
-<ol>
-<li>每一个真实命令通过其前，会先追加一条自定义的<code>unit_xx</code>命令，该命令被规定为写命令</li>
-<li>因此回环时，会先收到<code>UNIT_SYNC_BINLOG</code>命令，那么意味着后续跟着的真实命令是回环命令，可以直接丢弃不予通过。</li>
-</ol>
-<p>这里说一个重要思想，针对同步缓存区：</p>
+<p>强调一点，k8s默认只使用内存和cpu作为score的参考资源resources。若要加入gpu、rdma等资源，是需要用户自定义的。</p>
+<p>该算法只使用了两个采集参数</p>
 <ul>
-<li>每个节点记录好自身的单元化的repl_id和offset（新数据结构），主要用于重连时让同步工具能获取到，该节点<strong>单元化的同步位点</strong>。</li>
-<li>对于一个单一节点而言，单元化写操作的binlog和一般的命令产生的binlog是共用缓冲区的，同样共用repl_id和offset（redis原生结构）。所以当收到一个psync repl_id offset命令时（无论是否为单元化），实际上都是将backup_log中的该offset之后的数据发给对端。</li>
+<li>资源的可分配值<code>allocatable</code>，该值是静态值，在机器启动时则保持固定。比如内存资源可定义为<code>内存总量</code>*0.9。</li>
+<li>当前总的申请值<code>requested</code>，定义为已经绑定的所有节点累积的已经<strong>申请的</strong>资源总和，注意既包括了已经部署的节点也包含假定绑定的节点。该值在多节点选机器时是动态变化的。</li>
 </ul>
-<p><img src="/2025-08-24-redis%E5%8D%95%E5%85%83%E5%8C%96/%E8%AF%B7%E6%B1%82%E5%90%8C%E6%AD%A5.drawio.svg"></p>
-<h2 id="开始同步"><a href="#开始同步" class="headerlink" title="开始同步"></a>开始同步</h2><ol>
-<li>同步工具向r2发起连接，通过自定义命令<code>UNIT_SYNC_NEW_SESSION</code>，参数为源单元名与同步链路名，以及此次session的id字符串。</li>
-<li>可以从r2收包拿到其单元化的repl_id和offset，后续用于向r1发起同步用</li>
-<li>建立与r1的连接，发起<code>unit_psync</code>命令附带刚获取的<code>repl_id</code>和<code>offset</code>。这里可以将其理解为psync2命令。</li>
-<li>r1收到该同步请求时，判断backup_log是否还存在该offset（和redis常规情况一致），其走增量返回<code>CONTINUE</code>还是全量返回<code>FULLRESYNC</code>，以全量举例，r1顺带返回了<code>new_repl_id</code>和<code>new_offset</code></li>
-<li>同步工具开始获取和解析rdb。这里详细阐述一下</li>
-</ol>
-<p>每一个rdb的key-value对，会把他做成一个<code>multi exec</code>命令，一共附带3条命令</p>
+<p>值得注意，<code>requested</code>在k8s的场景下很容易计算出来，因为每个pod会声明自己需要的内存和cpu。但是在当前运维平台场景，我们无法预先知道每个redis节点或者proxy节点到底需要多少cpu。假如按单核来算，或者直接按maxmemory来算，可能会有很大的分配误差。</p>
+<p>因此若需要使用该方案，建议把<code>requested</code>当成机器已经占用的资源，加上分配过程中已绑定节点预估的资源值。</p>
+<h3 id="最小资源利用率"><a href="#最小资源利用率" class="headerlink" title="最小资源利用率"></a>最小资源利用率</h3><p>公式如下，注意默认cpuWeight和memoryWeight均为1。</p>
+<p>意义为选出资源利用率最低的机器。</p>
+<figure class="highlight c"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">score = (cpu((allocatable-requested)*<span class="number">100</span>*cpuWeight/allocatable) + memory((allocatable-requested)*<span class="number">100</span>*memoryWeight/allocatable) + ...)/weightSum</span><br></pre></td></tr></table></figure>
+<h3 id="资源比例均衡"><a href="#资源比例均衡" class="headerlink" title="资源比例均衡"></a>资源比例均衡</h3><p>公式为</p>
+<p>意义为选出各资源利用率标准差最小的</p>
+<figure class="highlight c"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br></pre></td><td class="code"><pre><span class="line">fraction = requested/allocable</span><br><span class="line">mean = Σ(fraction(i))/len(fractions)</span><br><span class="line"><span class="built_in">std</span> = <span class="built_in">sqrt</span>( Σ((fraction(i)-mean)^<span class="number">2</span>)/len(fractions) )</span><br><span class="line">score = (<span class="number">1</span> - <span class="built_in">std</span>) * <span class="number">100</span></span><br><span class="line"></span><br><span class="line">当只有两种资源时</span><br><span class="line"><span class="built_in">std</span> = math.Abs((fraction[<span class="number">0</span>] - fraction[<span class="number">1</span>]) / <span class="number">2</span>)</span><br></pre></td></tr></table></figure>
+
+<h3 id="举例说明"><a href="#举例说明" class="headerlink" title="举例说明"></a>举例说明</h3><p>此时有3台机器</p>
 <ul>
-<li><code>UNIT_SYNC_BINLOG</code>，附带session_id、binlog_seq（恒递增）、repl_id、offset、源单元名和同步链路名。注意在全量同步解析rdb时，repl_id和offset可以置为初始值，因为不关心。</li>
-<li><code>UNIT_SYNC_PRE_RESTORE</code> + <code>key</code>，告知对端即将<code>RESTORE</code></li>
-<li><code>RESTORE</code> + 命令参数<code>REPLACE</code>和<code>ABSTTL</code>。</li>
+<li>总cpu和内存均为64核心、64G</li>
+<li>已分配cpu分别为50核、30核、10核心</li>
+<li>已分配内存分别为10G、30G、50G</li>
 </ul>
-<p>同步工具会将所有拿到的binlog都存在本地文件里，即内存中不会放无限递增的binlog请求，到了一定程度便持久化到本地文件中。</p>
-<ol start="6">
-<li>最终在rdb所有命令解析为binlog后增加一条<code>UNIT_SYNC_BINLOG</code>，附带真正的<code>repl_id</code>和<code>repl_offset</code>，用于告知对端其同步位点。</li>
+<p>我们需要依次分配2个节点，其信息分配为</p>
+<ul>
+<li>2核10G</li>
+<li>5核5G</li>
+</ul>
+<h4 id="分配第一个节点"><a href="#分配第一个节点" class="headerlink" title="分配第一个节点"></a>分配第一个节点</h4><p>当分配第一个节点2核心10G时，分数计算如下</p>
+<p>3台机器的最小资源利用率得分</p>
+<ul>
+<li>(（64-50-2）* 100 &#x2F; 64 +（64-10-10）* 100&#x2F;64）&#x2F;2 &#x3D; 43.75分</li>
+<li>(（64-30-2）* 100 &#x2F; 64 +（64-30-10）* 100&#x2F;64）&#x2F;2 &#x3D; 43.75分</li>
+<li>(（64-10-2）* 100 &#x2F; 64 +（64-50-10）* 100&#x2F;64）&#x2F;2 &#x3D; 43.75分</li>
+</ul>
+<p>3台机器的资源比例均衡得分</p>
+<ul>
+<li>(1-abs(((2+50)&#x2F;64 - (10+10)&#x2F;64)&#x2F;2)) * 100 &#x3D; 75分</li>
+<li>(1-abs(((2+30)&#x2F;64 - (10+30)&#x2F;64)&#x2F;2)) * 100 &#x3D; 93.75分</li>
+<li>(1-abs(((2+10)&#x2F;64 - (10+50)&#x2F;64)&#x2F;2)) * 100 &#x3D; 25分</li>
+</ul>
+<p>因此我们选出第二台机器。</p>
+<h4 id="分配第二个节点"><a href="#分配第二个节点" class="headerlink" title="分配第二个节点"></a>分配第二个节点</h4><p>当分配第一个节点5核心5G时，分数计算如下，注意此时第三台机器已经分配了一个节点</p>
+<p>3台机器的最小资源利用率得分</p>
+<ul>
+<li>(（64-50-5）* 100 &#x2F; 64 +（64-10-5）* 100&#x2F;64）&#x2F;2 &#x3D; 45.3分</li>
+<li>(（64-30-2-5）* 100 &#x2F; 64 +（64-30-10-5）* 100&#x2F;64）&#x2F;2 &#x3D; 35.9分</li>
+<li>(（64-10-5）* 100 &#x2F; 64 +（64-50-5）* 100&#x2F;64）&#x2F;2 &#x3D; 45.3分</li>
+</ul>
+<p>3台机器的资源比例均衡得分</p>
+<ul>
+<li>(1-abs(((5+50)&#x2F;64 - (5+10)&#x2F;64)&#x2F;2)) * 100 &#x3D; 68.75分</li>
+<li>(1-abs(((2+5+30)&#x2F;64 - (10+5+30)&#x2F;64)&#x2F;2)) * 100 &#x3D; 93.75分</li>
+<li>(1-abs(((5+10)&#x2F;64 - (5+50)&#x2F;64)&#x2F;2)) * 100 &#x3D; 68.75分</li>
+</ul>
+<p>因此第二个节点选中第二台机器。</p>
+<h2 id="Trimaran-目标资源利用率-负载风险均衡"><a href="#Trimaran-目标资源利用率-负载风险均衡" class="headerlink" title="Trimaran-目标资源利用率&amp;负载风险均衡"></a>Trimaran-目标资源利用率&amp;负载风险均衡</h2><p>该方法是另一个笔者认为很棒的策略，在阅读完后，我觉得其比默认策略更容易直观的或者用数据评估收益，其主要使用的是机器在滑动时间窗口内的资源利用率和方差来做抉择。</p>
+<p>该时间窗口大小以我们线上的情况，我认为可以暂定义为1小时。</p>
+<p>该策略跟默认策略类似，一共有两个相同权重的插件相辅相成。</p>
+<ul>
+<li>目标资源利用率：即定义一个资源利用率百分比<code>X%</code>，该打分算法会将大于该百分比的机器的分数降的很低，而小于该百分比的机器会优先选出离该百分比最近的机器。</li>
+<li>负载风险均衡：该策略用于多种资源，其会计算出机器部署目标节点后的各资源利用率，取最小利用率的资源作为分数。即短板效应，短板越明显的机器越不会选出来，其本质上是防范风险，而<strong>不是跟默认策略一样使机器的各资源利用率平衡</strong>。</li>
+</ul>
+<p>但假设我们只考虑两种资源打分，按笔者线上情况建议使用内存资源利用率作为目标，如设置<code>X=50%</code>，那么累加<code>负载风险均衡</code>插件的分数实际上也不容易选出cpu太高的机器。</p>
+<h3 id="目标资源利用率"><a href="#目标资源利用率" class="headerlink" title="目标资源利用率"></a>目标资源利用率</h3><h4 id="算法"><a href="#算法" class="headerlink" title="算法"></a>算法</h4><ol>
+<li>获取待评分当前机器的利用率，记为 A。</li>
+<li>计算当前 待调度节点 的 单资源 总请求量与开销，记为 B。</li>
+<li>计算将该 节点 调度到该机器后的预期利用率（即 U &#x3D; A + B，通过叠加得出）。</li>
+<li>若 U ≤ X%，则返回评分：(100 - X)×U&#x2F;X + X</li>
+<li>若 X% &lt;U ≤ 100%，则返回评分：X×(100 - U)&#x2F;(100 - X)</li>
+<li>若 U &gt; 100%，则返回评分：0</li>
 </ol>
-<h2 id="同步稳态"><a href="#同步稳态" class="headerlink" title="同步稳态"></a>同步稳态</h2><p>稳态即同步工具和r1已经开始稳定的增量同步，同步工具收到包后将其持久化到本地文件里，并定期回复<code>REPLCONF ACK offset</code>。</p>
-<p>同步工具持续的从本地文件中拉取multi命令包装的binlog发送给r2，相当于自己就是一个业务写入方。通过r2的回复，来裁剪本地文件的binlog数据。</p>
-<p>跟R1的稳态交互为：</p>
+<h4 id="示例"><a href="#示例" class="headerlink" title="示例"></a>示例</h4><p>假设有 3 个节点 X、Y、Z，每个节点均为 4 核，当前利用率分别为 1 核、2 核、3 核。为简化计算，假设待调度 Pod 的 CPU 请求量与开销均为 0 核，目标利用率 X &#x3D; 50%。</p>
+<p>各节点利用率计算</p>
+<figure class="highlight shell"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br></pre></td><td class="code"><pre><span class="line">Ux → (1/4)×100 = 25%</span><br><span class="line">Uy → (2/4)×100 = 50%</span><br><span class="line">Uz → (3/4)×100 = 75%</span><br></pre></td></tr></table></figure>
+<p>各节点评分计算</p>
+<figure class="highlight sh"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br></pre></td><td class="code"><pre><span class="line">X 节点 → (100 - 50)×25/50 + 50 = 75 分</span><br><span class="line">Y 节点 → (100 - 50)×50/50 + 50 = 100 分</span><br><span class="line">Z 节点 → 50×(100 - 75)/(100 - 50) = 25 分</span><br></pre></td></tr></table></figure>
+<p>在上述算法中，50% 是我们希望所有节点达到的目标利用率。若希望降低调度激进程度，可将其下调至 40%，从而大幅降低在负载峰值或意外负载下利用率超过 50% 的可能性。因此，实践中若要实现 X% 的利用率目标，建议将配置值设为 X-10。</p>
+<p>利用率阈值 X% 可配置。</p>
+<h4 id="算法分析"><a href="#算法分析" class="headerlink" title="算法分析"></a>算法分析</h4><p><img src="/tlp-graph.png"></p>
+<p>上述图像为算法中所述分段函数的可视化呈现(X&#x3D;50)，从中可得出以下几点关键结论：</p>
 <ol>
-<li>同步工具持续解析从r1收命令，如果是<code>unit</code>命令，只更新offset，不持久化到文件。否则包装成<code>MULTI</code>命令附带<code>unit</code>命令，持久化到文件中。</li>
-<li>每一秒回复r1一次<code>REPLCONF ACK offset</code>。</li>
+<li>当利用率从 0 升至 50% 时，我们会优先选择这些节点进行 Pod 的打包调度。</li>
+<li>当利用率超过 50% 后，节点会受到线性惩罚，以此避免 Pod 过度集中在这些 “高负载节点” 上。</li>
+<li>正斜率从 50 分（而非 0 分）开始，原因在于评分范围为 0-100 分：我们希望让优先选择的节点得分最大化，使其评分更具分量，从而降低其他插件对该调度结果的干扰。</li>
+<li>由于上述 “惩罚机制” 的存在，图表中出现断点，对应评分会产生大幅下降</li>
 </ol>
-<p>跟R2的稳态交互为：</p>
-<ol>
-<li>持续的从文件中取出之前持久化的<code>cmds</code>，如果db文件里没有，则检查binlog_buf中有没有，将这些发送给r2，将已经发送的未收到回复的请求f附带seq记录在队列<code>binlog_info_q</code>里。</li>
-<li>持续的从r2收回复包，每收到一个命令的回复，删除<code>binlog_info_q</code>这里面的这条记录，推进队列的总进度。</li>
-<li>每一段时间根据<code>binlog_info_q</code>记录的进度，删除db文件中的对方已经收到的命令。</li>
+<p>后续调研发现：这个目标资源利用率其实效果不好，因为我们很多时候没法定义出目标资源利用率X%，比如增加机器或减少机器都会使这个抖动。</p>
+<h3 id="负载风险均衡"><a href="#负载风险均衡" class="headerlink" title="负载风险均衡"></a>负载风险均衡</h3><h4 id="算法-1"><a href="#算法-1" class="headerlink" title="算法"></a>算法</h4><ol>
+<li>获取待调度Pod的资源请求量，记为(r)。  </li>
+<li>获取待评分当前节点所有资源类型（CPU、内存、存储等）的资源利用率占比（范围0至1）的滑动窗口平均值(M)和标准差(V)。  </li>
+<li>计算当前节点每种资源类型的得分：<br>[<br>S_i &#x3D; M + r + V<br>]  </li>
+<li>对每种资源的得分进行处理，将其限制在[0,1]范围内：<br>[<br>S_i &#x3D; min(S_i, 1.0)<br>]  </li>
+<li>计算每种资源的节点优先级得分：<br>[<br>U_i &#x3D; (1 - S_i) x 100<br>]  </li>
+<li>计算最终节点得分：<br>[<br>U &#x3D; min(U_i)<br>]</li>
 </ol>
-<h1 id="redis-server行为"><a href="#redis-server行为" class="headerlink" title="redis-server行为"></a>redis-server行为</h1><h2 id="自定义命令与处理"><a href="#自定义命令与处理" class="headerlink" title="自定义命令与处理"></a>自定义命令与处理</h2><h3 id="UNIT-SYNC-NEW-SESSION"><a href="#UNIT-SYNC-NEW-SESSION" class="headerlink" title="UNIT_SYNC_NEW_SESSION"></a>UNIT_SYNC_NEW_SESSION</h3><figure class="highlight c"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br></pre></td><td class="code"><pre><span class="line">cmd = <span class="string">&quot;KUNIT_SYNC_NEW_SESSION&quot;</span>,</span><br><span class="line">    <span class="comment">/*</span></span><br><span class="line"><span class="comment">    req:</span></span><br><span class="line"><span class="comment">        KUNIT_SYNC_NEW_SESSION &lt;UNIT_NAME&gt; &lt;RL_NAME&gt; &lt;SID&gt;</span></span><br><span class="line"><span class="comment">    rsp:</span></span><br><span class="line"><span class="comment">        [</span></span><br><span class="line"><span class="comment">            &lt;REPL_ID&gt;</span></span><br><span class="line"><span class="comment">            &lt;OFFSET&gt;</span></span><br><span class="line"><span class="comment">        ]</span></span><br><span class="line"><span class="comment">    */</span></span><br></pre></td></tr></table></figure>
-<p>这个命令主要是同步工具启动初始化时，获取r2的过往同步进度的。比如tcp重连。通过这个命令可以拿到当前同步链路的repl_id和offset。</p>
-<h3 id="UNIT-SYNC-BINLOG"><a href="#UNIT-SYNC-BINLOG" class="headerlink" title="UNIT_SYNC_BINLOG"></a>UNIT_SYNC_BINLOG</h3><figure class="highlight c"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br></pre></td><td class="code"><pre><span class="line">cmd = <span class="string">&quot;KUNIT_SYNC_BINLOG&quot;</span>,</span><br><span class="line">    <span class="comment">/*</span></span><br><span class="line"><span class="comment">    req:</span></span><br><span class="line"><span class="comment">        MULTI</span></span><br><span class="line"><span class="comment">        KUNIT_SYNC_BINLOG &lt;SID&gt; &lt;BINLOG_SEQ_STR&gt; &lt;REPL_ID&gt; &lt;OFFSET_OF_CMD_END&gt; &lt;UNIT_NAME&gt;</span></span><br><span class="line"><span class="comment">        &lt;CMD_ARGS&gt;...</span></span><br><span class="line"><span class="comment">        ...</span></span><br><span class="line"><span class="comment">        EXEC</span></span><br><span class="line"><span class="comment">    rsp:</span></span><br><span class="line"><span class="comment">        +OK</span></span><br><span class="line"><span class="comment">        +QUEUED</span></span><br><span class="line"><span class="comment">        +QUEUED</span></span><br><span class="line"><span class="comment">        ...</span></span><br><span class="line"><span class="comment">        &lt;rsp of `EXEC`&gt;</span></span><br><span class="line"><span class="comment">    */</span></span><br></pre></td></tr></table></figure>
-<p>通过这个命令更新r2的session中的offset。并设置好接下来的命令的key的单元归属信息，以及该命令表明为单元化同步的命令。</p>
-<h3 id="UNIT-SYNC-PRE-RESTORE"><a href="#UNIT-SYNC-PRE-RESTORE" class="headerlink" title="UNIT_SYNC_PRE_RESTORE"></a>UNIT_SYNC_PRE_RESTORE</h3><figure class="highlight c"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br></pre></td><td class="code"><pre><span class="line">cmd = <span class="string">&quot;KUNIT_SYNC_PRE_RESTORE&quot;</span>,</span><br><span class="line">    <span class="comment">/*</span></span><br><span class="line"><span class="comment">    req:</span></span><br><span class="line"><span class="comment">        MULTI</span></span><br><span class="line"><span class="comment">        &lt;KUNIT_SYNC_BINLOG CMD&gt;</span></span><br><span class="line"><span class="comment">        KUNIT_SYNC_PRE_RESTORE &lt;KEY&gt;</span></span><br><span class="line"><span class="comment">        &lt;RESTORE_CMD&gt;</span></span><br><span class="line"><span class="comment">        EXEC</span></span><br><span class="line"><span class="comment">    rsp:</span></span><br><span class="line"><span class="comment">        +OK</span></span><br><span class="line"><span class="comment">        +QUEUED</span></span><br><span class="line"><span class="comment">        +QUEUED</span></span><br><span class="line"><span class="comment">        +QUEUED</span></span><br><span class="line"><span class="comment">        &lt;rsp of `EXEC`&gt;</span></span><br><span class="line"><span class="comment">    */</span></span><br></pre></td></tr></table></figure>
-<p>这条命令用于在restore key之前做校验，必须处于上面binlog命令的事务中。比如一次全量同步时，r1发过来的key的单元归属信息会指定为r1，但实际上有可能是r2的数据。</p>
-<p>那么r2可以通过这个命令检查key的单元归属信息拦截掉相应的写请求。</p>
-<h2 id="实际写命令处理"><a href="#实际写命令处理" class="headerlink" title="实际写命令处理"></a>实际写命令处理</h2><p>对于一般的写命令，我们将单元归属信息都置为<code>unit_id=0</code>，表明该key属于本单元。</p>
-<p>而单元化的写命令，都是在<code>MULTI</code>中，在<code>EXEC</code>执行前，清空当前所有的预置的单元归属信息。然后依次执行，在执行到<code>UNIT_SYNC_BINLOG</code>时，设置到接下来的key的单元归属信息。</p>
-<p>之后在dbAdd时，把这个object-val的单元归属信息加上即可。</p>
+<h4 id="示例-1"><a href="#示例-1" class="headerlink" title="示例"></a>示例</h4><p>假设存在3个机器N1、N2、N3，待调度节点的CPU请求量为500毫核，内存请求量为1GB。所有节点的容量均为4核CPU和8GB内存。  </p>
+<p>可计算得出节点的资源请求占比为：<br>(r_{cpu} &#x3D; 1&#x2F;8)，(r_{memory} &#x3D; 1&#x2F;8)。  </p>
+<p>（注：CPU请求占比计算：500毫核&#x3D;0.5核，0.5核÷4核&#x3D;1&#x2F;8；内存请求占比计算：1GB÷8GB&#x3D;1&#x2F;8）</p>
+<blockquote>
+<p>注意下面的图，因为用k8s的概念画的，请把pod理解为我们上文一直说的节点，node理解为机器</p>
+</blockquote>
+<p><img src="/image6.png"></p>
+<p>按照步骤2～4，可以算出各资源利用率的平均值和标准差见下表</p>
+<p><img src="/image9.png"></p>
+<p>按照步骤5～6，可以算出每个机器的得分如下：</p>
+<p><img src="/image1.png"></p>
+<p>因此选出机器3。</p>
+<h1 id="后续"><a href="#后续" class="headerlink" title="后续"></a>后续</h1><p>后续我们上面的算法全都试了试，核心算法都没有采用，因为跑出来的结果很难表现出是优越于当前的。</p>
+<p>我们最后采用的算法是，高权重的全局方差最小 + 低权重Trimaran算法。</p>
+<p>全局方差最小即：把节点放进机器后，计算某个指标的全局方差，最后全局最小方差的对应机器为结果。</p>
+<p>跑出来绘图效果很明显，绝大多数的机器在分配一轮后都集中在了均值处。</p>
+<h1 id="参考文献"><a href="#参考文献" class="headerlink" title="参考文献"></a>参考文献</h1><ul>
+<li>k8s源码，默认scheduler插件，即目录<code>pkg/scheduler/framework/noderesources</code></li>
+<li>k8s源码，每种计算参数的来源，目录<code>/kubernetes/pkg/scheduler/framework/types.go</code></li>
+<li>k8s官方文档1，介绍scheduler插件用法 <a target="_blank" rel="noopener" href="https://kubernetes.io/docs/reference/scheduling/config/">https://kubernetes.io/docs/reference/scheduling/config/</a></li>
+<li>k8s官方文档2，教开发者如何自定义自己的插件 <a target="_blank" rel="noopener" href="https://github.com/kubernetes/community/blob/master/contributors/devel/sig-scheduling/scheduler_framework_plugins.md">https://github.com/kubernetes/community/blob/master/contributors/devel/sig-scheduling/scheduler_framework_plugins.md</a></li>
+<li>k8s-sig代码仓库，给出了一系列业界比较好的自定义插件 <a target="_blank" rel="noopener" href="https://github.com/kubernetes-sigs/scheduler-plugins">https://github.com/kubernetes-sigs/scheduler-plugins</a></li>
+<li>trimaran算法 <a target="_blank" rel="noopener" href="https://github.com/kubernetes-sigs/scheduler-plugins/blob/master/kep/61-Trimaran-real-load-aware-scheduling/README.md">https://github.com/kubernetes-sigs/scheduler-plugins/blob/master/kep/61-Trimaran-real-load-aware-scheduling/README.md</a></li>
+</ul>
 
       
     </div>
@@ -298,7 +366,7 @@
 
 
   <nav class="pagination">
-    <a class="extend prev" rel="prev" title="上一页" aria-label="上一页" href="/page/10/"><i class="fa fa-angle-left"></i></a><a class="page-number" href="/">1</a><span class="space">&hellip;</span><a class="page-number" href="/page/10/">10</a><span class="page-number current">11</span><a class="page-number" href="/page/12/">12</a><span class="space">&hellip;</span><a class="page-number" href="/page/39/">39</a><a class="extend next" rel="next" title="下一页" aria-label="下一页" href="/page/12/"><i class="fa fa-angle-right"></i></a>
+    <a class="extend prev" rel="prev" title="上一页" aria-label="上一页" href="/page/10/"><i class="fa fa-angle-left"></i></a><a class="page-number" href="/">1</a><span class="space">&hellip;</span><a class="page-number" href="/page/10/">10</a><span class="page-number current">11</span><a class="page-number" href="/page/12/">12</a><span class="space">&hellip;</span><a class="page-number" href="/page/42/">42</a><a class="extend next" rel="next" title="下一页" aria-label="下一页" href="/page/12/"><i class="fa fa-angle-right"></i></a>
   </nav>
 
 </div>
@@ -309,7 +377,7 @@
 
   <div class="copyright">
     &copy; 
-    <span itemprop="copyrightYear">2025</span>
+    <span itemprop="copyrightYear">2026</span>
     <span class="with-love">
       <i class="fa fa-heart"></i>
     </span>

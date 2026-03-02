@@ -29,7 +29,7 @@
 <meta property="og:image" content="https://scut-corgis.github.io/2025-08-24-redis%E5%8D%95%E5%85%83%E5%8C%96/%E5%8D%95%E5%85%83%E5%8C%96%E6%9E%B6%E6%9E%84.drawio.svg">
 <meta property="og:image" content="https://scut-corgis.github.io/2025-08-24-redis%E5%8D%95%E5%85%83%E5%8C%96/%E8%AF%B7%E6%B1%82%E5%90%8C%E6%AD%A5.drawio.svg">
 <meta property="article:published_time" content="2025-08-24T09:30:52.000Z">
-<meta property="article:modified_time" content="2025-12-12T09:41:42.468Z">
+<meta property="article:modified_time" content="2026-03-02T12:17:40.419Z">
 <meta property="article:author" content="Corgis">
 <meta name="twitter:card" content="summary">
 <meta name="twitter:image" content="https://scut-corgis.github.io/2025-08-24-redis%E5%8D%95%E5%85%83%E5%8C%96/%E5%8D%95%E5%85%83%E5%8C%96%E6%9E%B6%E6%9E%84.drawio.svg">
@@ -114,7 +114,7 @@
       <div class="sidebar-panel-container">
         <!--noindex-->
         <div class="post-toc-wrap sidebar-panel">
-            <div class="post-toc animated"><ol class="nav"><li class="nav-item nav-level-1"><a class="nav-link" href="#%E8%83%8C%E6%99%AF"><span class="nav-number">1.</span> <span class="nav-text">背景</span></a></li><li class="nav-item nav-level-1"><a class="nav-link" href="#%E5%90%8C%E6%AD%A5%E5%B7%A5%E5%85%B7%E8%A1%8C%E4%B8%BA"><span class="nav-number">2.</span> <span class="nav-text">同步工具行为</span></a><ol class="nav-child"><li class="nav-item nav-level-2"><a class="nav-link" href="#%E7%90%86%E5%BF%B5"><span class="nav-number">2.1.</span> <span class="nav-text">理念</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E5%BC%80%E5%A7%8B%E5%90%8C%E6%AD%A5"><span class="nav-number">2.2.</span> <span class="nav-text">开始同步</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E5%90%8C%E6%AD%A5%E7%A8%B3%E6%80%81"><span class="nav-number">2.3.</span> <span class="nav-text">同步稳态</span></a></li></ol></li><li class="nav-item nav-level-1"><a class="nav-link" href="#redis-server%E8%A1%8C%E4%B8%BA"><span class="nav-number">3.</span> <span class="nav-text">redis-server行为</span></a><ol class="nav-child"><li class="nav-item nav-level-2"><a class="nav-link" href="#%E8%87%AA%E5%AE%9A%E4%B9%89%E5%91%BD%E4%BB%A4%E4%B8%8E%E5%A4%84%E7%90%86"><span class="nav-number">3.1.</span> <span class="nav-text">自定义命令与处理</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#UNIT-SYNC-NEW-SESSION"><span class="nav-number">3.1.1.</span> <span class="nav-text">UNIT_SYNC_NEW_SESSION</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#UNIT-SYNC-BINLOG"><span class="nav-number">3.1.2.</span> <span class="nav-text">UNIT_SYNC_BINLOG</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#UNIT-SYNC-PRE-RESTORE"><span class="nav-number">3.1.3.</span> <span class="nav-text">UNIT_SYNC_PRE_RESTORE</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E5%AE%9E%E9%99%85%E5%86%99%E5%91%BD%E4%BB%A4%E5%A4%84%E7%90%86"><span class="nav-number">3.2.</span> <span class="nav-text">实际写命令处理</span></a></li></ol></li></ol></div>
+            <div class="post-toc animated"><ol class="nav"><li class="nav-item nav-level-1"><a class="nav-link" href="#%E8%83%8C%E6%99%AF"><span class="nav-number">1.</span> <span class="nav-text">背景</span></a></li><li class="nav-item nav-level-1"><a class="nav-link" href="#%E5%90%8C%E6%AD%A5%E5%B7%A5%E5%85%B7%E8%A1%8C%E4%B8%BA"><span class="nav-number">2.</span> <span class="nav-text">同步工具行为</span></a><ol class="nav-child"><li class="nav-item nav-level-2"><a class="nav-link" href="#%E7%90%86%E5%BF%B5"><span class="nav-number">2.1.</span> <span class="nav-text">理念</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E5%BC%80%E5%A7%8B%E5%90%8C%E6%AD%A5"><span class="nav-number">2.2.</span> <span class="nav-text">开始同步</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E5%90%8C%E6%AD%A5%E7%A8%B3%E6%80%81"><span class="nav-number">2.3.</span> <span class="nav-text">同步稳态</span></a></li></ol></li><li class="nav-item nav-level-1"><a class="nav-link" href="#redis-server%E8%A1%8C%E4%B8%BA"><span class="nav-number">3.</span> <span class="nav-text">redis-server行为</span></a><ol class="nav-child"><li class="nav-item nav-level-2"><a class="nav-link" href="#%E8%87%AA%E5%AE%9A%E4%B9%89%E5%91%BD%E4%BB%A4%E4%B8%8E%E5%A4%84%E7%90%86"><span class="nav-number">3.1.</span> <span class="nav-text">自定义命令与处理</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#UNIT-SYNC-NEW-SESSION"><span class="nav-number">3.1.1.</span> <span class="nav-text">UNIT_SYNC_NEW_SESSION</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#UNIT-SYNC-BINLOG"><span class="nav-number">3.1.2.</span> <span class="nav-text">UNIT_SYNC_BINLOG</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#UNIT-SYNC-PRE-RESTORE"><span class="nav-number">3.1.3.</span> <span class="nav-text">UNIT_SYNC_PRE_RESTORE</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E5%AE%9E%E9%99%85%E5%86%99%E5%91%BD%E4%BB%A4%E5%A4%84%E7%90%86"><span class="nav-number">3.2.</span> <span class="nav-text">实际写命令处理</span></a></li></ol></li><li class="nav-item nav-level-1"><a class="nav-link" href="#failover%E5%A4%84%E7%90%86"><span class="nav-number">4.</span> <span class="nav-text">failover处理</span></a><ol class="nav-child"><li class="nav-item nav-level-2"><a class="nav-link" href="#%E5%BD%93%E6%BA%90%E7%AB%AFmaster%E5%8F%91%E7%94%9F%E4%B8%BB%E4%BB%8E%E5%88%87%E6%8D%A2"><span class="nav-number">4.1.</span> <span class="nav-text">当源端master发生主从切换</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E5%BD%93%E7%9B%AE%E6%A0%87%E7%AB%AFmaster%E5%8F%91%E7%94%9F%E4%B8%BB%E4%BB%8E%E5%88%87%E6%8D%A2"><span class="nav-number">4.2.</span> <span class="nav-text">当目标端master发生主从切换</span></a></li></ol></li></ol></div>
         </div>
         <!--/noindex-->
 
@@ -129,13 +129,13 @@
   <nav class="site-state">
       <div class="site-state-item site-state-posts">
         <a href="/archives/">
-          <span class="site-state-item-count">39</span>
+          <span class="site-state-item-count">42</span>
           <span class="site-state-item-name">日志</span>
         </a>
       </div>
       <div class="site-state-item site-state-categories">
           <a href="/categories/">
-        <span class="site-state-item-count">14</span>
+        <span class="site-state-item-count">16</span>
         <span class="site-state-item-name">分类</span></a>
       </div>
   </nav>
@@ -247,7 +247,7 @@
 <p><img src="/2025-08-24-redis%E5%8D%95%E5%85%83%E5%8C%96/%E8%AF%B7%E6%B1%82%E5%90%8C%E6%AD%A5.drawio.svg"></p>
 <h2 id="开始同步"><a href="#开始同步" class="headerlink" title="开始同步"></a>开始同步</h2><ol>
 <li>同步工具向r2发起连接，通过自定义命令<code>UNIT_SYNC_NEW_SESSION</code>，参数为源单元名与同步链路名，以及此次session的id字符串。</li>
-<li>可以从r2收包拿到其单元化的repl_id和offset，后续用于向r1发起同步用</li>
+<li>可以从r2收包拿到其<strong>单元化的</strong>repl_id和offset，后续用于向r1发起同步用</li>
 <li>建立与r1的连接，发起<code>unit_psync</code>命令附带刚获取的<code>repl_id</code>和<code>offset</code>。这里可以将其理解为psync2命令。</li>
 <li>r1收到该同步请求时，判断backup_log是否还存在该offset（和redis常规情况一致），其走增量返回<code>CONTINUE</code>还是全量返回<code>FULLRESYNC</code>，以全量举例，r1顺带返回了<code>new_repl_id</code>和<code>new_offset</code></li>
 <li>同步工具开始获取和解析rdb。这里详细阐述一下</li>
@@ -285,6 +285,12 @@
 <h2 id="实际写命令处理"><a href="#实际写命令处理" class="headerlink" title="实际写命令处理"></a>实际写命令处理</h2><p>对于一般的写命令，我们将单元归属信息都置为<code>unit_id=0</code>，表明该key属于本单元。</p>
 <p>而单元化的写命令，都是在<code>MULTI</code>中，在<code>EXEC</code>执行前，清空当前所有的预置的单元归属信息。然后依次执行，在执行到<code>UNIT_SYNC_BINLOG</code>时，设置到接下来的key的单元归属信息。</p>
 <p>之后在dbAdd时，把这个object-val的单元归属信息加上即可。</p>
+<h1 id="failover处理"><a href="#failover处理" class="headerlink" title="failover处理"></a>failover处理</h1><p>同步工具本身实际上是无状态的，因此可以任意的更换，着重关心源端和目标端的主从切换逻辑。</p>
+<p>为了实现全自动的处理，同步工具同时监听了源端的sentinel，和目标端的sentinel，的+switch-master频道。</p>
+<h2 id="当源端master发生主从切换"><a href="#当源端master发生主从切换" class="headerlink" title="当源端master发生主从切换"></a>当源端master发生主从切换</h2><p>当源端的sentinel发出了+switch-master信息，告知源端出现了failover，同步工具将断开与源端的连接，并建立与源端新主（原slave）的连接。</p>
+<p>实际上跟redis逻辑类似，使用原先保存的repl_id和offset尝试构建psync，这里有可能会全量复制或者增量复制。在实践经验中基本都是增量复制，因为同步延迟一般很低，基本offset都是一致的。</p>
+<p>当主从切换时，redis内核会把原先的repl_id变为repl_id2，并生成新的repl_id，当psync连进来时，若判断可以增量复制时，redis新主会回复“+continue repl_id”，用来通知同步工具repl_id发生了改变，同步工具会更新自己的该参数。后续会用<code>KUNIT_SYNC_BINLOG</code>通知目标redis也更新该repl_id。</p>
+<h2 id="当目标端master发生主从切换"><a href="#当目标端master发生主从切换" class="headerlink" title="当目标端master发生主从切换"></a>当目标端master发生主从切换</h2><p>目标端的所有主从节点实际上都有本次单元同步链路的信息，包括单元同步链路的repl_id和offset等。同步工具只需要用<code>KUNIT_SYNC_NEW_SESSION</code>再拿一次同步位点，从头来一次即可。一般也都会是增量复制。</p>
 
     </div>
 
@@ -325,7 +331,7 @@
 
   <div class="copyright">
     &copy; 
-    <span itemprop="copyrightYear">2025</span>
+    <span itemprop="copyrightYear">2026</span>
     <span class="with-love">
       <i class="fa fa-heart"></i>
     </span>

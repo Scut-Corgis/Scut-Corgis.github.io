@@ -1,0 +1,343 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+<meta name="viewport" content="width=device-width">
+<meta name="theme-color" content="#222"><meta name="generator" content="Hexo 7.3.0">
+
+  <link rel="apple-touch-icon" sizes="180x180" href="/images/apple-touch-icon-next.png">
+  <link rel="icon" type="image/png" sizes="32x32" href="/images/corgis.jpg">
+  <link rel="icon" type="image/png" sizes="16x16" href="/images/corgis.jpg">
+  <link rel="mask-icon" href="/images/logo.svg" color="#222">
+
+<link rel="stylesheet" href="/css/main.css">
+
+
+
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.2/css/all.min.css" integrity="sha256-XOqroi11tY4EFQMR9ZYwZWKj5ZXiftSx36RRuC3anlA=" crossorigin="anonymous">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/animate.css/3.1.1/animate.min.css" integrity="sha256-PR7ttpcvz8qrF57fur/yAx1qXMFJeJFiA6pSzWi0OIE=" crossorigin="anonymous">
+
+<script class="next-config" data-name="main" type="application/json">{"hostname":"scut-corgis.github.io","root":"/","images":"/images","scheme":"Muse","darkmode":false,"version":"8.20.0","exturl":false,"sidebar":{"position":"left","width_expanded":320,"width_dual_column":240,"display":"always","padding":18,"offset":12},"hljswrap":true,"copycode":{"enable":true,"style":null},"fold":{"enable":true,"height":500},"bookmark":{"enable":false,"color":"#222","save":"auto"},"mediumzoom":false,"lazyload":false,"pangu":false,"comments":{"style":"tabs","active":null,"storage":true,"lazyload":false,"nav":null},"stickytabs":false,"motion":{"enable":true,"async":false,"transition":{"menu_item":"fadeInDown","post_block":"fadeIn","post_header":"fadeInDown","post_body":"fadeInDown","coll_header":"fadeInLeft","sidebar":"fadeInUp"}},"prism":false,"i18n":{"placeholder":"搜索...","empty":"没有找到任何搜索结果：${query}","hits_time":"找到 ${hits} 个搜索结果（用时 ${time} 毫秒）","hits":"找到 ${hits} 个搜索结果"}}</script><script src="/js/config.js"></script>
+
+    <meta name="description" content="背景首先架构是标准的，sentinel + proxy + redis，即哨兵作为HA组件监控redis的存活情况，proxy作为流量入口转发用户流量到指定的redis节点。 proxy实时监视sentinel，会订阅其+switch-master事件，一旦发现了该信号，proxy会直接切流到新节点中。 在以上的架构背景下，若没有一些特殊能力，redis迁移主节点又不影响用户请求是不可能实现的。一">
+<meta property="og:type" content="article">
+<meta property="og:title" content="redis无感迁移master">
+<meta property="og:url" content="https://scut-corgis.github.io/2026-01-22-redis%E6%97%A0%E6%84%9F%E8%BF%81%E7%A7%BBmaster/index.html">
+<meta property="og:site_name" content="corgis的笔记">
+<meta property="og:description" content="背景首先架构是标准的，sentinel + proxy + redis，即哨兵作为HA组件监控redis的存活情况，proxy作为流量入口转发用户流量到指定的redis节点。 proxy实时监视sentinel，会订阅其+switch-master事件，一旦发现了该信号，proxy会直接切流到新节点中。 在以上的架构背景下，若没有一些特殊能力，redis迁移主节点又不影响用户请求是不可能实现的。一">
+<meta property="og:locale" content="zh_CN">
+<meta property="og:image" content="https://scut-corgis.github.io/2026-01-22-redis%E6%97%A0%E6%84%9F%E8%BF%81%E7%A7%BBmaster/%E8%BF%81%E7%A7%BB%E7%A4%BA%E6%84%8F%E5%9B%BE.png">
+<meta property="article:published_time" content="2026-01-22T13:17:05.000Z">
+<meta property="article:modified_time" content="2026-03-02T12:17:40.421Z">
+<meta property="article:author" content="Corgis">
+<meta name="twitter:card" content="summary">
+<meta name="twitter:image" content="https://scut-corgis.github.io/2026-01-22-redis%E6%97%A0%E6%84%9F%E8%BF%81%E7%A7%BBmaster/%E8%BF%81%E7%A7%BB%E7%A4%BA%E6%84%8F%E5%9B%BE.png">
+
+
+<link rel="canonical" href="https://scut-corgis.github.io/2026-01-22-redis%E6%97%A0%E6%84%9F%E8%BF%81%E7%A7%BBmaster/">
+
+
+
+<script class="next-config" data-name="page" type="application/json">{"sidebar":"","isHome":false,"isPost":true,"lang":"zh-CN","comments":true,"permalink":"https://scut-corgis.github.io/2026-01-22-redis%E6%97%A0%E6%84%9F%E8%BF%81%E7%A7%BBmaster/","path":"2026-01-22-redis无感迁移master/","title":"redis无感迁移master"}</script>
+
+<script class="next-config" data-name="calendar" type="application/json">""</script>
+<title>redis无感迁移master | corgis的笔记</title>
+  
+
+
+
+
+
+
+
+
+  <noscript>
+    <link rel="stylesheet" href="/css/noscript.css">
+  </noscript>
+</head>
+
+<body itemscope itemtype="http://schema.org/WebPage" class="use-motion">
+  <div class="headband"></div>
+
+  <main class="main">
+    <div class="column">
+      <header class="header" itemscope itemtype="http://schema.org/WPHeader"><div class="site-brand-container">
+  <div class="site-nav-toggle">
+    <div class="toggle" aria-label="切换导航栏" role="button">
+        <span class="toggle-line"></span>
+        <span class="toggle-line"></span>
+        <span class="toggle-line"></span>
+    </div>
+  </div>
+
+  <div class="site-meta">
+
+    <a href="/" class="brand" rel="start">
+      <i class="logo-line"></i>
+      <p class="site-title">corgis的笔记</p>
+      <i class="logo-line"></i>
+    </a>
+  </div>
+
+  <div class="site-nav-right">
+    <div class="toggle popup-trigger" aria-label="搜索" role="button">
+    </div>
+  </div>
+</div>
+
+
+
+<nav class="site-nav">
+  <ul class="main-menu menu"><li class="menu-item menu-item-home"><a href="/" rel="section"><i class="fa fa-home fa-fw"></i>首页</a></li><li class="menu-item menu-item-about"><a href="/about/" rel="section"><i class="fa fa-user fa-fw"></i>关于</a></li><li class="menu-item menu-item-categories"><a href="/categories/" rel="section"><i class="fa fa-th fa-fw"></i>分类</a></li><li class="menu-item menu-item-archives"><a href="/archives/" rel="section"><i class="fa fa-archive fa-fw"></i>归档</a></li>
+  </ul>
+</nav>
+
+
+
+
+</header>
+        
+  
+  <aside class="sidebar">
+
+    <div class="sidebar-inner sidebar-nav-active sidebar-toc-active">
+      <ul class="sidebar-nav">
+        <li class="sidebar-nav-toc">
+          文章目录
+        </li>
+        <li class="sidebar-nav-overview">
+          站点概览
+        </li>
+      </ul>
+
+      <div class="sidebar-panel-container">
+        <!--noindex-->
+        <div class="post-toc-wrap sidebar-panel">
+            <div class="post-toc animated"><ol class="nav"><li class="nav-item nav-level-1"><a class="nav-link" href="#%E8%83%8C%E6%99%AF"><span class="nav-number">1.</span> <span class="nav-text">背景</span></a></li><li class="nav-item nav-level-1"><a class="nav-link" href="#%E6%96%B9%E6%B3%95"><span class="nav-number">2.</span> <span class="nav-text">方法</span></a></li><li class="nav-item nav-level-1"><a class="nav-link" href="#sentinel%E6%A0%B8%E5%BF%83%E5%B7%A5%E4%BD%9C"><span class="nav-number">3.</span> <span class="nav-text">sentinel核心工作</span></a><ol class="nav-child"><li class="nav-item nav-level-2"><a class="nav-link" href="#%E9%9A%BE%E7%82%B9"><span class="nav-number">3.1.</span> <span class="nav-text">难点</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#hello%E5%85%B1%E8%AF%86"><span class="nav-number">3.2.</span> <span class="nav-text">hello共识</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E7%A6%81%E6%AD%A2info%E4%B8%AD%E4%BF%AE%E6%AD%A3master"><span class="nav-number">3.3.</span> <span class="nav-text">禁止info中修正master</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E7%A6%81%E6%AD%A2silent-failover%E6%9C%9F%E9%97%B4reset-master"><span class="nav-number">3.4.</span> <span class="nav-text">禁止silent-failover期间reset master</span></a></li></ol></li></ol></div>
+        </div>
+        <!--/noindex-->
+
+        <div class="site-overview-wrap sidebar-panel">
+          <div class="site-author animated" itemprop="author" itemscope itemtype="http://schema.org/Person">
+    <img class="site-author-image" itemprop="image" alt="Corgis"
+      src="/images/corgis.jpg">
+  <p class="site-author-name" itemprop="name">Corgis</p>
+  <div class="site-description" itemprop="description">用于成长过程中，记录值得对外分享的技术，如开源代码理解、国外课程项目，个人对一些领域的心得等</div>
+</div>
+<div class="site-state-wrap animated">
+  <nav class="site-state">
+      <div class="site-state-item site-state-posts">
+        <a href="/archives/">
+          <span class="site-state-item-count">42</span>
+          <span class="site-state-item-name">日志</span>
+        </a>
+      </div>
+      <div class="site-state-item site-state-categories">
+          <a href="/categories/">
+        <span class="site-state-item-count">16</span>
+        <span class="site-state-item-name">分类</span></a>
+      </div>
+  </nav>
+</div>
+
+        </div>
+      </div>
+        <div class="back-to-top animated" role="button" aria-label="返回顶部">
+          <i class="fa fa-arrow-up"></i>
+          <span>0%</span>
+        </div>
+    </div>
+
+    
+  </aside>
+
+
+    </div>
+
+    <div class="main-inner post posts-expand">
+
+
+  
+
+
+<div class="post-block">
+  
+  
+
+  <article itemscope itemtype="http://schema.org/Article" class="post-content" lang="zh-CN">
+    <link itemprop="mainEntityOfPage" href="https://scut-corgis.github.io/2026-01-22-redis%E6%97%A0%E6%84%9F%E8%BF%81%E7%A7%BBmaster/">
+
+    <span hidden itemprop="author" itemscope itemtype="http://schema.org/Person">
+      <meta itemprop="image" content="/images/corgis.jpg">
+      <meta itemprop="name" content="Corgis">
+    </span>
+
+    <span hidden itemprop="publisher" itemscope itemtype="http://schema.org/Organization">
+      <meta itemprop="name" content="corgis的笔记">
+      <meta itemprop="description" content="用于成长过程中，记录值得对外分享的技术，如开源代码理解、国外课程项目，个人对一些领域的心得等">
+    </span>
+
+    <span hidden itemprop="post" itemscope itemtype="http://schema.org/CreativeWork">
+      <meta itemprop="name" content="redis无感迁移master | corgis的笔记">
+      <meta itemprop="description" content="">
+    </span>
+      <header class="post-header">
+        <h1 class="post-title" itemprop="name headline">
+          redis无感迁移master
+        </h1>
+
+        <div class="post-meta-container">
+          <div class="post-meta">
+    <span class="post-meta-item">
+      <span class="post-meta-item-icon">
+        <i class="far fa-calendar"></i>
+      </span>
+      <span class="post-meta-item-text">发表于</span>
+
+      <time title="创建时间：2026-01-22 21:17:05" itemprop="dateCreated datePublished" datetime="2026-01-22T21:17:05+08:00">2026-01-22</time>
+    </span>
+    <span class="post-meta-item">
+      <span class="post-meta-item-icon">
+        <i class="far fa-folder"></i>
+      </span>
+      <span class="post-meta-item-text">分类于</span>
+        <span itemprop="about" itemscope itemtype="http://schema.org/Thing">
+          <a href="/categories/redis/" itemprop="url" rel="index"><span itemprop="name">redis</span></a>
+        </span>
+    </span>
+
+  
+</div>
+
+        </div>
+      </header>
+
+    
+    
+    
+    <div class="post-body" itemprop="articleBody"><h1 id="背景"><a href="#背景" class="headerlink" title="背景"></a>背景</h1><p>首先架构是标准的，sentinel + proxy + redis，即哨兵作为HA组件监控redis的存活情况，proxy作为流量入口转发用户流量到指定的redis节点。</p>
+<p>proxy实时监视sentinel，会订阅其<code>+switch-master</code>事件，一旦发现了该信号，proxy会直接切流到新节点中。</p>
+<p>在以上的架构背景下，若没有一些特殊能力，redis迁移主节点又不影响用户请求是不可能实现的。一种可能的方案是，给redis发送<code>failover to</code>命令让其做协调式主从切换，然后再把从节点迁移走。</p>
+<p>但<code>failover to</code>命令是有感的，其有两种工作方式，一种是禁写主节点，直到从的offset完全跟上主后再主从切换。一种是直接切换，也就是会丢失所有未同步到从节点的数据。</p>
+<p>因此该文档阐述了一种新能力，可以让业务无感知的迁移master节点，当然，实际上最终还是会引入一些不一致（切换过程中对同key的读写顺序会乱序）。</p>
+<h1 id="方法"><a href="#方法" class="headerlink" title="方法"></a>方法</h1><p>主要方法如下：通过修改sentinel的内核，引入了<code>silent-failover</code>命令，通过两阶段的failover，即<code>prepare</code>和<code>done</code>实现无感迁移master。其中从节点需要打开可写开关。</p>
+<p>一种迁移的示意图如下:<br><img src="/2026-01-22-redis%E6%97%A0%E6%84%9F%E8%BF%81%E7%A7%BBmaster/%E8%BF%81%E7%A7%BB%E7%A4%BA%E6%84%8F%E5%9B%BE.png"></p>
+<p>引入一个新的哨兵命令，格式如下</p>
+<blockquote>
+<p>sentinel slient-failover master-name slave-node &lt;prepare|done&gt;</p>
+</blockquote>
+<p>参数说明</p>
+<ul>
+<li>slient-failover: 无感迁移子命令</li>
+<li>master-name: 无感迁移的分片名称</li>
+<li>slave-node: 需要提主的从节点的 ip:port</li>
+<li>prepare | done: 两阶段，prepare可以认为是假切，只是对外发出<code>+switch-master</code>，done才认为是真的切了</li>
+</ul>
+<p><code>sentinel silent-failover masterName slavehost:port prepare</code>命令，可指定某个masterName的主节点进行<strong>预</strong>故障转移到指定的从节点。</p>
+<p>预故障转移的含义定义如下：通过发送<code>+switch-master</code>告知proxy已经主从切换了，要求切流到从节点，但真正意义的redis主从根本没切，也就是sentinel告知了proxy假消息。</p>
+<p>然后进行二阶段<code>sentinel silent-failover masterName slavehost:port done</code>，此时开始真正的主从切换。完成不丢任何数据的迁移master。</p>
+<p>其实可以看到在切换时，还是会出现双写现象造成不一致，即原主的复制缓冲区会跟proxy后续流量形成乱序。</p>
+<h1 id="sentinel核心工作"><a href="#sentinel核心工作" class="headerlink" title="sentinel核心工作"></a>sentinel核心工作</h1><h2 id="难点"><a href="#难点" class="headerlink" title="难点"></a>难点</h2><p>sentinel内核改动的代码是非常复杂的，也很容易绕晕。因为上面的流程引入了一个问题，假如一个集群有三个哨兵，你对一个哨兵发送<code>silent-failover</code>命令引入了两阶段，其他两个哨兵也必须感知到这个两阶段从而发送<code>+switch-master</code>的proxy，因为我们并无法笃定proxy连接的是哪个sentinel，因此这里就引入了共识问题，要让哨兵们共识进入了两阶段failover。</p>
+<p>同时第一阶段后的中间状态，需要还能实时保障故障转移。比如原主挂了，哨兵应该能直接切换，比如新主挂了，哨兵也能选出一个从节点。换句话说，任何的宕机事件，哨兵都必须主动终止两阶段failover进行相应的故障转移，这部分的共识代码实现是相当困难的。</p>
+<h2 id="hello共识"><a href="#hello共识" class="headerlink" title="hello共识"></a>hello共识</h2><p>主要修改方法是在频道<code>hello</code>中修改一下互相打招呼的格式，用该事件通知其他sentinel本执行了prepare的sentinel收到了<code>silent-failover</code>事件。</p>
+<ul>
+<li>原有信息协议<figure class="highlight c++"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br></pre></td><td class="code"><pre><span class="line"><span class="string">&quot;%s,%d,%s,%llu,&quot;</span> <span class="comment">/* Info about this sentinel. */</span></span><br><span class="line"><span class="string">&quot;%s,%s,%d,%llu&quot;</span>, <span class="comment">/* Info about current master. */</span></span><br></pre></td></tr></table></figure></li>
+<li>新增信息字段后协议<figure class="highlight c++"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br></pre></td><td class="code"><pre><span class="line"><span class="string">&quot;%s,%d,%s,%llu,&quot;</span> <span class="comment">/* Info about this sentinel. */</span></span><br><span class="line"><span class="string">&quot;%s,%s,%d,%llu&quot;</span>, <span class="comment">/* Info about current master. */</span></span><br><span class="line"><span class="string">&quot;,%d,%s,%d&quot;</span>              <span class="comment">/* Info about old redis instance. */</span> </span><br><span class="line"><span class="comment">/* 第一个%d 表示silent-failover done stage对应的epoch；</span></span><br><span class="line"><span class="comment">    第二个%s 表示silent-failover prepare stage对应的老的主节点的ip；</span></span><br><span class="line"><span class="comment">    第三个%d 表示silent-failover prepare stage对应的老的主节点的端口；*/</span></span><br></pre></td></tr></table></figure></li>
+</ul>
+<p>约定了执行prepare后，哨兵的epoch++，done纪元又是prepare的纪元+1。</p>
+<p>通过hello消息字段数的变化，非prepare的sentinel能感知到无感切换的开始和结束，比如8字段到11字段就共识了切换的开始，并保存相关信息。反之11字段到8字段，说明切换的结束。</p>
+<p>实现中有一个点需要强调，执行prepare的sentin&#96;el其认为的master依然是原master，即其master_name下面的ip:port是原主的正确值。但被hello共识传播的另外的sentinel却会认为是已经切了，其master_name下面的ip:port实际上是新主。因此代码中需要解决新主（实际上从）给info消息回复时，role对不上的问题。</p>
+<h2 id="禁止info中修正master"><a href="#禁止info中修正master" class="headerlink" title="禁止info中修正master"></a>禁止info中修正master</h2><p>参考之前的示意图：</p>
+<p>在星型复制转为链式复制时，即s11和s12节点挂在s1上面时，sentinel会发现其挂的master是错误的，在20秒内会将其修正回slaveof M1节点，导致后续无感迁移失败。</p>
+<p>一种处理方式是：在星型转链式后，立马执行<code>sentinel reset master</code>命令，以清空sentinel的缓存信息，但是这个清空动作必须快速的覆盖到3个sentinel，但是实际上又不允许同时<code>reset</code>三个sentinel，因为若此时一旦主节点宕机，将找不到任何从节点用于主从切换。</p>
+<p>同时，无感迁移有一个逻辑漏洞是，在prepare执行完毕后，执行了prepare的sentinel也会自动的把链式重新修回星型，也不符合预期。</p>
+<p>对于自动修正的问题，引入sentinel配置<code>slave-can-auto-revert-to-configured-master</code>。</p>
+<figure class="highlight c++"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br></pre></td><td class="code"><pre><span class="line"><span class="comment">// 不允许该masterName自动修正</span></span><br><span class="line">SENTINEL SET masterName slave-can-<span class="keyword">auto</span>-revert-to-configured-master no</span><br><span class="line"><span class="comment">// 重新打开</span></span><br><span class="line">SENTINEL SET masterName slave-can-<span class="keyword">auto</span>-revert-to-configured-master yes</span><br></pre></td></tr></table></figure>
+
+<p>当不允许修正时，代码会在收slave的info回复时，判断此标志位是否存在，若存在则不允许reconf，即不执行slave of命令。</p>
+<h2 id="禁止silent-failover期间reset-master"><a href="#禁止silent-failover期间reset-master" class="headerlink" title="禁止silent-failover期间reset master"></a>禁止silent-failover期间reset master</h2><p>在无感迁移过程中，比如prepare执行后，还没done之前，三个哨兵的认为的主节点是不一样的，若此时执行了reset操作，会导致三个哨兵不一致，后续无法再协调工作。</p>
+
+    </div>
+
+    
+    
+    
+
+    <footer class="post-footer">
+
+        
+
+          <div class="post-nav">
+            <div class="post-nav-item">
+                <a href="/2025-12-20-zookeeper%E5%AD%A6%E4%B9%A0/" rel="prev" title="ZooKeeper学习">
+                  <i class="fa fa-angle-left"></i> ZooKeeper学习
+                </a>
+            </div>
+            <div class="post-nav-item">
+                <a href="/2026-03-02-transformer%E5%AD%A6%E4%B9%A0/" rel="next" title="transformer学习">
+                  transformer学习 <i class="fa fa-angle-right"></i>
+                </a>
+            </div>
+          </div>
+    </footer>
+  </article>
+</div>
+
+
+
+
+
+
+</div>
+  </main>
+
+  <footer class="footer">
+    <div class="footer-inner">
+
+  <div class="copyright">
+    &copy; 
+    <span itemprop="copyrightYear">2026</span>
+    <span class="with-love">
+      <i class="fa fa-heart"></i>
+    </span>
+    <span class="author" itemprop="copyrightHolder">Corgis</span>
+  </div>
+  <div class="powered-by">由 <a href="https://hexo.io/" rel="noopener" target="_blank">Hexo</a> & <a href="https://theme-next.js.org/muse/" rel="noopener" target="_blank">NexT.Muse</a> 强力驱动
+  </div>
+
+    </div>
+  </footer>
+
+  
+  <div class="toggle sidebar-toggle" role="button">
+    <span class="toggle-line"></span>
+    <span class="toggle-line"></span>
+    <span class="toggle-line"></span>
+  </div>
+  <div class="sidebar-dimmer"></div>
+  <div class="reading-progress-bar"></div>
+
+<noscript>
+  <div class="noscript-warning">Theme NexT works best with JavaScript enabled</div>
+</noscript>
+
+
+  
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/animejs/3.2.1/anime.min.js" integrity="sha256-XL2inqUJaslATFnHdJOi9GfQ60on8Wx1C2H8DYiN1xY=" crossorigin="anonymous"></script>
+<script src="/js/comments.js"></script><script src="/js/utils.js"></script><script src="/js/motion.js"></script><script src="/js/sidebar.js"></script><script src="/js/next-boot.js"></script>
+
+  
+
+
+
+
+
+
+  
+
+
+
+
+
+</body>
+</html>
