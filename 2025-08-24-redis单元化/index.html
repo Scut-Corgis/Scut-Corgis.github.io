@@ -19,20 +19,24 @@
 
 <script class="next-config" data-name="main" type="application/json">{"hostname":"scut-corgis.github.io","root":"/","images":"/images","scheme":"Muse","darkmode":false,"version":"8.20.0","exturl":false,"sidebar":{"position":"left","width_expanded":320,"width_dual_column":240,"display":"always","padding":18,"offset":12},"hljswrap":true,"copycode":{"enable":true,"style":null},"fold":{"enable":true,"height":500},"bookmark":{"enable":false,"color":"#222","save":"auto"},"mediumzoom":false,"lazyload":false,"pangu":false,"comments":{"style":"tabs","active":null,"storage":true,"lazyload":false,"nav":null},"stickytabs":false,"motion":{"enable":true,"async":false,"transition":{"menu_item":"fadeInDown","post_block":"fadeIn","post_header":"fadeInDown","post_body":"fadeInDown","coll_header":"fadeInLeft","sidebar":"fadeInUp"}},"prism":false,"i18n":{"placeholder":"搜索...","empty":"没有找到任何搜索结果：${query}","hits_time":"找到 ${hits} 个搜索结果（用时 ${time} 毫秒）","hits":"找到 ${hits} 个搜索结果"}}</script><script src="/js/config.js"></script>
 
-    <meta name="description" content="背景单元化：指异地多活，比如两个相离很远的大区域，如北京与深圳两个副本，是两份相同的数据，业务上层保证指对自己本地的数据做写操作，可以读其他地数据。 单元化主要有两个优势  异地多活 读写本地单元时，时延低。按常规的主从复制做的话，读写一个异地的idc时延会很高。  本文不详细讨论单元化的优势、理念，主要讲解一种redis单元化的实现思路。 方案总体如下  通过一个同步工具将两个redis主节点构">
+    <meta name="description" content="概述什么是单元化单元化是指异地多活架构，例如北京与深圳两个数据中心各部署一套Redis实例，两者数据保持同步。业务层保证只对本地单元的数据进行写操作，但可以读取其他单元的数据。 单元化主要有两个优势：  异地多活：两个数据中心同时提供服务，一个故障时另一个可以继续提供服务 低时延：读写操作都在本地数据中心完成，避免跨地域网络延迟  本文档不详细讨论单元化的优势与理念，主要讲解Redis单元化的具体">
 <meta property="og:type" content="article">
 <meta property="og:title" content="redis单元化">
 <meta property="og:url" content="https://scut-corgis.github.io/2025-08-24-redis%E5%8D%95%E5%85%83%E5%8C%96/index.html">
 <meta property="og:site_name" content="corgis的笔记">
-<meta property="og:description" content="背景单元化：指异地多活，比如两个相离很远的大区域，如北京与深圳两个副本，是两份相同的数据，业务上层保证指对自己本地的数据做写操作，可以读其他地数据。 单元化主要有两个优势  异地多活 读写本地单元时，时延低。按常规的主从复制做的话，读写一个异地的idc时延会很高。  本文不详细讨论单元化的优势、理念，主要讲解一种redis单元化的实现思路。 方案总体如下  通过一个同步工具将两个redis主节点构">
+<meta property="og:description" content="概述什么是单元化单元化是指异地多活架构，例如北京与深圳两个数据中心各部署一套Redis实例，两者数据保持同步。业务层保证只对本地单元的数据进行写操作，但可以读取其他单元的数据。 单元化主要有两个优势：  异地多活：两个数据中心同时提供服务，一个故障时另一个可以继续提供服务 低时延：读写操作都在本地数据中心完成，避免跨地域网络延迟  本文档不详细讨论单元化的优势与理念，主要讲解Redis单元化的具体">
 <meta property="og:locale" content="zh_CN">
-<meta property="og:image" content="https://scut-corgis.github.io/2025-08-24-redis%E5%8D%95%E5%85%83%E5%8C%96/%E5%8D%95%E5%85%83%E5%8C%96%E6%9E%B6%E6%9E%84.drawio.svg">
+<meta property="og:image" content="https://scut-corgis.github.io/2025-08-24-redis%E5%8D%95%E5%85%83%E5%8C%96/%E6%95%B4%E4%BD%93%E9%83%A8%E7%BD%B2%E6%9E%B6%E6%9E%84.png">
+<meta property="og:image" content="https://scut-corgis.github.io/2025-08-24-redis%E5%8D%95%E5%85%83%E5%8C%96/%E5%86%85%E9%83%A8%E6%9E%B6%E6%9E%84.png">
+<meta property="og:image" content="https://scut-corgis.github.io/2025-08-24-redis%E5%8D%95%E5%85%83%E5%8C%96/%E6%95%B0%E6%8D%AE%E6%B5%81%E8%BD%AC.png">
+<meta property="og:image" content="https://scut-corgis.github.io/2025-08-24-redis%E5%8D%95%E5%85%83%E5%8C%96/%E5%9B%9E%E7%8E%AF%E6%A3%80%E6%B5%8B%E6%9C%BA%E5%88%B6.png">
+<meta property="og:image" content="https://scut-corgis.github.io/2025-08-24-redis%E5%8D%95%E5%85%83%E5%8C%96/%E5%A2%9E%E9%87%8F%E5%90%8C%E6%AD%A5%E6%B5%81%E7%A8%8B.png">
 <meta property="og:image" content="https://scut-corgis.github.io/2025-08-24-redis%E5%8D%95%E5%85%83%E5%8C%96/%E8%AF%B7%E6%B1%82%E5%90%8C%E6%AD%A5.drawio.svg">
 <meta property="article:published_time" content="2025-08-24T09:30:52.000Z">
-<meta property="article:modified_time" content="2026-03-11T15:21:08.175Z">
+<meta property="article:modified_time" content="2026-03-11T16:41:07.815Z">
 <meta property="article:author" content="Corgis">
 <meta name="twitter:card" content="summary">
-<meta name="twitter:image" content="https://scut-corgis.github.io/2025-08-24-redis%E5%8D%95%E5%85%83%E5%8C%96/%E5%8D%95%E5%85%83%E5%8C%96%E6%9E%B6%E6%9E%84.drawio.svg">
+<meta name="twitter:image" content="https://scut-corgis.github.io/2025-08-24-redis%E5%8D%95%E5%85%83%E5%8C%96/%E6%95%B4%E4%BD%93%E9%83%A8%E7%BD%B2%E6%9E%B6%E6%9E%84.png">
 
 
 <link rel="canonical" href="https://scut-corgis.github.io/2025-08-24-redis%E5%8D%95%E5%85%83%E5%8C%96/">
@@ -114,7 +118,7 @@
       <div class="sidebar-panel-container">
         <!--noindex-->
         <div class="post-toc-wrap sidebar-panel">
-            <div class="post-toc animated"><ol class="nav"><li class="nav-item nav-level-1"><a class="nav-link" href="#%E8%83%8C%E6%99%AF"><span class="nav-number">1.</span> <span class="nav-text">背景</span></a></li><li class="nav-item nav-level-1"><a class="nav-link" href="#%E5%90%8C%E6%AD%A5%E5%B7%A5%E5%85%B7%E8%A1%8C%E4%B8%BA"><span class="nav-number">2.</span> <span class="nav-text">同步工具行为</span></a><ol class="nav-child"><li class="nav-item nav-level-2"><a class="nav-link" href="#%E7%90%86%E5%BF%B5"><span class="nav-number">2.1.</span> <span class="nav-text">理念</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E5%BC%80%E5%A7%8B%E5%90%8C%E6%AD%A5"><span class="nav-number">2.2.</span> <span class="nav-text">开始同步</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E5%90%8C%E6%AD%A5%E7%A8%B3%E6%80%81"><span class="nav-number">2.3.</span> <span class="nav-text">同步稳态</span></a></li></ol></li><li class="nav-item nav-level-1"><a class="nav-link" href="#redis-server%E8%A1%8C%E4%B8%BA"><span class="nav-number">3.</span> <span class="nav-text">redis-server行为</span></a><ol class="nav-child"><li class="nav-item nav-level-2"><a class="nav-link" href="#%E8%87%AA%E5%AE%9A%E4%B9%89%E5%91%BD%E4%BB%A4%E4%B8%8E%E5%A4%84%E7%90%86"><span class="nav-number">3.1.</span> <span class="nav-text">自定义命令与处理</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#UNIT-SYNC-NEW-SESSION"><span class="nav-number">3.1.1.</span> <span class="nav-text">UNIT_SYNC_NEW_SESSION</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#UNIT-SYNC-BINLOG"><span class="nav-number">3.1.2.</span> <span class="nav-text">UNIT_SYNC_BINLOG</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#UNIT-SYNC-PRE-RESTORE"><span class="nav-number">3.1.3.</span> <span class="nav-text">UNIT_SYNC_PRE_RESTORE</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E5%AE%9E%E9%99%85%E5%86%99%E5%91%BD%E4%BB%A4%E5%A4%84%E7%90%86"><span class="nav-number">3.2.</span> <span class="nav-text">实际写命令处理</span></a></li></ol></li><li class="nav-item nav-level-1"><a class="nav-link" href="#failover%E5%A4%84%E7%90%86"><span class="nav-number">4.</span> <span class="nav-text">failover处理</span></a><ol class="nav-child"><li class="nav-item nav-level-2"><a class="nav-link" href="#%E5%BD%93%E6%BA%90%E7%AB%AFmaster%E5%8F%91%E7%94%9F%E4%B8%BB%E4%BB%8E%E5%88%87%E6%8D%A2"><span class="nav-number">4.1.</span> <span class="nav-text">当源端master发生主从切换</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E5%BD%93%E7%9B%AE%E6%A0%87%E7%AB%AFmaster%E5%8F%91%E7%94%9F%E4%B8%BB%E4%BB%8E%E5%88%87%E6%8D%A2"><span class="nav-number">4.2.</span> <span class="nav-text">当目标端master发生主从切换</span></a></li></ol></li></ol></div>
+            <div class="post-toc animated"><ol class="nav"><li class="nav-item nav-level-1"><a class="nav-link" href="#%E6%A6%82%E8%BF%B0"><span class="nav-number">1.</span> <span class="nav-text">概述</span></a><ol class="nav-child"><li class="nav-item nav-level-2"><a class="nav-link" href="#%E4%BB%80%E4%B9%88%E6%98%AF%E5%8D%95%E5%85%83%E5%8C%96"><span class="nav-number">1.1.</span> <span class="nav-text">什么是单元化</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E6%96%B9%E6%A1%88%E6%80%BB%E4%BD%93%E4%BB%8B%E7%BB%8D"><span class="nav-number">1.2.</span> <span class="nav-text">方案总体介绍</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E6%95%B4%E4%BD%93%E9%83%A8%E7%BD%B2%E6%9E%B6%E6%9E%84"><span class="nav-number">1.3.</span> <span class="nav-text">整体部署架构</span></a></li></ol></li><li class="nav-item nav-level-1"><a class="nav-link" href="#%E5%90%8C%E6%AD%A5%E5%B7%A5%E5%85%B7%E8%AF%A6%E8%A7%A3"><span class="nav-number">2.</span> <span class="nav-text">同步工具详解</span></a><ol class="nav-child"><li class="nav-item nav-level-2"><a class="nav-link" href="#%E8%AE%BE%E8%AE%A1%E7%90%86%E5%BF%B5%EF%BC%9A%E6%97%A0%E7%8A%B6%E6%80%81"><span class="nav-number">2.1.</span> <span class="nav-text">设计理念：无状态</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E5%86%85%E9%83%A8%E6%9E%B6%E6%9E%84"><span class="nav-number">2.2.</span> <span class="nav-text">内部架构</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E6%95%B0%E6%8D%AE%E6%B5%81%E8%BD%AC%EF%BC%88%E5%86%85%E5%AD%98-%E4%B8%B4%E6%97%B6%E6%96%87%E4%BB%B6%E4%BA%A4%E4%BA%92%EF%BC%89"><span class="nav-number">2.3.</span> <span class="nav-text">数据流转（内存+临时文件交互）</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E5%9B%9E%E7%8E%AF%E6%A3%80%E6%B5%8B%E6%9C%BA%E5%88%B6"><span class="nav-number">2.4.</span> <span class="nav-text">回环检测机制</span></a></li></ol></li><li class="nav-item nav-level-1"><a class="nav-link" href="#%E5%90%8C%E6%AD%A5%E6%B5%81%E7%A8%8B%E8%AF%A6%E8%A7%A3"><span class="nav-number">3.</span> <span class="nav-text">同步流程详解</span></a><ol class="nav-child"><li class="nav-item nav-level-2"><a class="nav-link" href="#%E8%BF%9E%E6%8E%A5%E5%BB%BA%E7%AB%8B"><span class="nav-number">3.1.</span> <span class="nav-text">连接建立</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E5%85%A8%E9%87%8F%E5%90%8C%E6%AD%A5%EF%BC%88RDB%E8%A7%A3%E6%9E%90%EF%BC%89"><span class="nav-number">3.2.</span> <span class="nav-text">全量同步（RDB解析）</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E5%A2%9E%E9%87%8F%E5%90%8C%E6%AD%A5%EF%BC%88%E7%A8%B3%E6%80%81%EF%BC%89"><span class="nav-number">3.3.</span> <span class="nav-text">增量同步（稳态）</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#%E4%B8%8E%E6%BA%90%E7%AB%AF%EF%BC%88r1%EF%BC%89%E7%9A%84%E7%A8%B3%E6%80%81%E4%BA%A4%E4%BA%92"><span class="nav-number">3.3.1.</span> <span class="nav-text">与源端（r1）的稳态交互</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E4%B8%8E%E7%9B%AE%E6%A0%87%E7%AB%AF%EF%BC%88r2%EF%BC%89%E7%9A%84%E7%A8%B3%E6%80%81%E4%BA%A4%E4%BA%92"><span class="nav-number">3.3.2.</span> <span class="nav-text">与目标端（r2）的稳态交互</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E4%BD%8D%E7%82%B9%E7%AE%A1%E7%90%86%E4%B8%8E%E6%8C%81%E4%B9%85%E5%8C%96"><span class="nav-number">3.4.</span> <span class="nav-text">位点管理与持久化</span></a></li></ol></li><li class="nav-item nav-level-1"><a class="nav-link" href="#Redis%E7%AB%AF%E5%AE%9E%E7%8E%B0"><span class="nav-number">4.</span> <span class="nav-text">Redis端实现</span></a><ol class="nav-child"><li class="nav-item nav-level-2"><a class="nav-link" href="#%E5%85%B3%E9%94%AE%E6%95%B0%E6%8D%AE%E7%BB%93%E6%9E%84"><span class="nav-number">4.1.</span> <span class="nav-text">关键数据结构</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#KUnitSession"><span class="nav-number">4.1.1.</span> <span class="nav-text">KUnitSession</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#robj-kunit"><span class="nav-number">4.1.2.</span> <span class="nav-text">robj.kunit</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#UnitIdPair"><span class="nav-number">4.1.3.</span> <span class="nav-text">UnitIdPair</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E8%87%AA%E5%AE%9A%E4%B9%89%E5%91%BD%E4%BB%A4"><span class="nav-number">4.2.</span> <span class="nav-text">自定义命令</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#KUNIT-SYNC-NEW-SESSION"><span class="nav-number">4.2.1.</span> <span class="nav-text">KUNIT_SYNC_NEW_SESSION</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#KUNIT-SYNC-BINLOG"><span class="nav-number">4.2.2.</span> <span class="nav-text">KUNIT_SYNC_BINLOG</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#KUNIT-SYNC-PRE-RESTORE"><span class="nav-number">4.2.3.</span> <span class="nav-text">KUNIT_SYNC_PRE_RESTORE</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E5%86%99%E5%91%BD%E4%BB%A4%E5%A4%84%E7%90%86%E9%80%BB%E8%BE%91"><span class="nav-number">4.3.</span> <span class="nav-text">写命令处理逻辑</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E5%85%B3%E9%94%AE%E5%87%BD%E6%95%B0%E8%AF%B4%E6%98%8E"><span class="nav-number">4.4.</span> <span class="nav-text">关键函数说明</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#keyBelongToThisKUnit"><span class="nav-number">4.4.1.</span> <span class="nav-text">keyBelongToThisKUnit()</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#lookupKeyWriteWithFlags"><span class="nav-number">4.4.2.</span> <span class="nav-text">lookupKeyWriteWithFlags()</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#propagateDeletionForKunit"><span class="nav-number">4.4.3.</span> <span class="nav-text">propagateDeletionForKunit()</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E5%85%B3%E9%94%AE%E9%85%8D%E7%BD%AE%E9%A1%B9"><span class="nav-number">4.5.</span> <span class="nav-text">关键配置项</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#allow-evict-non-local"><span class="nav-number">4.5.1.</span> <span class="nav-text">allow-evict-non-local</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#intra-unit-expiration-enable"><span class="nav-number">4.5.2.</span> <span class="nav-text">intra-unit-expiration-enable</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E5%85%B6%E4%BB%96%E7%9B%B8%E5%85%B3%E9%85%8D%E7%BD%AE"><span class="nav-number">4.5.3.</span> <span class="nav-text">其他相关配置</span></a></li></ol></li></ol></li><li class="nav-item nav-level-1"><a class="nav-link" href="#Failover%E5%A4%84%E7%90%86"><span class="nav-number">5.</span> <span class="nav-text">Failover处理</span></a><ol class="nav-child"><li class="nav-item nav-level-2"><a class="nav-link" href="#%E6%BA%90%E7%AB%AFmaster%E5%8F%91%E7%94%9F%E4%B8%BB%E4%BB%8E%E5%88%87%E6%8D%A2"><span class="nav-number">5.1.</span> <span class="nav-text">源端master发生主从切换</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E7%9B%AE%E6%A0%87%E7%AB%AFmaster%E5%8F%91%E7%94%9F%E4%B8%BB%E4%BB%8E%E5%88%87%E6%8D%A2"><span class="nav-number">5.2.</span> <span class="nav-text">目标端master发生主从切换</span></a></li></ol></li><li class="nav-item nav-level-1"><a class="nav-link" href="#%E9%99%84%E5%BD%95%EF%BC%9A%E8%AF%B7%E6%B1%82%E5%90%8C%E6%AD%A5%E6%B5%81%E7%A8%8B%E5%9B%BE"><span class="nav-number">6.</span> <span class="nav-text">附录：请求同步流程图</span></a></li></ol></div>
         </div>
         <!--/noindex-->
 
@@ -216,81 +220,224 @@
     
     
     
-    <div class="post-body" itemprop="articleBody"><h1 id="背景"><a href="#背景" class="headerlink" title="背景"></a>背景</h1><p>单元化：指异地多活，比如两个相离很远的大区域，如北京与深圳两个副本，是两份相同的数据，业务上层保证指对自己本地的数据做写操作，可以读其他地数据。</p>
-<p>单元化主要有两个优势</p>
+    <div class="post-body" itemprop="articleBody"><h1 id="概述"><a href="#概述" class="headerlink" title="概述"></a>概述</h1><h2 id="什么是单元化"><a href="#什么是单元化" class="headerlink" title="什么是单元化"></a>什么是单元化</h2><p><strong>单元化</strong>是指异地多活架构，例如北京与深圳两个数据中心各部署一套Redis实例，两者数据保持同步。业务层保证只对本地单元的数据进行写操作，但可以读取其他单元的数据。</p>
+<p>单元化主要有两个优势：</p>
+<ol>
+<li><strong>异地多活</strong>：两个数据中心同时提供服务，一个故障时另一个可以继续提供服务</li>
+<li><strong>低时延</strong>：读写操作都在本地数据中心完成，避免跨地域网络延迟</li>
+</ol>
+<p>本文档不详细讨论单元化的优势与理念，主要讲解Redis单元化的具体实现方案。</p>
+<h2 id="方案总体介绍"><a href="#方案总体介绍" class="headerlink" title="方案总体介绍"></a>方案总体介绍</h2><p>单元化方案的核心设计：</p>
+<ol>
+<li>通过一个<strong>同步工具</strong>将两个Redis<strong>主节点</strong>构成一条单元化链路，该同步工具可以单向或双向地同步两者的写操作</li>
+<li>将对端单元传过来的数据加上单元归属信息（如unit_id），本单元不允许对其他单元的key做任何写操作（包括淘汰、过期等）</li>
+</ol>
+<h2 id="整体部署架构"><a href="#整体部署架构" class="headerlink" title="整体部署架构"></a>整体部署架构</h2><p>下面展示了单元化系统的整体部署架构。同步工具是整个系统的核心组件，负责连接两个单元的Redis主节点，并协调数据同步。</p>
+<figure class="highlight plaintext"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br></pre></td><td class="code"><pre><span class="line">flowchart TB</span><br><span class="line">    subgraph &quot;单元1 (北京)&quot;</span><br><span class="line">        R1[Redis Master]</span><br><span class="line">        R1S[从节点]</span><br><span class="line">    end</span><br><span class="line"></span><br><span class="line">    subgraph &quot;单元2 (深圳)&quot;</span><br><span class="line">        R2[Redis Master]</span><br><span class="line">        R2S[从节点]</span><br><span class="line">    end</span><br><span class="line"></span><br><span class="line">    subgraph &quot;同步工具 (单点)&quot;</span><br><span class="line">        ST[binlog中转]</span><br><span class="line">    end</span><br><span class="line"></span><br><span class="line">    R1 &lt;--&gt;|主从复制| R1S</span><br><span class="line">    R2 &lt;--&gt;|主从复制| R2S</span><br><span class="line"></span><br><span class="line">    ST &lt;-.-&gt;|增量同步| R1</span><br><span class="line">    ST &lt;-.-&gt;|转发命令| R2</span><br></pre></td></tr></table></figure>
+
+<p><img src="/2025-08-24-redis%E5%8D%95%E5%85%83%E5%8C%96/%E6%95%B4%E4%BD%93%E9%83%A8%E7%BD%B2%E6%9E%B6%E6%9E%84.png" alt="整体部署架构"></p>
+<p><strong>架构说明</strong>：</p>
 <ul>
-<li>异地多活</li>
-<li>读写本地单元时，时延低。按常规的主从复制做的话，读写一个异地的idc时延会很高。</li>
+<li><strong>同步工具</strong>：单点部署，同时连接两个Redis master，负责在两个单元之间同步写操作</li>
+<li><strong>Redis Master</strong>：每个单元的主节点，负责处理本地写请求和同步过来的命令</li>
+<li><strong>从节点</strong>：每个单元的从节点，通过常规主从复制与本地主节点同步</li>
+<li><strong>数据流向</strong>：同步工具从源端获取binlog，经过处理后转发到目标端</li>
 </ul>
-<p>本文不详细讨论单元化的优势、理念，主要讲解一种redis单元化的实现思路。</p>
-<p>方案总体如下</p>
-<ol>
-<li>通过一个<strong>同步工具</strong>将两个redis<strong>主节点</strong>构成一条单元化链接，该同步工具可以单向或双向的同步两者的写操作。</li>
-<li>将对端单元传过来的数据加上单元信息（如单元归属），本单元不允许对其他单元的key做任何的写操作（比如淘汰、过期本单元均不操作）。</li>
-</ol>
-<p><img src="/2025-08-24-redis%E5%8D%95%E5%85%83%E5%8C%96/%E5%8D%95%E5%85%83%E5%8C%96%E6%9E%B6%E6%9E%84.drawio.svg"></p>
-<h1 id="同步工具行为"><a href="#同步工具行为" class="headerlink" title="同步工具行为"></a>同步工具行为</h1><blockquote>
-<p>下文称单元1的redis-server为r1，同理单元2的为r2。以r1为源，r2为目标的情况下讲解。</p>
-</blockquote>
-<h2 id="理念"><a href="#理念" class="headerlink" title="理念"></a>理念</h2><p>首先redis引入单元化同步的进度结构，相当于在常规的repl_offset增加了一个单元化的unit_repl_offset。</p>
-<p>同步工具在配置文件中配置好两个单元的同步节点，规定好一条同步链路，比如源节点和目标节点的信息。</p>
-<p>同步工具有一个设计理念： 一条命令永远不会经过同步工具两次以防止命令回环。<br>其通过以下方法实现</p>
-<ol>
-<li>每一个真实命令通过其前，会先追加一条自定义的<code>unit_xx</code>命令，该命令被规定为写命令</li>
-<li>因此回环时，会先收到<code>UNIT_SYNC_BINLOG</code>命令，那么意味着后续跟着的真实命令是回环命令，可以直接丢弃不予通过。</li>
-</ol>
-<p>这里说一个重要思想，针对同步缓存区：</p>
+<p>** failover 机制**：同步工具同时监听两个单元的Sentinel，当检测到主从切换时自动重连到新的主节点。</p>
+<hr>
+<h1 id="同步工具详解"><a href="#同步工具详解" class="headerlink" title="同步工具详解"></a>同步工具详解</h1><h2 id="设计理念：无状态"><a href="#设计理念：无状态" class="headerlink" title="设计理念：无状态"></a>设计理念：无状态</h2><p>同步工具采用<strong>无状态设计</strong>，这是整个系统可靠性的基础：</p>
 <ul>
-<li>每个节点记录好自身的单元化的repl_id和offset（新数据结构），主要用于重连时让同步工具能获取到，该节点<strong>单元化的同步位点</strong>。</li>
-<li>对于一个单一节点而言，单元化写操作的binlog和一般的命令产生的binlog是共用缓冲区的，同样共用repl_id和offset（redis原生结构）。所以当收到一个psync repl_id offset命令时（无论是否为单元化），实际上都是将backup_log中的该offset之后的数据发给对端。</li>
+<li>所有binlog持久化到本地临时文件</li>
+<li>可随时重启，从上次位点继续同步</li>
+<li>不依赖外部状态，只需配置文件</li>
 </ul>
-<p><img src="/2025-08-24-redis%E5%8D%95%E5%85%83%E5%8C%96/%E8%AF%B7%E6%B1%82%E5%90%8C%E6%AD%A5.drawio.svg"></p>
-<h2 id="开始同步"><a href="#开始同步" class="headerlink" title="开始同步"></a>开始同步</h2><ol>
-<li>同步工具向r2发起连接，通过自定义命令<code>UNIT_SYNC_NEW_SESSION</code>，参数为源单元名与同步链路名，以及此次session的id字符串。</li>
-<li>可以从r2收包拿到其<strong>单元化的</strong>repl_id和offset，后续用于向r1发起同步用</li>
-<li>建立与r1的连接，发起<code>unit_psync</code>命令附带刚获取的<code>repl_id</code>和<code>offset</code>。这里可以将其理解为psync2命令。</li>
-<li>r1收到该同步请求时，判断backup_log是否还存在该offset（和redis常规情况一致），其走增量返回<code>CONTINUE</code>还是全量返回<code>FULLRESYNC</code>，以全量举例，r1顺带返回了<code>new_repl_id</code>和<code>new_offset</code></li>
-<li>同步工具开始获取和解析rdb。这里详细阐述一下</li>
+<p>这种设计使得同步工具可以任意切换，failover时只需重新连接即可。</p>
+<h2 id="内部架构"><a href="#内部架构" class="headerlink" title="内部架构"></a>内部架构</h2><p>同步工具内部包含两组协程：一组负责与源端连接，另一组负责与目标端连接。</p>
+<figure class="highlight plaintext"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br></pre></td><td class="code"><pre><span class="line">flowchart LR</span><br><span class="line">    subgraph &quot;源端连接协程&quot;</span><br><span class="line">        SC1[连接源端Redis]</span><br><span class="line">        SC2[解析binlog]</span><br><span class="line">        SC3[写入内存缓冲区]</span><br><span class="line">        SC4[刷盘到临时文件]</span><br><span class="line">    end</span><br><span class="line"></span><br><span class="line">    subgraph &quot;目标端连接协程&quot;</span><br><span class="line">        TC1[从临时文件读取]</span><br><span class="line">        TC2[发送到目标端]</span><br><span class="line">        TC3[处理ACK]</span><br><span class="line">        TC4[更新位点索引]</span><br><span class="line">    end</span><br><span class="line"></span><br><span class="line">    SC1 --&gt; SC2 --&gt; SC3 --&gt; SC4</span><br><span class="line">    SC4 --&gt; TC1</span><br><span class="line">    TC1 --&gt; TC2 --&gt; TC3 --&gt; TC4</span><br></pre></td></tr></table></figure>
+
+<p><img src="/2025-08-24-redis%E5%8D%95%E5%85%83%E5%8C%96/%E5%86%85%E9%83%A8%E6%9E%B6%E6%9E%84.png" alt="内部架构"></p>
+<p><strong>源端协程职责</strong>：</p>
+<ol>
+<li>连接源端Redis</li>
+<li>解析binlog</li>
+<li>写入内存缓冲区</li>
+<li>刷盘到临时文件</li>
 </ol>
-<p>每一个rdb的key-value对，会把他做成一个<code>multi exec</code>命令，一共附带3条命令</p>
+<p><strong>目标端协程职责</strong>：</p>
+<ol>
+<li>从临时文件读取binlog</li>
+<li>发送到目标端</li>
+<li>处理ACK确认</li>
+<li>更新位点索引</li>
+</ol>
+<h2 id="数据流转（内存-临时文件交互）"><a href="#数据流转（内存-临时文件交互）" class="headerlink" title="数据流转（内存+临时文件交互）"></a>数据流转（内存+临时文件交互）</h2><p>同步工具需要处理binlog的持久化与传输，确保数据不丢失。</p>
+<figure class="highlight plaintext"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br></pre></td><td class="code"><pre><span class="line">flowchart LR</span><br><span class="line">    subgraph &quot;内存区域&quot;</span><br><span class="line">        BUF[binlog内存缓冲区&lt;br/&gt;约256KB-1MB]</span><br><span class="line">    end</span><br><span class="line"></span><br><span class="line">    subgraph &quot;磁盘区域&quot;</span><br><span class="line">        TMP1[临时文件_1]</span><br><span class="line">        TMP2[临时文件_2]</span><br><span class="line">        TMP3[临时文件_n]</span><br><span class="line">        IDX[位点索引文件&lt;br/&gt;repl_id+offset -&gt; 文件偏移]</span><br><span class="line">    end</span><br><span class="line"></span><br><span class="line">    BUF --&gt;|刷盘阈值触发| TMP1</span><br><span class="line">    BUF --&gt;|刷盘阈值触发| TMP2</span><br><span class="line">    TMP1 --&gt;|已确认删除| IDX</span><br><span class="line">    TMP2 --&gt;|已确认删除| IDX</span><br></pre></td></tr></table></figure>
+
+<p><img src="/2025-08-24-redis%E5%8D%95%E5%85%83%E5%8C%96/%E6%95%B0%E6%8D%AE%E6%B5%81%E8%BD%AC.png" alt="数据流转"></p>
 <ul>
-<li><code>UNIT_SYNC_BINLOG</code>，附带session_id、binlog_seq（恒递增）、repl_id、offset、源单元名和同步链路名。注意在全量同步解析rdb时，repl_id和offset可以置为初始值，因为不关心。</li>
-<li><code>UNIT_SYNC_PRE_RESTORE</code> + <code>key</code>，告知对端即将<code>RESTORE</code></li>
-<li><code>RESTORE</code> + 命令参数<code>REPLACE</code>和<code>ABSTTL</code>。</li>
+<li><strong>内存缓冲区</strong>：暂存待发送的binlog，达到阈值（约256KB-1MB）后刷盘</li>
+<li><strong>临时文件</strong>：顺序写入，按binlog位点建立索引</li>
+<li><strong>清理机制</strong>：目标端ACK确认后，删除已确认的binlog文件</li>
+<li><strong>重启恢复</strong>：通过索引文件快速定位到上次同步位点</li>
 </ul>
-<p>同步工具会将所有拿到的binlog都存在本地文件里，即内存中不会放无限递增的binlog请求，到了一定程度便持久化到本地文件中。</p>
-<ol start="6">
-<li>最终在rdb所有命令解析为binlog后增加一条<code>UNIT_SYNC_BINLOG</code>，附带真正的<code>repl_id</code>和<code>repl_offset</code>，用于告知对端其同步位点。</li>
-</ol>
-<h2 id="同步稳态"><a href="#同步稳态" class="headerlink" title="同步稳态"></a>同步稳态</h2><p>稳态即同步工具和r1已经开始稳定的增量同步，同步工具收到包后将其持久化到本地文件里，并定期回复<code>REPLCONF ACK offset</code>。</p>
-<p>同步工具持续的从本地文件中拉取multi命令包装的binlog发送给r2，相当于自己就是一个业务写入方。通过r2的回复，来裁剪本地文件的binlog数据。</p>
-<p>跟R1的稳态交互为：</p>
+<h2 id="回环检测机制"><a href="#回环检测机制" class="headerlink" title="回环检测机制"></a>回环检测机制</h2><p>同步工具通过以下方法防止命令回环——即一条命令不会经过同步工具两次：</p>
 <ol>
-<li>同步工具持续解析从r1收命令，如果是<code>unit</code>命令，只更新offset，不持久化到文件。否则包装成<code>MULTI</code>命令附带<code>unit</code>命令，持久化到文件中。</li>
-<li>每一秒回复r1一次<code>REPLCONF ACK offset</code>。</li>
+<li>每个真实命令前追加 <code>UNIT_SYNC_BINLOG</code> 命令（作为标记）</li>
+<li>回环检测逻辑：如果先收到 <code>UNIT_SYNC_BINLOG</code>，则后续命令为回环命令，直接丢弃</li>
 </ol>
-<p>跟R2的稳态交互为：</p>
+<figure class="highlight plaintext"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br></pre></td><td class="code"><pre><span class="line">flowchart TB</span><br><span class="line">    A[收到命令] --&gt; B&#123;是UNIT_SYNC_BINLOG?&#125;</span><br><span class="line">    B --&gt;|是| C[标记:后续命令为回环]</span><br><span class="line">    B --&gt;|否| D&#123;处于回环状态?&#125;</span><br><span class="line">    D --&gt;|是| E[丢弃命令]</span><br><span class="line">    D --&gt;|否| F[正常处理]</span><br><span class="line">    C --&gt; G[后续命令标记为回环]</span><br><span class="line">    G --&gt; H&#123;收到真实命令?&#125;</span><br><span class="line">    H --&gt;|是| I[清除回环标记并丢弃]</span><br></pre></td></tr></table></figure>
+
+<p><img src="/2025-08-24-redis%E5%8D%95%E5%85%83%E5%8C%96/%E5%9B%9E%E7%8E%AF%E6%A3%80%E6%B5%8B%E6%9C%BA%E5%88%B6.png" alt="回环检测机制"></p>
+<hr>
+<h1 id="同步流程详解"><a href="#同步流程详解" class="headerlink" title="同步流程详解"></a>同步流程详解</h1><h2 id="连接建立"><a href="#连接建立" class="headerlink" title="连接建立"></a>连接建立</h2><p>同步工具启动时，首先需要与两个Redis节点建立连接。</p>
 <ol>
-<li>持续的从文件中取出之前持久化的<code>cmds</code>，如果db文件里没有，则检查binlog_buf中有没有，将这些发送给r2，将已经发送的未收到回复的请求f附带seq记录在队列<code>binlog_info_q</code>里。</li>
-<li>持续的从r2收回复包，每收到一个命令的回复，删除<code>binlog_info_q</code>这里面的这条记录，推进队列的总进度。</li>
-<li>每一段时间根据<code>binlog_info_q</code>记录的进度，删除db文件中的对方已经收到的命令。</li>
+<li>同步工具向目标端（r2）发起连接，通过自定义命令 <code>UNIT_SYNC_NEW_SESSION</code>，参数包括：源单元名、链路名称、session ID</li>
+<li>从r2的响应中获取其<strong>单元化的repl_id和offset</strong>（这是该同步链路的当前同步位点）</li>
+<li>建立与源端（r1）的连接，发起 <code>KUNIT_PSYNC</code> 命令，附带刚获取的 <code>repl_id</code> 和 <code>offset</code></li>
 </ol>
-<h1 id="redis-server行为"><a href="#redis-server行为" class="headerlink" title="redis-server行为"></a>redis-server行为</h1><h2 id="自定义命令与处理"><a href="#自定义命令与处理" class="headerlink" title="自定义命令与处理"></a>自定义命令与处理</h2><h3 id="UNIT-SYNC-NEW-SESSION"><a href="#UNIT-SYNC-NEW-SESSION" class="headerlink" title="UNIT_SYNC_NEW_SESSION"></a>UNIT_SYNC_NEW_SESSION</h3><figure class="highlight c"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br></pre></td><td class="code"><pre><span class="line">cmd = <span class="string">&quot;KUNIT_SYNC_NEW_SESSION&quot;</span>,</span><br><span class="line">    <span class="comment">/*</span></span><br><span class="line"><span class="comment">    req:</span></span><br><span class="line"><span class="comment">        KUNIT_SYNC_NEW_SESSION &lt;UNIT_NAME&gt; &lt;RL_NAME&gt; &lt;SID&gt;</span></span><br><span class="line"><span class="comment">    rsp:</span></span><br><span class="line"><span class="comment">        [</span></span><br><span class="line"><span class="comment">            &lt;REPL_ID&gt;</span></span><br><span class="line"><span class="comment">            &lt;OFFSET&gt;</span></span><br><span class="line"><span class="comment">        ]</span></span><br><span class="line"><span class="comment">    */</span></span><br></pre></td></tr></table></figure>
-<p>这个命令主要是同步工具启动初始化时，获取r2的过往同步进度的。比如tcp重连。通过这个命令可以拿到当前同步链路的repl_id和offset。</p>
-<h3 id="UNIT-SYNC-BINLOG"><a href="#UNIT-SYNC-BINLOG" class="headerlink" title="UNIT_SYNC_BINLOG"></a>UNIT_SYNC_BINLOG</h3><figure class="highlight c"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br></pre></td><td class="code"><pre><span class="line">cmd = <span class="string">&quot;KUNIT_SYNC_BINLOG&quot;</span>,</span><br><span class="line">    <span class="comment">/*</span></span><br><span class="line"><span class="comment">    req:</span></span><br><span class="line"><span class="comment">        MULTI</span></span><br><span class="line"><span class="comment">        KUNIT_SYNC_BINLOG &lt;SID&gt; &lt;BINLOG_SEQ_STR&gt; &lt;REPL_ID&gt; &lt;OFFSET_OF_CMD_END&gt; &lt;UNIT_NAME&gt;</span></span><br><span class="line"><span class="comment">        &lt;CMD_ARGS&gt;...</span></span><br><span class="line"><span class="comment">        ...</span></span><br><span class="line"><span class="comment">        EXEC</span></span><br><span class="line"><span class="comment">    rsp:</span></span><br><span class="line"><span class="comment">        +OK</span></span><br><span class="line"><span class="comment">        +QUEUED</span></span><br><span class="line"><span class="comment">        +QUEUED</span></span><br><span class="line"><span class="comment">        ...</span></span><br><span class="line"><span class="comment">        &lt;rsp of `EXEC`&gt;</span></span><br><span class="line"><span class="comment">    */</span></span><br></pre></td></tr></table></figure>
-<p>通过这个命令更新r2的session中的offset。并设置好接下来的命令的key的单元归属信息，以及该命令表明为单元化同步的命令。</p>
-<h3 id="UNIT-SYNC-PRE-RESTORE"><a href="#UNIT-SYNC-PRE-RESTORE" class="headerlink" title="UNIT_SYNC_PRE_RESTORE"></a>UNIT_SYNC_PRE_RESTORE</h3><figure class="highlight c"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br></pre></td><td class="code"><pre><span class="line">cmd = <span class="string">&quot;KUNIT_SYNC_PRE_RESTORE&quot;</span>,</span><br><span class="line">    <span class="comment">/*</span></span><br><span class="line"><span class="comment">    req:</span></span><br><span class="line"><span class="comment">        MULTI</span></span><br><span class="line"><span class="comment">        &lt;KUNIT_SYNC_BINLOG CMD&gt;</span></span><br><span class="line"><span class="comment">        KUNIT_SYNC_PRE_RESTORE &lt;KEY&gt;</span></span><br><span class="line"><span class="comment">        &lt;RESTORE_CMD&gt;</span></span><br><span class="line"><span class="comment">        EXEC</span></span><br><span class="line"><span class="comment">    rsp:</span></span><br><span class="line"><span class="comment">        +OK</span></span><br><span class="line"><span class="comment">        +QUEUED</span></span><br><span class="line"><span class="comment">        +QUEUED</span></span><br><span class="line"><span class="comment">        +QUEUED</span></span><br><span class="line"><span class="comment">        &lt;rsp of `EXEC`&gt;</span></span><br><span class="line"><span class="comment">    */</span></span><br></pre></td></tr></table></figure>
-<p>这条命令用于在restore key之前做校验，必须处于上面binlog命令的事务中。比如一次全量同步时，r1发过来的key的单元归属信息会指定为r1，但实际上有可能是r2的数据。</p>
-<p>那么r2可以通过这个命令检查key的单元归属信息拦截掉相应的写请求。</p>
-<h2 id="实际写命令处理"><a href="#实际写命令处理" class="headerlink" title="实际写命令处理"></a>实际写命令处理</h2><p>对于一般的写命令，我们将单元归属信息都置为<code>unit_id=0</code>，表明该key属于本单元。</p>
-<p>而单元化的写命令，都是在<code>MULTI</code>中，在<code>EXEC</code>执行前，清空当前所有的预置的单元归属信息。然后依次执行，在执行到<code>UNIT_SYNC_BINLOG</code>时，设置到接下来的key的单元归属信息。</p>
-<p>之后在dbAdd时，把这个object-val的单元归属信息加上即可。</p>
-<h1 id="failover处理"><a href="#failover处理" class="headerlink" title="failover处理"></a>failover处理</h1><p>同步工具本身实际上是无状态的，因此可以任意的更换，着重关心源端和目标端的主从切换逻辑。</p>
-<p>为了实现全自动的处理，同步工具同时监听了源端的sentinel，和目标端的sentinel，的+switch-master频道。</p>
-<h2 id="当源端master发生主从切换"><a href="#当源端master发生主从切换" class="headerlink" title="当源端master发生主从切换"></a>当源端master发生主从切换</h2><p>当源端的sentinel发出了+switch-master信息，告知源端出现了failover，同步工具将断开与源端的连接，并建立与源端新主（原slave）的连接。</p>
-<p>实际上跟redis逻辑类似，使用原先保存的repl_id和offset尝试构建psync，这里有可能会全量复制或者增量复制。在实践经验中基本都是增量复制，因为同步延迟一般很低，基本offset都是一致的。</p>
-<p>当主从切换时，redis内核会把原先的repl_id变为repl_id2，并生成新的repl_id，当psync连进来时，若判断可以增量复制时，redis新主会回复“+continue repl_id”，用来通知同步工具repl_id发生了改变，同步工具会更新自己的该参数。后续会用<code>KUNIT_SYNC_BINLOG</code>通知目标redis也更新该repl_id。</p>
-<h2 id="当目标端master发生主从切换"><a href="#当目标端master发生主从切换" class="headerlink" title="当目标端master发生主从切换"></a>当目标端master发生主从切换</h2><p>目标端的所有主从节点实际上都有本次单元同步链路的信息，包括单元同步链路的repl_id和offset等。同步工具只需要用<code>KUNIT_SYNC_NEW_SESSION</code>再拿一次同步位点，从头来一次即可。一般也都会是增量复制。</p>
+<h2 id="全量同步（RDB解析）"><a href="#全量同步（RDB解析）" class="headerlink" title="全量同步（RDB解析）"></a>全量同步（RDB解析）</h2><p>当源端判断需要全量同步时，会返回RDB数据。同步工具需要解析RDB并转发到目标端。</p>
+<p>每个RDB的key-value对，会被包装成一个<code>MULTI EXEC</code>事务，包含三条命令：</p>
+<ol>
+<li><code>UNIT_SYNC_BINLOG</code>：附带session_id、binlog_seq（递增）、repl_id、offset、源单元名和链路名</li>
+<li><code>UNIT_SYNC_PRE_RESTORE</code> + <code>key</code>：告知目标端即将执行RESTORE</li>
+<li><code>RESTORE</code> + 命令参数（<code>REPLACE</code> 和 <code>ABSTTL</code>）</li>
+</ol>
+<p>在所有RDB命令解析完成后，会增加一条 <code>UNIT_SYNC_BINLOG</code>，附带真正的 <code>repl_id</code> 和 <code>offset</code>，用于告知目标端同步位点。</p>
+<h2 id="增量同步（稳态）"><a href="#增量同步（稳态）" class="headerlink" title="增量同步（稳态）"></a>增量同步（稳态）</h2><p>稳态阶段，同步工具持续在源端和目标端之间同步增量命令。</p>
+<figure class="highlight plaintext"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br><span class="line">27</span><br><span class="line">28</span><br><span class="line">29</span><br></pre></td><td class="code"><pre><span class="line">sequenceDiagram</span><br><span class="line">    participant S as 同步工具</span><br><span class="line">    participant R1 as 源端Redis</span><br><span class="line">    participant R2 as 目标端Redis</span><br><span class="line"></span><br><span class="line">    Note over S,R1: 1. 建立连接</span><br><span class="line"></span><br><span class="line">    S-&gt;&gt;R2: UNIT_SYNC_NEW_SESSION&lt;br/&gt;(unit_name, rl_name, sid)</span><br><span class="line">    R2--&gt;&gt;S: [repl_id, offset]</span><br><span class="line"></span><br><span class="line">    S-&gt;&gt;R1: KUNIT_PSYNC&lt;br/&gt;(repl_id, offset)</span><br><span class="line">    R1--&gt;&gt;S: CONTINUE/FULLRESYNC + RDB</span><br><span class="line"></span><br><span class="line">    Note over S,R1: 2. 全量同步阶段</span><br><span class="line"></span><br><span class="line">    loop 解析RDB</span><br><span class="line">        S-&gt;&gt;S: 生成MULTI命令</span><br><span class="line">        S-&gt;&gt;R2: MULTI&lt;br/&gt;KUNIT_SYNC_BINLOG&lt;br/&gt;KUNIT_SYNC_PRE_RESTORE key&lt;br/&gt;RESTORE key REPLACE ABSTTL&lt;br/&gt;EXEC</span><br><span class="line">    end</span><br><span class="line"></span><br><span class="line">    Note over S,R1: 3. 增量同步阶段</span><br><span class="line"></span><br><span class="line">    loop 稳态同步</span><br><span class="line">        R1-&gt;&gt;S: binlog命令</span><br><span class="line">        S-&gt;&gt;S: 检测回环 &amp; 持久化</span><br><span class="line">        S-&gt;&gt;R2: 包装后的命令</span><br><span class="line">        R2--&gt;&gt;S: OK</span><br><span class="line">        S-&gt;&gt;R1: REPLCONF ACK offset</span><br><span class="line">    end</span><br></pre></td></tr></table></figure>
+
+<p><img src="/2025-08-24-redis%E5%8D%95%E5%85%83%E5%8C%96/%E5%A2%9E%E9%87%8F%E5%90%8C%E6%AD%A5%E6%B5%81%E7%A8%8B.png" alt="增量同步流程"></p>
+<h3 id="与源端（r1）的稳态交互"><a href="#与源端（r1）的稳态交互" class="headerlink" title="与源端（r1）的稳态交互"></a>与源端（r1）的稳态交互</h3><ol>
+<li>持续解析从r1收到的命令<ul>
+<li>如果是<code>unit</code>命令，只更新offset，不持久化到文件</li>
+<li>否则包装成<code>MULTI</code>命令，持久化到本地文件中</li>
+</ul>
+</li>
+<li>每秒向r1回复一次 <code>REPLCONF ACK offset</code></li>
+</ol>
+<h3 id="与目标端（r2）的稳态交互"><a href="#与目标端（r2）的稳态交互" class="headerlink" title="与目标端（r2）的稳态交互"></a>与目标端（r2）的稳态交互</h3><ol>
+<li>持续从本地文件读取之前持久化的命令，发送给r2</li>
+<li>将已发送但未收到回复的请求附带seq记录到队列 <code>binlog_info_q</code> 中</li>
+<li>持续从r2收回复包，每收到一个命令的回复，删除队列中对应记录</li>
+<li>定期根据队列记录的进度，删除目标端已收到的命令对应的文件</li>
+</ol>
+<h2 id="位点管理与持久化"><a href="#位点管理与持久化" class="headerlink" title="位点管理与持久化"></a>位点管理与持久化</h2><p>Redis引入单元化同步的进度结构，相当于在常规的repl_offset基础上增加了unit_repl_offset：</p>
+<ul>
+<li>每个节点记录自身的unit_repl_id和unit_repl_offset，主要用于重连时让同步工具获取该节点<strong>单元化的同步位点</strong></li>
+<li>对于单一节点，单元化写操作的binlog和普通命令产生的binlog共用缓冲区和repl_id&#x2F;offset</li>
+</ul>
+<hr>
+<h1 id="Redis端实现"><a href="#Redis端实现" class="headerlink" title="Redis端实现"></a>Redis端实现</h1><h2 id="关键数据结构"><a href="#关键数据结构" class="headerlink" title="关键数据结构"></a>关键数据结构</h2><h3 id="KUnitSession"><a href="#KUnitSession" class="headerlink" title="KUnitSession"></a>KUnitSession</h3><p>单元同步会话结构，维护跨单元同步状态：</p>
+<figure class="highlight c"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br></pre></td><td class="code"><pre><span class="line"><span class="class"><span class="keyword">struct</span> <span class="title">KUnitSession</span> &#123;</span></span><br><span class="line">    sds unit_name;      <span class="comment">/* 源单元名称 */</span></span><br><span class="line">    sds rl_name;       <span class="comment">/* 同步链路名称 */</span></span><br><span class="line">    sds sid;           <span class="comment">/* 会话ID */</span></span><br><span class="line">    sds binlog_seq;    <span class="comment">/* 当前会话的binlog序列号 */</span></span><br><span class="line"></span><br><span class="line">    <span class="comment">/* 对应源Redis的同步信息 */</span></span><br><span class="line">    sds repl_id;       <span class="comment">/* 复制ID */</span></span><br><span class="line">    <span class="type">int64_t</span> offset;    <span class="comment">/* 位点 */</span></span><br><span class="line"></span><br><span class="line">    <span class="type">int64_t</span> last_active_time_ms;  <span class="comment">/* 最后活跃时间，用于淘汰 */</span></span><br><span class="line">&#125;;</span><br></pre></td></tr></table></figure>
+
+<p>每个Redis最多支持16个并发会话（<code>KUNIT_SESSION_COUNT_MAX</code>）。</p>
+<h3 id="robj-kunit"><a href="#robj-kunit" class="headerlink" title="robj.kunit"></a>robj.kunit</h3><p>Redis对象中的单元归属信息字段：</p>
+<figure class="highlight c"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br></pre></td><td class="code"><pre><span class="line"><span class="class"><span class="keyword">struct</span> &#123;</span></span><br><span class="line">    <span class="type">uint32_t</span> unit_id;           <span class="comment">/* 所属单元ID，0表示本单元 */</span></span><br><span class="line">    <span class="type">uint32_t</span> touch_time_sec;    <span class="comment">/* 最后写操作时间（秒） */</span></span><br><span class="line">&#125; kunit;</span><br></pre></td></tr></table></figure>
+
+<ul>
+<li><code>unit_id = 0</code>：表示该key属于本单元</li>
+<li><code>unit_id &gt; 0</code>：表示该key属于其他单元</li>
+</ul>
+<h3 id="UnitIdPair"><a href="#UnitIdPair" class="headerlink" title="UnitIdPair"></a>UnitIdPair</h3><p>记录单元名称与ID的映射关系：</p>
+<figure class="highlight c"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br></pre></td><td class="code"><pre><span class="line"><span class="class"><span class="keyword">struct</span> <span class="title">UnitIdPair</span> &#123;</span></span><br><span class="line">    sds unit_name;     <span class="comment">/* 单元名称，如 &quot;beijing&quot; */</span></span><br><span class="line">    <span class="type">uint32_t</span> unit_id;  <span class="comment">/* 单元ID，从1开始递增 */</span></span><br><span class="line">&#125;;</span><br></pre></td></tr></table></figure>
+
+<h2 id="自定义命令"><a href="#自定义命令" class="headerlink" title="自定义命令"></a>自定义命令</h2><h3 id="KUNIT-SYNC-NEW-SESSION"><a href="#KUNIT-SYNC-NEW-SESSION" class="headerlink" title="KUNIT_SYNC_NEW_SESSION"></a>KUNIT_SYNC_NEW_SESSION</h3><p>同步工具初始化时获取目标端的同步进度。</p>
+<figure class="highlight plaintext"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br></pre></td><td class="code"><pre><span class="line">请求: KUNIT_SYNC_NEW_SESSION &lt;UNIT_NAME&gt; &lt;RL_NAME&gt; &lt;SID&gt;</span><br><span class="line">响应: [&lt;REPL_ID&gt;, &lt;OFFSET&gt;]</span><br></pre></td></tr></table></figure>
+
+<h3 id="KUNIT-SYNC-BINLOG"><a href="#KUNIT-SYNC-BINLOG" class="headerlink" title="KUNIT_SYNC_BINLOG"></a>KUNIT_SYNC_BINLOG</h3><p>更新同步位点并设置后续命令的key的单元归属信息。</p>
+<figure class="highlight plaintext"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br></pre></td><td class="code"><pre><span class="line">请求: MULTI</span><br><span class="line">      KUNIT_SYNC_BINLOG &lt;SID&gt; &lt;BINLOG_SEQ&gt; &lt;REPL_ID&gt; &lt;OFFSET&gt; &lt;UNIT_NAME&gt;</span><br><span class="line">      &lt;实际命令&gt;</span><br><span class="line">      EXEC</span><br><span class="line">响应: +OK +QUEUED +QUEUED ... &lt;EXEC响应&gt;</span><br></pre></td></tr></table></figure>
+
+<h3 id="KUNIT-SYNC-PRE-RESTORE"><a href="#KUNIT-SYNC-PRE-RESTORE" class="headerlink" title="KUNIT_SYNC_PRE_RESTORE"></a>KUNIT_SYNC_PRE_RESTORE</h3><p>在RESTORE命令执行前做校验，检查key的单元归属信息是否匹配。</p>
+<figure class="highlight plaintext"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br></pre></td><td class="code"><pre><span class="line">请求: MULTI</span><br><span class="line">      KUNIT_SYNC_BINLOG ...</span><br><span class="line">      KUNIT_SYNC_PRE_RESTORE &lt;KEY&gt;</span><br><span class="line">      RESTORE ...</span><br><span class="line">      EXEC</span><br></pre></td></tr></table></figure>
+
+<h2 id="写命令处理逻辑"><a href="#写命令处理逻辑" class="headerlink" title="写命令处理逻辑"></a>写命令处理逻辑</h2><p>对于本地写命令，将单元归属信息置为 <code>unit_id=0</code>，表明该key属于本单元。</p>
+<p>对于单元化同步过来的写命令（在MULTI中），处理流程如下：</p>
+<ol>
+<li>在EXEC执行前，清空所有预置的单元归属信息</li>
+<li>依次执行命令，执行到<code>UNIT_SYNC_BINLOG</code>时，设置后续key的单元归属信息</li>
+<li>在<code>dbAdd</code>时，将该单元归属信息写入value对象</li>
+</ol>
+<h2 id="关键函数说明"><a href="#关键函数说明" class="headerlink" title="关键函数说明"></a>关键函数说明</h2><h3 id="keyBelongToThisKUnit"><a href="#keyBelongToThisKUnit" class="headerlink" title="keyBelongToThisKUnit()"></a>keyBelongToThisKUnit()</h3><p>判断key是否属于本单元：</p>
+<figure class="highlight c"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br></pre></td><td class="code"><pre><span class="line"><span class="type">int</span> <span class="title function_">keyBelongToThisKUnit</span><span class="params">(redisDb *db, robj *key)</span> &#123;</span><br><span class="line">    dictEntry *de = dictFind(db-&gt;dict, key-&gt;ptr);</span><br><span class="line">    <span class="keyword">if</span> (de == <span class="literal">NULL</span>) &#123;</span><br><span class="line">        <span class="keyword">return</span> <span class="number">0</span>;</span><br><span class="line">    &#125;</span><br><span class="line">    robj *val = dictGetVal(de);</span><br><span class="line">    <span class="keyword">return</span> val != <span class="literal">NULL</span> &amp;&amp; val-&gt;kunit.unit_id == <span class="number">0</span>;</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+<ul>
+<li>返回 <code>1</code>：key属于本单元，可以被淘汰或过期</li>
+<li>返回 <code>0</code>：key不属于本单元，不进行淘汰或过期操作</li>
+</ul>
+<h3 id="lookupKeyWriteWithFlags"><a href="#lookupKeyWriteWithFlags" class="headerlink" title="lookupKeyWriteWithFlags()"></a>lookupKeyWriteWithFlags()</h3><p>写操作时更新unit_id：</p>
+<figure class="highlight c"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br></pre></td><td class="code"><pre><span class="line">robj *<span class="title function_">lookupKeyWriteWithFlags</span><span class="params">(redisDb *db, robj *key, <span class="type">int</span> flags)</span> &#123;</span><br><span class="line">    robj *o = lookupKey(db, key, flags | LOOKUP_WRITE);</span><br><span class="line">    <span class="comment">/* 任何带LOOKUP_NOTOUCH标志的写命令不应改变值的单元元信息 */</span></span><br><span class="line">    <span class="keyword">if</span> (o != <span class="literal">NULL</span> &amp;&amp; !(flags &amp; LOOKUP_NOTOUCH)) &#123;</span><br><span class="line">        o-&gt;kunit.unit_id = getKUnitBinlogTransUnitID();</span><br><span class="line">        o-&gt;kunit.touch_time_sec = time(<span class="literal">NULL</span>);</span><br><span class="line">    &#125;</span><br><span class="line">    <span class="keyword">return</span> o;</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+<ul>
+<li>本地写命令：<code>unit_id</code> 设置为0（属于本单元）</li>
+<li>同步过来的命令：<code>unit_id</code> 设置为对端单元ID</li>
+</ul>
+<h3 id="propagateDeletionForKunit"><a href="#propagateDeletionForKunit" class="headerlink" title="propagateDeletionForKunit()"></a>propagateDeletionForKunit()</h3><p>单元内删除不传播到从节点：</p>
+<figure class="highlight c"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br></pre></td><td class="code"><pre><span class="line"><span class="type">void</span> <span class="title function_">propagateDeletionForKunit</span><span class="params">(redisDb *db, robj *key, <span class="type">int</span> lazy)</span> &#123;</span><br><span class="line">    propagateDeletionImpl(db, key, lazy, <span class="number">1</span>);  <span class="comment">/* 标记为kunit删除 */</span></span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+<p>只有当key属于本单元时，才向从节点传播删除操作。</p>
+<h2 id="关键配置项"><a href="#关键配置项" class="headerlink" title="关键配置项"></a>关键配置项</h2><h3 id="allow-evict-non-local"><a href="#allow-evict-non-local" class="headerlink" title="allow-evict-non-local"></a>allow-evict-non-local</h3><p>是否允许淘汰非本单元key：</p>
+<table>
+<thead>
+<tr>
+<th>值</th>
+<th>行为</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><code>no</code> (默认)</td>
+<td>只淘汰属于本单元的key (unit_id&#x3D;0)</td>
+</tr>
+<tr>
+<td><code>yes</code></td>
+<td>允许淘汰所有key，不区分单元</td>
+</tr>
+</tbody></table>
+<figure class="highlight plaintext"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br></pre></td><td class="code"><pre><span class="line"># 默认配置 - 只淘汰本单元的key</span><br><span class="line">allow-evict-non-local no</span><br></pre></td></tr></table></figure>
+
+<h3 id="intra-unit-expiration-enable"><a href="#intra-unit-expiration-enable" class="headerlink" title="intra-unit-expiration-enable"></a>intra-unit-expiration-enable</h3><p>是否允许单元内key过期：</p>
+<table>
+<thead>
+<tr>
+<th>值</th>
+<th>行为</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><code>no</code> (默认)</td>
+<td>本单元不处理其他单元key的过期</td>
+</tr>
+<tr>
+<td><code>yes</code></td>
+<td>允许处理所有key的过期</td>
+</tr>
+</tbody></table>
+<figure class="highlight plaintext"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br></pre></td><td class="code"><pre><span class="line"># 默认配置 - 不处理非本单元key的过期</span><br><span class="line">intra-unit-expiration-enable no</span><br></pre></td></tr></table></figure>
+
+<h3 id="其他相关配置"><a href="#其他相关配置" class="headerlink" title="其他相关配置"></a>其他相关配置</h3><ul>
+<li><code>unit-name</code>：本单元名称，用于标识</li>
+<li><code>unit-id</code>：本单元ID（自动生成，也可手动指定）</li>
+</ul>
+<hr>
+<h1 id="Failover处理"><a href="#Failover处理" class="headerlink" title="Failover处理"></a>Failover处理</h1><p>同步工具本身是无状态的，可以任意更换。因此failover处理主要关注源端和目标端的主从切换场景。</p>
+<p>同步工具同时监听源端和目标端Sentinel的+switch-master频道，检测主从切换事件。</p>
+<h2 id="源端master发生主从切换"><a href="#源端master发生主从切换" class="headerlink" title="源端master发生主从切换"></a>源端master发生主从切换</h2><p>当同步工具检测到源端failover事件时：</p>
+<ol>
+<li>断开与源端的连接</li>
+<li>建立与源端新主节点（原slave）的连接</li>
+<li>使用原先保存的repl_id和offset尝试构建psync</li>
+</ol>
+<p><strong>增量复制判断</strong>：在实践经验中，由于同步延迟一般很低，基本都是增量复制。当主从切换时，Redis内核会将原先的repl_id变为repl_id2，并生成新的repl_id。当psync连进来时，若判断可以增量复制，Redis新主会回复”+continue repl_id”。</p>
+<ol start="4">
+<li>同步工具更新repl_id参数，并通过<code>KUNIT_SYNC_BINLOG</code>通知目标Redis也更新该repl_id</li>
+</ol>
+<h2 id="目标端master发生主从切换"><a href="#目标端master发生主从切换" class="headerlink" title="目标端master发生主从切换"></a>目标端master发生主从切换</h2><p>目标端的所有主从节点都保存了本次单元同步链路的信息，包括unit_repl_id和unit_repl_offset等。</p>
+<p>当检测到目标端failover时，同步工具只需：</p>
+<ol>
+<li>使用<code>KUNIT_SYNC_NEW_SESSION</code>重新获取同步位点</li>
+<li>从头开始同步（通常也是增量复制）</li>
+</ol>
+<hr>
+<h1 id="附录：请求同步流程图"><a href="#附录：请求同步流程图" class="headerlink" title="附录：请求同步流程图"></a>附录：请求同步流程图</h1><p><img src="/2025-08-24-redis%E5%8D%95%E5%85%83%E5%8C%96/%E8%AF%B7%E6%B1%82%E5%90%8C%E6%AD%A5.drawio.svg" alt="请求同步"></p>
 
     </div>
 
