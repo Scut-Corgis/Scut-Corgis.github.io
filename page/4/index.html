@@ -123,7 +123,7 @@
   <nav class="site-state">
       <div class="site-state-item site-state-posts">
         <a href="/archives/">
-          <span class="site-state-item-count">42</span>
+          <span class="site-state-item-count">44</span>
           <span class="site-state-item-name">日志</span>
         </a>
       </div>
@@ -159,7 +159,7 @@
   
 
   <article itemscope itemtype="http://schema.org/Article" class="post-content" lang="">
-    <link itemprop="mainEntityOfPage" href="https://scut-corgis.github.io/2025-12-12-leveldb%E6%BA%90%E7%A0%81%E5%AD%A6%E4%B9%A0(5)-iterator/">
+    <link itemprop="mainEntityOfPage" href="https://scut-corgis.github.io/2026-01-22-redis%E6%97%A0%E6%84%9F%E8%BF%81%E7%A7%BBmaster/">
 
     <span hidden itemprop="author" itemscope itemtype="http://schema.org/Person">
       <meta itemprop="image" content="/images/corgis.jpg">
@@ -177,7 +177,7 @@
     </span>
       <header class="post-header">
         <h2 class="post-title" itemprop="name headline">
-          <a href="/2025-12-12-leveldb%E6%BA%90%E7%A0%81%E5%AD%A6%E4%B9%A0(5)-iterator/" class="post-title-link" itemprop="url">leveldb源码学习(5)-iterator</a>
+          <a href="/2026-01-22-redis%E6%97%A0%E6%84%9F%E8%BF%81%E7%A7%BBmaster/" class="post-title-link" itemprop="url">redis无感迁移master</a>
         </h2>
 
         <div class="post-meta-container">
@@ -188,7 +188,7 @@
       </span>
       <span class="post-meta-item-text">发表于</span>
 
-      <time title="创建时间：2025-12-12 17:41:12" itemprop="dateCreated datePublished" datetime="2025-12-12T17:41:12+08:00">2025-12-12</time>
+      <time title="创建时间：2026-01-22 21:17:05" itemprop="dateCreated datePublished" datetime="2026-01-22T21:17:05+08:00">2026-01-22</time>
     </span>
     <span class="post-meta-item">
       <span class="post-meta-item-icon">
@@ -196,7 +196,7 @@
       </span>
       <span class="post-meta-item-text">分类于</span>
         <span itemprop="about" itemscope itemtype="http://schema.org/Thing">
-          <a href="/categories/leveldb/" itemprop="url" rel="index"><span itemprop="name">leveldb</span></a>
+          <a href="/categories/redis/" itemprop="url" rel="index"><span itemprop="name">redis</span></a>
         </span>
     </span>
 
@@ -210,59 +210,352 @@
     
     
     <div class="post-body" itemprop="articleBody">
-          <h1 id="前言"><a href="#前言" class="headerlink" title="前言"></a>前言</h1><p>leveldb对外提供了迭代器iterator方法，用于遍历数据，比如以下用法</p>
-<figure class="highlight c++"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br></pre></td><td class="code"><pre><span class="line">leveldb::Iterator* it = db-&gt;<span class="built_in">NewIterator</span>(leveldb::<span class="built_in">ReadOptions</span>());</span><br><span class="line"><span class="keyword">for</span> (it-&gt;<span class="built_in">SeekToFirst</span>(); it-&gt;<span class="built_in">Valid</span>(); it-&gt;<span class="built_in">Next</span>()) &#123;</span><br><span class="line">  cout &lt;&lt; it-&gt;<span class="built_in">key</span>().<span class="built_in">ToString</span>() &lt;&lt; <span class="string">&quot;: &quot;</span>  &lt;&lt; it-&gt;<span class="built_in">value</span>().<span class="built_in">ToString</span>() &lt;&lt; endl;</span><br><span class="line">&#125;</span><br><span class="line"><span class="built_in">assert</span>(it-&gt;<span class="built_in">status</span>().<span class="built_in">ok</span>());  <span class="comment">// Check for any errors found during the scan</span></span><br><span class="line"><span class="keyword">delete</span> it;</span><br></pre></td></tr></table></figure>
+          <h1 id="背景"><a href="#背景" class="headerlink" title="背景"></a>背景</h1><h2 id="现有方案的痛点"><a href="#现有方案的痛点" class="headerlink" title="现有方案的痛点"></a>现有方案的痛点</h2><p>在生产环境中，Redis主节点迁移是一个高风险操作。传统的迁移方案存在以下问题：</p>
+<h3 id="1-故障切换丢失数据"><a href="#1-故障切换丢失数据" class="headerlink" title="1. 故障切换丢失数据"></a>1. 故障切换丢失数据</h3><p>使用 Redis 内置的 <code>FAILOVER</code> 命令进行切换时：</p>
+<ul>
+<li><strong>同步模式</strong>：需要等待从节点数据完全同步完成才能切换，期间主节点不可写入，影响业务</li>
+<li><strong>异步模式</strong>：直接切换，但会丢失尚未复制到从节点的数据</li>
+</ul>
+<h3 id="2-客户端感知切换"><a href="#2-客户端感知切换" class="headerlink" title="2. 客户端感知切换"></a>2. 客户端感知切换</h3><p>无论哪种模式，当主从切换发生时：</p>
+<ul>
+<li>客户端会收到 <code>+switch-master</code> 事件通知</li>
+<li>客户端需要重建连接，可能导致请求失败</li>
+<li>对于延迟敏感的业务，影响显著</li>
+</ul>
+<h3 id="3-维护窗口不可控"><a href="#3-维护窗口不可控" class="headerlink" title="3. 维护窗口不可控"></a>3. 维护窗口不可控</h3><ul>
+<li>传统的迁移需要停止服务或设置维护窗口</li>
+<li>无法在业务高峰期进行无缝迁移</li>
+<li>对业务连续性要求高的场景无法接受</li>
+</ul>
+<h2 id="为什么需要”无感”迁移"><a href="#为什么需要”无感”迁移" class="headerlink" title="为什么需要”无感”迁移"></a>为什么需要”无感”迁移</h2><p>以下业务场景对”无感”迁移有强烈需求：</p>
+<table>
+<thead>
+<tr>
+<th>场景</th>
+<th>需求</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><strong>大促前资源调度</strong></td>
+<td>需要将 Redis 迁移到更高配置的机器，但不能影响业务</td>
+</tr>
+<tr>
+<td><strong>跨可用区迁移</strong></td>
+<td>从 Availability Zone A 迁移到 Zone B，期望用户无感知</td>
+</tr>
+<tr>
+<td><strong>版本升级</strong></td>
+<td>升级 Redis 版本，需要切换主节点</td>
+</tr>
+<tr>
+<td><strong>机房搬迁</strong></td>
+<td>整体迁移到新机房，期望业务无感知</td>
+</tr>
+</tbody></table>
+<h2 id="解决方案架构"><a href="#解决方案架构" class="headerlink" title="解决方案架构"></a>解决方案架构</h2><p>标准的 Redis 高可用架构如下：</p>
+<p><img src="/2026-01-22-redis%E6%97%A0%E6%84%9F%E8%BF%81%E7%A7%BBmaster/redis%E6%9E%B6%E6%9E%84%E5%9B%BE.svg"></p>
+<h3 id="组件通信关系"><a href="#组件通信关系" class="headerlink" title="组件通信关系"></a>组件通信关系</h3><ol>
+<li><strong>Sentinel 集群</strong>：通过 Hello 消息保持状态同步，监控 Redis 主从节点</li>
+<li><strong>Proxy 集群</strong>：订阅 Sentinel 的 <code>+switch-master</code> 事件，感知主从切换</li>
+<li><strong>Redis 集群</strong>：主从复制，Sentinel 负责故障检测和切换</li>
+</ol>
+<h3 id="Sentinel-Proxy-协作流程"><a href="#Sentinel-Proxy-协作流程" class="headerlink" title="Sentinel + Proxy 协作流程"></a>Sentinel + Proxy 协作流程</h3><p><img src="/2026-01-22-redis%E6%97%A0%E6%84%9F%E8%BF%81%E7%A7%BBmaster/sentinel-proxy%E5%8D%8F%E4%BD%9C%E6%B5%81%E7%A8%8B.svg"></p>
+<p>首先架构是标准的，sentinel + proxy + redis，即哨兵作为HA组件监控redis的存活情况，proxy作为流量入口转发用户流量到指定的redis节点。</p>
+<p>proxy实时监视sentinel，会订阅其<code>+switch-master</code>事件，一旦发现了该信号，proxy会直接切流到新节点中。</p>
+<p>在以上的架构背景下，若没有一些特殊能力，redis迁移主节点又不影响用户请求是不可能实现的。一种可能的方案是，给redis发送<code>failover to</code>命令让其做协调式主从切换，然后再把从节点迁移走。</p>
+<p>但<code>failover to</code>命令是有感的，其有两种工作方式，一种是禁写主节点，直到从的offset完全跟上主后再主从切换。一种是直接切换，也就是会丢失所有未同步到从节点的数据。</p>
+<p>因此本文阐述了一种新能力，可以让业务无感知的迁移master节点。</p>
+<h1 id="方法"><a href="#方法" class="headerlink" title="方法"></a>方法</h1><p>主要方法如下：通过修改sentinel的内核，引入了<code>silent-failover</code>命令，通过两阶段的failover，即<code>prepare</code>和<code>done</code>实现无感迁移master。其中从节点需要打开可写开关。</p>
+<p>一种迁移的示意图如下:<br><img src="/2026-01-22-redis%E6%97%A0%E6%84%9F%E8%BF%81%E7%A7%BBmaster/%E8%BF%81%E7%A7%BB%E7%A4%BA%E6%84%8F%E5%9B%BE.png"></p>
+<p>引入一个新的哨兵命令，格式如下</p>
+<blockquote>
+<p>sentinel silent-failover master-name slave-node &lt;prepare|done&gt;</p>
+</blockquote>
+<p>参数说明</p>
+<ul>
+<li>silent-failover: 无感迁移子命令</li>
+<li>master-name: 无感迁移的分片名称</li>
+<li>slave-node: 需要提主的从节点的 ip:port</li>
+<li>prepare | done: 两阶段，prepare可以认为是假切，只是对外发出<code>+switch-master</code>，done才认为是真的切了</li>
+</ul>
+<p><code>sentinel silent-failover masterName slavehost:port prepare</code>命令，可指定某个masterName的主节点进行<strong>预</strong>故障转移到指定的从节点。</p>
+<p>预故障转移的含义定义如下：通过发送<code>+switch-master</code>告知proxy已经主从切换了，要求切流到从节点，但真正意义的redis主从根本没切，也就是sentinel告知了proxy假消息。</p>
+<p>然后进行二阶段<code>sentinel silent-failover masterName slavehost:port done</code>，此时开始真正的主从切换。完成不丢任何数据的迁移master。</p>
+<p>切换完成后，proxy 会将流量路由到新的主节点，完成整个无感迁移流程。当然这时候会出现短暂的双写导致写顺序不一致的问题。</p>
+<h1 id="sentinel核心工作"><a href="#sentinel核心工作" class="headerlink" title="sentinel核心工作"></a>sentinel核心工作</h1><h2 id="难点"><a href="#难点" class="headerlink" title="难点"></a>难点</h2><p>sentinel内核改动的核心在于多哨兵之间的状态共识。假设一个集群有三个哨兵，当对一个哨兵发送<code>silent-failover</code>命令引入两阶段后，其他两个哨兵也必须感知到这个两阶段从而向proxy发送<code>+switch-master</code>消息。由于无法确定proxy连接的是哪个sentinel，因此需要一套共识机制，让所有哨兵协调进入两阶段failover状态。</p>
+<p>同时第一阶段后的中间状态，需要还能实时保障故障转移。比如原主挂了，哨兵应该能直接切换，比如新主挂了，哨兵也能选出一个从节点。换句话说，任何的宕机事件，哨兵都必须主动终止两阶段failover进行相应的故障转移，这部分的共识代码实现是相当困难的。</p>
+<h2 id="Hello-消息格式"><a href="#Hello-消息格式" class="headerlink" title="Hello 消息格式"></a>Hello 消息格式</h2><p>主要修改方法是在频道<code>hello</code>中修改一下互相打招呼的格式，用该事件通知其他sentinel本执行了prepare的sentinel收到了<code>silent-failover</code>事件。</p>
+<h3 id="原有-vs-新增协议对比"><a href="#原有-vs-新增协议对比" class="headerlink" title="原有 vs 新增协议对比"></a>原有 vs 新增协议对比</h3><table>
+<thead>
+<tr>
+<th>版本</th>
+<th>字段数</th>
+<th>格式</th>
+<th>说明</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>原有</td>
+<td>8 字段</td>
+<td>sentinel信息 + master信息</td>
+<td>标准 Hello</td>
+</tr>
+<tr>
+<td>新增</td>
+<td>11 字段</td>
+<td>sentinel信息 + master信息 + silent信息</td>
+<td>含 silent-failover 状态</td>
+</tr>
+</tbody></table>
+<h3 id="字段说明"><a href="#字段说明" class="headerlink" title="字段说明"></a>字段说明</h3><figure class="highlight plaintext"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br></pre></td><td class="code"><pre><span class="line">原有8字段格式:</span><br><span class="line">[sentinel-ip],[sentinel-port],[sentinel-runid],[sentinel-epoch],</span><br><span class="line">[master-ip],[master-name],[master-port],[master-epoch]</span><br><span class="line"></span><br><span class="line">新增11字段格式 (新增3个字段):</span><br><span class="line">[sentinel-ip],[sentinel-port],[sentinel-runid],[sentinel-epoch],</span><br><span class="line">[master-ip],[master-name],[master-port],[master-epoch],</span><br><span class="line">[silent-done-epoch],[silent-master-ip],[silent-master-port]</span><br></pre></td></tr></table></figure>
 
-<figure class="highlight c++"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">for</span> (it-&gt;<span class="built_in">Seek</span>(start);</span><br><span class="line">   it-&gt;<span class="built_in">Valid</span>() &amp;&amp; it-&gt;<span class="built_in">key</span>().<span class="built_in">ToString</span>() &lt; limit;</span><br><span class="line">   it-&gt;<span class="built_in">Next</span>()) &#123;</span><br><span class="line">  ...</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+<h3 id="图示"><a href="#图示" class="headerlink" title="图示"></a>图示</h3><figure class="highlight plaintext"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br></pre></td><td class="code"><pre><span class="line">正常状态 Hello 消息 (8字段):</span><br><span class="line">┌────────────┬────────────┬──────────┬───────────┐</span><br><span class="line">│ Sentinel   │   Master   │          │           │</span><br><span class="line">│ 信息(4字段) │ 信息(4字段) │          │           │</span><br><span class="line">└────────────┴────────────┴──────────┴───────────┘</span><br><span class="line"></span><br><span class="line">Prepare 状态 Hello 消息 (11字段):</span><br><span class="line">┌────────────┬────────────┬─────────────────────────┐</span><br><span class="line">│ Sentinel   │   Master   │  Silent-Failover 信息  │</span><br><span class="line">│ 信息(4字段) │ 信息(4字段) │  (3字段: done_epoch,   │</span><br><span class="line">│            │           │   silent_master_ip, port) │</span><br><span class="line">└────────────┴────────────┴─────────────────────────┘</span><br></pre></td></tr></table></figure>
 
-<p>其对使用者完全屏蔽了内部<strong>极其复杂</strong>的细节，让使用者感觉就像是在一个最简单的有序数组上遍历。</p>
-<p>实际上因为lsm-tree结构，读操作特别是扫描操作是性能消耗较大的，需要同时创建<code>mem</code>、<code>imm</code>、<code>level0</code>的全部sst，以及<code>level1~n</code>的其中一个sst的迭代器。用户每次调用<code>Next()</code>时，实际上底层这数十个迭代器都在执行<code>Next()</code>，并找到其中<code>smallest</code>的key，当然这个<code>smallest</code>是将key+seq同时加入排序的，即seq大的会先遍历到。</p>
-<p>总的来说，在代码中，迭代器层级如下</p>
-<figure class="highlight c++"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">class</span> <span class="title class_">DBIter</span> : <span class="keyword">public</span> Iterator &#123;&#125;; <span class="comment">// 最外层抽象，用户直接使用</span></span><br><span class="line"></span><br><span class="line"><span class="comment">// 实际操作数据的归并迭代器</span></span><br><span class="line"><span class="keyword">class</span> <span class="title class_">MergingIterator</span> : <span class="keyword">public</span> Iterator &#123;</span><br><span class="line">    ...</span><br><span class="line">    IteratorWrapper* children_; <span class="comment">//实际上是一个vector数组，包含了其下的所有迭代器</span></span><br><span class="line">    IteratorWrapper* current_; <span class="comment">// 其中的，指向当前实际数据的迭代器指针。比如key 1 3 4 7分布在两个迭代器中，之前指向3，调用Next()应该指向4，那么那个指向4的迭代器指针就是这个变量</span></span><br><span class="line">&#125;; </span><br><span class="line"></span><br><span class="line"><span class="comment">/* mem迭代器，用于遍历memtable，对于mem是在children的0号下标，imm在1号下标，level0次之，更高层的继续往后 */</span></span><br><span class="line"><span class="keyword">class</span> <span class="title class_">MemTableIterator</span> : <span class="keyword">public</span> Iterator &#123;&#125;;</span><br><span class="line"></span><br><span class="line"><span class="comment">// 遍历sst的双层迭代器，外层是index_block用于定位block块位置，内层在block内部遍历</span></span><br><span class="line"><span class="keyword">class</span> <span class="title class_">TwoLevelIterator</span> : <span class="keyword">public</span> Iterator &#123;&#125;;</span><br><span class="line"><span class="function">Iterator* <span class="title">Table::NewIterator</span><span class="params">(<span class="type">const</span> ReadOptions&amp; options)</span> <span class="type">const</span> </span>&#123;</span><br><span class="line">  <span class="keyword">return</span> <span class="built_in">NewTwoLevelIterator</span>(</span><br><span class="line">      rep_-&gt;index_block-&gt;<span class="built_in">NewIterator</span>(rep_-&gt;options.comparator),</span><br><span class="line">      &amp;Table::BlockReader, <span class="built_in">const_cast</span>&lt;Table*&gt;(<span class="keyword">this</span>), options);</span><br><span class="line">&#125;</span><br><span class="line"><span class="comment">// level1~n的双层迭代器，即依次遍历sst file第一层，每个sst内部又是前文提到的两层</span></span><br><span class="line"><span class="function">Iterator* <span class="title">Version::NewConcatenatingIterator</span><span class="params">(<span class="type">const</span> ReadOptions&amp; options,</span></span></span><br><span class="line"><span class="params"><span class="function">                                            <span class="type">int</span> level)</span> <span class="type">const</span> </span>&#123;</span><br><span class="line">  <span class="keyword">return</span> <span class="built_in">NewTwoLevelIterator</span>(</span><br><span class="line">      <span class="keyword">new</span> <span class="built_in">LevelFileNumIterator</span>(vset_-&gt;icmp_, &amp;files_[level]), &amp;GetFileIterator,</span><br><span class="line">      vset_-&gt;table_cache_, options);</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+<h3 id="状态同步机制"><a href="#状态同步机制" class="headerlink" title="状态同步机制"></a>状态同步机制</h3><figure class="highlight plaintext"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br></pre></td><td class="code"><pre><span class="line">字段数变化 -&gt; 状态变化</span><br><span class="line"></span><br><span class="line">8 字段 -&gt; 11 字段: silent-failover 开始 (prepare)</span><br><span class="line">          触发: 发送 +switch-master (假切换)</span><br><span class="line"></span><br><span class="line">11 字段 -&gt; 8 字段: silent-failover 结束 (done)</span><br><span class="line">          触发: 发送 +switch-master (真切换)</span><br></pre></td></tr></table></figure>
 
-<h1 id="整体逻辑解析"><a href="#整体逻辑解析" class="headerlink" title="整体逻辑解析"></a>整体逻辑解析</h1><h2 id="迭代器的创建"><a href="#迭代器的创建" class="headerlink" title="迭代器的创建"></a>迭代器的创建</h2><p>首先在外层创建迭代器的函数如下，即用</p>
-<figure class="highlight c++"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br></pre></td><td class="code"><pre><span class="line"><span class="function">Iterator* <span class="title">DBImpl::NewIterator</span><span class="params">(<span class="type">const</span> ReadOptions&amp; options)</span> </span>&#123;</span><br><span class="line">  SequenceNumber latest_snapshot;</span><br><span class="line">  <span class="type">uint32_t</span> seed;</span><br><span class="line">  <span class="comment">// 创建MergingIterator</span></span><br><span class="line">  Iterator* iter = <span class="built_in">NewInternalIterator</span>(options, &amp;latest_snapshot, &amp;seed);</span><br><span class="line">  <span class="comment">// 结合MergingIterator和用户传过来的seq创建最外层给用户的DBIter</span></span><br><span class="line">  <span class="comment">// 因此iter创建时，实际上就已经创建了一个快照，后面扫数据是不会扫到在此之后写入的数据的</span></span><br><span class="line">  <span class="keyword">return</span> <span class="built_in">NewDBIterator</span>(<span class="keyword">this</span>, <span class="built_in">user_comparator</span>(), iter,</span><br><span class="line">                       (options.snapshot != <span class="literal">nullptr</span></span><br><span class="line">                            ? <span class="built_in">static_cast</span>&lt;<span class="type">const</span> SnapshotImpl*&gt;(options.snapshot)</span><br><span class="line">                                  -&gt;<span class="built_in">sequence_number</span>()</span><br><span class="line">                            : latest_snapshot),</span><br><span class="line">                       seed);</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+<h3 id="关键设计点"><a href="#关键设计点" class="headerlink" title="关键设计点"></a>关键设计点</h3><p>约定了执行prepare后，哨兵的epoch++，done纪元又是prepare的纪元+1。</p>
+<p>通过hello消息字段数的变化，非prepare的sentinel能感知到无感切换的开始和结束，比如8字段到11字段就共识了切换的开始，并保存相关信息。反之11字段到8字段，说明切换的结束。</p>
+<p><strong>实现关键点：</strong></p>
+<p>执行 prepare 的 Sentinel 其认为的 Master 依然是原 Master：</p>
+<ul>
+<li>其 <code>master_name</code> 下的 <code>ip:port</code> 保持原主正确值</li>
+<li>标记 <code>silent_initiator=1</code></li>
+</ul>
+<p>被 Hello 共识传播的其他 Sentinel 会认为已经切换：</p>
+<ul>
+<li>其 <code>master_name</code> 下的 <code>ip:port</code> 指向新主（目标从节点）</li>
+<li>标记 <code>silent_initiator=0</code></li>
+</ul>
+<p>代码中通过特殊处理解决了这种状态差异，确保各 sentinel 能正确协同工作。</p>
+<h2 id="精确控制从节点复制关系"><a href="#精确控制从节点复制关系" class="headerlink" title="精确控制从节点复制关系"></a>精确控制从节点复制关系</h2><p>为了满足无感迁移的精细化控制需求，引入sentinel配置<code>slave-can-auto-revert-to-configured-master</code>：</p>
+<figure class="highlight c++"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br></pre></td><td class="code"><pre><span class="line"><span class="comment">// 关闭自动修正，允许保持当前复制关系</span></span><br><span class="line">SENTINEL SET masterName slave-can-<span class="keyword">auto</span>-revert-to-configured-master no</span><br><span class="line"><span class="comment">// 重新打开自动修正</span></span><br><span class="line">SENTINEL SET masterName slave-can-<span class="keyword">auto</span>-revert-to-configured-master yes</span><br></pre></td></tr></table></figure>
 
-<p>MergingIterator的创建过程如下</p>
-<figure class="highlight c++"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br><span class="line">27</span><br><span class="line">28</span><br><span class="line">29</span><br><span class="line">30</span><br><span class="line">31</span><br></pre></td><td class="code"><pre><span class="line"><span class="function">Iterator* <span class="title">DBImpl::NewInternalIterator</span><span class="params">(<span class="type">const</span> ReadOptions&amp; options,</span></span></span><br><span class="line"><span class="params"><span class="function">                                      SequenceNumber* latest_snapshot,</span></span></span><br><span class="line"><span class="params"><span class="function">                                      <span class="type">uint32_t</span>* seed)</span> </span>&#123;</span><br><span class="line">  <span class="comment">// 可以看到几乎全程持有锁，所以创建iterator实际上是比较重的操作，因为后面还涉及文件读取与解析</span></span><br><span class="line">  mutex_.<span class="built_in">Lock</span>();</span><br><span class="line">  <span class="comment">// 拿到当前的最大seq</span></span><br><span class="line">  *latest_snapshot = versions_-&gt;<span class="built_in">LastSequence</span>();</span><br><span class="line"></span><br><span class="line">  <span class="comment">// Collect together all needed child iterators</span></span><br><span class="line">  std::vector&lt;Iterator*&gt; list;</span><br><span class="line">  <span class="comment">// 将mem与imm的迭代器加入数组</span></span><br><span class="line">  list.<span class="built_in">push_back</span>(mem_-&gt;<span class="built_in">NewIterator</span>());</span><br><span class="line">  mem_-&gt;<span class="built_in">Ref</span>();</span><br><span class="line">  <span class="keyword">if</span> (imm_ != <span class="literal">nullptr</span>) &#123;</span><br><span class="line">    list.<span class="built_in">push_back</span>(imm_-&gt;<span class="built_in">NewIterator</span>());</span><br><span class="line">    imm_-&gt;<span class="built_in">Ref</span>();</span><br><span class="line">  &#125;</span><br><span class="line">  <span class="comment">// 创建sst各层的迭代器，并加入数组</span></span><br><span class="line">  versions_-&gt;<span class="built_in">current</span>()-&gt;<span class="built_in">AddIterators</span>(options, &amp;list);</span><br><span class="line">  Iterator* internal_iter =</span><br><span class="line">      <span class="built_in">NewMergingIterator</span>(&amp;internal_comparator_, &amp;list[<span class="number">0</span>], list.<span class="built_in">size</span>());</span><br><span class="line">  versions_-&gt;<span class="built_in">current</span>()-&gt;<span class="built_in">Ref</span>();</span><br><span class="line"></span><br><span class="line">  <span class="comment">// 内存与数据清理函数注册，用于用户delete迭代器时，能够自动释放各级资源</span></span><br><span class="line">  IterState* cleanup = <span class="keyword">new</span> <span class="built_in">IterState</span>(&amp;mutex_, mem_, imm_, versions_-&gt;<span class="built_in">current</span>());</span><br><span class="line">  internal_iter-&gt;<span class="built_in">RegisterCleanup</span>(CleanupIteratorState, cleanup, <span class="literal">nullptr</span>);</span><br><span class="line"></span><br><span class="line">  *seed = ++seed_;</span><br><span class="line">  mutex_.<span class="built_in">Unlock</span>();</span><br><span class="line">  <span class="keyword">return</span> internal_iter;</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+<p>当关闭自动修正后，sentinel在收到从节点的info回复时，会保持当前的复制关系不变，确保无感迁移流程的稳定性。</p>
+<h2 id="安全的重置保护"><a href="#安全的重置保护" class="headerlink" title="安全的重置保护"></a>安全的重置保护</h2><p>在无感迁移过程中，sentinel提供了安全的保护机制。执行 <code>SENTINEL RESET master-name</code> 命令时，系统会检查当前 master 是否处于 silent-failover 状态，如果是则拒绝执行，确保迁移过程不受干扰。</p>
+<h2 id="两阶段状态机"><a href="#两阶段状态机" class="headerlink" title="两阶段状态机"></a>两阶段状态机</h2><p>silent-failover 引入两个新的故障转移状态，用于控制两阶段切换流程：</p>
+<figure class="highlight c++"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br></pre></td><td class="code"><pre><span class="line"><span class="meta">#<span class="keyword">define</span> SENTINEL_FAILOVER_STATE_SYNC_SILENT_MASTER 3  <span class="comment">// 同步silent master给其他sentinel，并发送+switch-master给订阅的客户端</span></span></span><br><span class="line"><span class="meta">#<span class="keyword">define</span> SENTINEL_FAILOVER_STATE_WAIT_SILENT_DONE 4     <span class="comment">// 等待用户执行done命令</span></span></span><br></pre></td></tr></table></figure>
 
-<p>重点关心sst的各级迭代器如何加入的</p>
-<figure class="highlight c++"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br></pre></td><td class="code"><pre><span class="line"><span class="function"><span class="type">void</span> <span class="title">Version::AddIterators</span><span class="params">(<span class="type">const</span> ReadOptions&amp; options,</span></span></span><br><span class="line"><span class="params"><span class="function">                           std::vector&lt;Iterator*&gt;* iters)</span> </span>&#123;</span><br><span class="line">  <span class="comment">// level0的全部sst都会创建迭代器，因为数据重叠</span></span><br><span class="line">  <span class="keyword">for</span> (<span class="type">size_t</span> i = <span class="number">0</span>; i &lt; files_[<span class="number">0</span>].<span class="built_in">size</span>(); i++) &#123;</span><br><span class="line">    iters-&gt;<span class="built_in">push_back</span>(vset_-&gt;table_cache_-&gt;<span class="built_in">NewIterator</span>(</span><br><span class="line">        options, files_[<span class="number">0</span>][i]-&gt;number, files_[<span class="number">0</span>][i]-&gt;file_size));</span><br><span class="line">  &#125;</span><br><span class="line"></span><br><span class="line">  <span class="comment">// For levels &gt; 0, we can use a concatenating iterator that sequentially</span></span><br><span class="line">  <span class="comment">// walks through the non-overlapping files in the level, opening them</span></span><br><span class="line">  <span class="comment">// lazily.</span></span><br><span class="line">  <span class="keyword">for</span> (<span class="type">int</span> level = <span class="number">1</span>; level &lt; config::kNumLevels; level++) &#123;</span><br><span class="line">    <span class="keyword">if</span> (!files_[level].<span class="built_in">empty</span>()) &#123;</span><br><span class="line">      <span class="comment">// level1~n的双层迭代器，本文前言中有提到</span></span><br><span class="line">      iters-&gt;<span class="built_in">push_back</span>(<span class="built_in">NewConcatenatingIterator</span>(options, level));</span><br><span class="line">    &#125;</span><br><span class="line">  &#125;</span><br><span class="line">&#125;</span><br><span class="line"></span><br></pre></td></tr></table></figure>
+<h3 id="完整状态机"><a href="#完整状态机" class="headerlink" title="完整状态机"></a>完整状态机</h3><p><img src="/2026-01-22-redis%E6%97%A0%E6%84%9F%E8%BF%81%E7%A7%BBmaster/%E4%B8%A4%E9%98%B6%E6%AE%B5%E7%8A%B6%E6%80%81%E6%9C%BA.svg"></p>
+<h3 id="详细流程说明"><a href="#详细流程说明" class="headerlink" title="详细流程说明"></a>详细流程说明</h3><h4 id="Phase-1-Prepare-阶段"><a href="#Phase-1-Prepare-阶段" class="headerlink" title="Phase 1: Prepare 阶段"></a>Phase 1: Prepare 阶段</h4><p><img src="/2026-01-22-redis%E6%97%A0%E6%84%9F%E8%BF%81%E7%A7%BBmaster/prepare%E9%98%B6%E6%AE%B5%E6%97%B6%E5%BA%8F%E5%9B%BE.svg"></p>
+<p><strong>Prepare 阶段关键步骤：</strong></p>
+<ol>
+<li><strong>设置标记</strong>：在 master 上设置 <code>SRI_SILENT_FAILOVER</code> 标志</li>
+<li><strong>更新 Epoch</strong>：执行 <code>failover</code> 的 sentinel 的 epoch 自增</li>
+<li><strong>Hello 传播</strong>：发送 Hello 消息（11字段），通知其他 sentinel 进入 silent-failover 状态</li>
+<li><strong>发送假信号</strong>：发送 <code>+switch-master</code> 事件，但实际主从关系未变</li>
+<li><strong>Proxy 切流</strong>：Proxy 收到事件后，将流量切换到目标从节点</li>
+</ol>
+<h4 id="Phase-2-Done-阶段"><a href="#Phase-2-Done-阶段" class="headerlink" title="Phase 2: Done 阶段"></a>Phase 2: Done 阶段</h4><p><strong>Done 阶段关键步骤：</strong></p>
+<ol>
+<li><strong>清除标记</strong>：清除 <code>SRI_SILENT_FAILOVER</code> 标志</li>
+<li><strong>真正切换</strong>：发送 <code>SLAVEOF NO ONE</code> 命令，将从节点提升为主节点</li>
+<li><strong>Hello 传播</strong>：发送 Hello 消息（8字段），通知其他 sentinel silent-failover 完成</li>
+<li><strong>发送真信号</strong>：再次发送 <code>+switch-master</code> 事件（此时为真切换）</li>
+<li><strong>后续流程</strong>：与其他 sentinel 协调完成从节点重新配置</li>
+</ol>
+<h4 id="中间状态说明"><a href="#中间状态说明" class="headerlink" title="中间状态说明"></a>中间状态说明</h4><table>
+<thead>
+<tr>
+<th>阶段</th>
+<th>状态</th>
+<th>Proxy 流量</th>
+<th>实际主从</th>
+<th>说明</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>正常</td>
+<td>-</td>
+<td>原 Master</td>
+<td>原 Master→从节点</td>
+<td>正常运行</td>
+</tr>
+<tr>
+<td>Prepare</td>
+<td>SYNC_SILENT_MASTER → WAIT_SILENT_DONE</td>
+<td>目标从节点</td>
+<td><strong>未变</strong></td>
+<td>假切换完成，等待确认</td>
+</tr>
+<tr>
+<td>Done</td>
+<td>SEND_SLAVEOF_NOONE → …</td>
+<td>目标从节点</td>
+<td><strong>已变</strong></td>
+<td>真切换执行</td>
+</tr>
+</tbody></table>
+<p><strong>关键点</strong>：在 prepare 阶段，proxy 已经将流量切到目标从节点，但 Redis 主从关系未变。这意味着：</p>
+<ul>
+<li>目标从节点仍从原主节点同步数据</li>
+<li>写请求被路由到目标从节点，但复制链路仍然存在</li>
+<li>数据一致性由 Redis 主从复制保证</li>
+</ul>
+<h2 id="高可用保障"><a href="#高可用保障" class="headerlink" title="高可用保障"></a>高可用保障</h2><p>silent-failover 设计充分考虑了各种异常场景，确保系统在任何情况下都能保持高可用：</p>
+<h3 id="场景1：原主节点故障"><a href="#场景1：原主节点故障" class="headerlink" title="场景1：原主节点故障"></a>场景1：原主节点故障</h3><p>如果原主节点在 prepare 阶段发生故障，其他 sentinel 会立即检测到并自动触发故障转移流程：</p>
+<figure class="highlight plaintext"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br></pre></td><td class="code"><pre><span class="line">原主故障 -&gt; 检测 O_DOWN -&gt; 清除 SRI_SILENT_FAILOVER</span><br><span class="line">         -&gt; 中止 silent-failover -&gt; 执行标准故障转移</span><br></pre></td></tr></table></figure>
 
-<p>对于level0的sst迭代器如下，<code>FindTable()</code>函数只是打开与解析sst文件，比如读出各个block的信息，不属于迭代器核心流程，这里不赘述。但值得注意的是，它做了读取和解析操作，因此是比较重的性能操作。</p>
-<figure class="highlight c++"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br></pre></td><td class="code"><pre><span class="line"><span class="function">Iterator* <span class="title">TableCache::NewIterator</span><span class="params">(<span class="type">const</span> ReadOptions&amp; options,</span></span></span><br><span class="line"><span class="params"><span class="function">                                  <span class="type">uint64_t</span> file_number, <span class="type">uint64_t</span> file_size,</span></span></span><br><span class="line"><span class="params"><span class="function">                                  Table** tableptr)</span> </span>&#123;</span><br><span class="line">  <span class="keyword">if</span> (tableptr != <span class="literal">nullptr</span>) &#123;</span><br><span class="line">    *tableptr = <span class="literal">nullptr</span>;</span><br><span class="line">  &#125;</span><br><span class="line"></span><br><span class="line">  Cache::Handle* handle = <span class="literal">nullptr</span>;</span><br><span class="line">  <span class="comment">// 这里先从lru缓存中找有没有缓存此文件，如果没有会读出文件并全部解析，最终放到lru中</span></span><br><span class="line">  Status s = <span class="built_in">FindTable</span>(file_number, file_size, &amp;handle);</span><br><span class="line">  ...</span><br><span class="line">  Table* table = <span class="built_in">reinterpret_cast</span>&lt;TableAndFile*&gt;(cache_-&gt;<span class="built_in">Value</span>(handle))-&gt;table;</span><br><span class="line">  <span class="comment">// 最终返回值即前言提到的具体的双层级迭代器</span></span><br><span class="line">  Iterator* result = table-&gt;<span class="built_in">NewIterator</span>(options);</span><br><span class="line">  <span class="comment">// 注册清理函数，用于lru清理</span></span><br><span class="line">  result-&gt;<span class="built_in">RegisterCleanup</span>(&amp;UnrefEntry, cache_, handle);</span><br><span class="line">  <span class="keyword">if</span> (tableptr != <span class="literal">nullptr</span>) &#123;</span><br><span class="line">    *tableptr = table;</span><br><span class="line">  &#125;</span><br><span class="line">  <span class="keyword">return</span> result;</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+<p><strong>处理流程：</strong></p>
+<ol>
+<li>Sentinel 检测到原主节点不可达（O_DOWN）</li>
+<li>清除 <code>SRI_SILENT_FAILOVER</code> 标志</li>
+<li>中止 silent-failover 流程</li>
+<li><strong>自动执行标准故障转移</strong>，选择最优从节点作为新主</li>
+<li>Proxy 收到真正的 <code>+switch-master</code> 事件，完成切换</li>
+</ol>
+<p><strong>业务影响：</strong> 故障自动恢复，但会触发真正的故障切换</p>
+<h3 id="场景2：目标从节点故障"><a href="#场景2：目标从节点故障" class="headerlink" title="场景2：目标从节点故障"></a>场景2：目标从节点故障</h3><p>如果在 prepare 阶段目标从节点不可用：</p>
+<figure class="highlight plaintext"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br></pre></td><td class="code"><pre><span class="line">目标从故障 -&gt; 检测状态变化 -&gt; 清除 SRI_SILENT_FAILOVER</span><br><span class="line">           -&gt; 可重新发起 silent-failover</span><br></pre></td></tr></table></figure>
 
-<p>因此<code>MergingIterator</code>只是包含了全部迭代器的一个vector封装，用于操作所有的child迭代器，并找出其中的smallest返回给上层。</p>
-<p>最外层迭代器<code>DBIter</code>也只是<code>MergingIterator</code>迭代器+<code>seq</code>的封装，用于跳过大于传入seq的数据，以及del的数据。</p>
-<figure class="highlight c++"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br></pre></td><td class="code"><pre><span class="line"><span class="function">Iterator* <span class="title">NewDBIterator</span><span class="params">(DBImpl* db, <span class="type">const</span> Comparator* user_key_comparator,</span></span></span><br><span class="line"><span class="params"><span class="function">                        Iterator* internal_iter, SequenceNumber sequence,</span></span></span><br><span class="line"><span class="params"><span class="function">                        <span class="type">uint32_t</span> seed)</span> </span>&#123;</span><br><span class="line">  <span class="keyword">return</span> <span class="keyword">new</span> <span class="built_in">DBIter</span>(db, user_key_comparator, internal_iter, sequence, seed);</span><br><span class="line">&#125;</span><br><span class="line"></span><br><span class="line">  <span class="built_in">DBIter</span>(DBImpl* db, <span class="type">const</span> Comparator* cmp, Iterator* iter, SequenceNumber s,</span><br><span class="line">         <span class="type">uint32_t</span> seed)</span><br><span class="line">      : <span class="built_in">db_</span>(db),</span><br><span class="line">        <span class="built_in">user_comparator_</span>(cmp),</span><br><span class="line">        <span class="built_in">iter_</span>(iter),</span><br><span class="line">        <span class="built_in">sequence_</span>(s),</span><br><span class="line">        <span class="built_in">direction_</span>(kForward),</span><br><span class="line">        <span class="built_in">valid_</span>(<span class="literal">false</span>),</span><br><span class="line">        <span class="built_in">rnd_</span>(seed),</span><br><span class="line">        <span class="built_in">bytes_until_read_sampling_</span>(<span class="built_in">RandomCompactionPeriod</span>()) &#123;&#125;</span><br></pre></td></tr></table></figure>
+<p><strong>处理流程：</strong></p>
+<ol>
+<li>Sentinel 检测到目标从节点不可用</li>
+<li>清除 <code>SRI_SILENT_FAILOVER</code> 标志</li>
+<li>发送 <code>+switch-master</code> 事件恢复原主路由</li>
+<li>系统可选择其他健康从节点重新发起 silent-failover</li>
+</ol>
+<p><strong>业务影响：</strong> 流量切回原主，可重新选择从节点操作</p>
+<h3 id="场景3：sentinel节点故障"><a href="#场景3：sentinel节点故障" class="headerlink" title="场景3：sentinel节点故障"></a>场景3：sentinel节点故障</h3><p>如果执行 prepare 的 sentinel 节点故障，其他 sentinel 通过 hello 消息实时感知状态变化：</p>
+<figure class="highlight plaintext"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br></pre></td><td class="code"><pre><span class="line">Sentinel 1 故障 -&gt; Sentinel 2/3 收到 11 字段 Hello</span><br><span class="line">              -&gt; 同步 silent-done-epoch、silent-ip、silent-port</span><br><span class="line">              -&gt; 继续执行切换流程</span><br></pre></td></tr></table></figure>
 
-<h2 id="迭代器的具体实现"><a href="#迭代器的具体实现" class="headerlink" title="迭代器的具体实现"></a>迭代器的具体实现</h2><h3 id="Next-的实现"><a href="#Next-的实现" class="headerlink" title="Next()的实现"></a>Next()的实现</h3><p>从最外层迭代器调用<code>Next()</code>开始往下查看实现，为了简单，只关心一直一个方向的遍历，不能反向转正向遍历</p>
-<figure class="highlight c++"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br></pre></td><td class="code"><pre><span class="line"><span class="function"><span class="type">void</span> <span class="title">DBIter::Next</span><span class="params">()</span> </span>&#123;</span><br><span class="line">  <span class="built_in">assert</span>(valid_);</span><br><span class="line">    ...</span><br><span class="line">  <span class="comment">// 将当前遍历到的key保存到saved_key_中，主要是判断下一个key是不是跟当前key是一样的，比如del操作和更老版本的key</span></span><br><span class="line">  <span class="built_in">SaveKey</span>(<span class="built_in">ExtractUserKey</span>(iter_-&gt;<span class="built_in">key</span>()), &amp;saved_key_);</span><br><span class="line"></span><br><span class="line">  <span class="comment">// 直接调用其MergingIterator的Next</span></span><br><span class="line">  iter_-&gt;<span class="built_in">Next</span>();</span><br><span class="line">  <span class="keyword">if</span> (!iter_-&gt;<span class="built_in">Valid</span>()) &#123;</span><br><span class="line">    valid_ = <span class="literal">false</span>;</span><br><span class="line">    saved_key_.<span class="built_in">clear</span>();</span><br><span class="line">    <span class="keyword">return</span>;</span><br><span class="line">  &#125;</span><br><span class="line">  <span class="comment">// 检查是不是真的是Next-key</span></span><br><span class="line">  <span class="built_in">FindNextUserEntry</span>(<span class="literal">true</span>, &amp;saved_key_);</span><br><span class="line">&#125;</span><br><span class="line"></span><br></pre></td></tr></table></figure>
+<p><strong>处理流程：</strong></p>
+<ol>
+<li>执行 prepare 的 Sentinel 节点故障</li>
+<li>其他 Sentinel 通过 Hello 消息（11字段）感知状态</li>
+<li>包含 <code>silent-done-epoch</code>、<code>silent-ip</code>、<code>silent-port</code> 关键数据</li>
+<li><strong>其他 Sentinel 自动同步状态</strong>，继续执行切换流程</li>
+<li>等待用户执行 done 命令完成切换</li>
+</ol>
+<p><strong>关键设计：</strong> Hello 消息扩展字段确保状态在 Sentinel 集群间同步</p>
+<h3 id="场景4：Done-命令超时"><a href="#场景4：Done-命令超时" class="headerlink" title="场景4：Done 命令超时"></a>场景4：Done 命令超时</h3><p>如果用户长时间不执行 done 命令：</p>
+<figure class="highlight plaintext"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br></pre></td><td class="code"><pre><span class="line">prepare 状态 -&gt; 等待用户 done</span><br><span class="line">            -&gt; 原主持续提供服务</span><br><span class="line">            -&gt; 从节点持续同步数据</span><br></pre></td></tr></table></figure>
 
-<p>检查即跳过删除操作，重复的key等，不断的调用<code>iter_-&gt;Next()</code>，直到找到真的用户所要的key</p>
-<figure class="highlight c++"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br><span class="line">27</span><br><span class="line">28</span><br><span class="line">29</span><br><span class="line">30</span><br><span class="line">31</span><br></pre></td><td class="code"><pre><span class="line"><span class="function"><span class="type">void</span> <span class="title">DBIter::FindNextUserEntry</span><span class="params">(<span class="type">bool</span> skipping, std::string* skip)</span> </span>&#123;</span><br><span class="line">  <span class="comment">// Loop until we hit an acceptable entry to yield</span></span><br><span class="line">  <span class="built_in">assert</span>(iter_-&gt;<span class="built_in">Valid</span>());</span><br><span class="line">  <span class="built_in">assert</span>(direction_ == kForward);</span><br><span class="line">  <span class="keyword">do</span> &#123;</span><br><span class="line">    ParsedInternalKey ikey;</span><br><span class="line">    <span class="comment">// seq比传入大的，都会直接跳过</span></span><br><span class="line">    <span class="keyword">if</span> (<span class="built_in">ParseKey</span>(&amp;ikey) &amp;&amp; ikey.sequence &lt;= sequence_) &#123;</span><br><span class="line">      <span class="keyword">switch</span> (ikey.type) &#123;</span><br><span class="line">        <span class="keyword">case</span> kTypeDeletion:</span><br><span class="line">          <span class="comment">// 跳过所有del的key</span></span><br><span class="line">          <span class="built_in">SaveKey</span>(ikey.user_key, skip);</span><br><span class="line">          skipping = <span class="literal">true</span>;</span><br><span class="line">          <span class="keyword">break</span>;</span><br><span class="line">        <span class="keyword">case</span> kTypeValue:</span><br><span class="line">          <span class="comment">// 跳过所有重复的key</span></span><br><span class="line">          <span class="keyword">if</span> (skipping &amp;&amp;</span><br><span class="line">              user_comparator_-&gt;<span class="built_in">Compare</span>(ikey.user_key, *skip) &lt;= <span class="number">0</span>) &#123;</span><br><span class="line">          &#125; <span class="keyword">else</span> &#123;</span><br><span class="line">            valid_ = <span class="literal">true</span>;</span><br><span class="line">            saved_key_.<span class="built_in">clear</span>();</span><br><span class="line">            <span class="keyword">return</span>;</span><br><span class="line">          &#125;</span><br><span class="line">          <span class="keyword">break</span>;</span><br><span class="line">      &#125;</span><br><span class="line">    &#125;</span><br><span class="line">    iter_-&gt;<span class="built_in">Next</span>();</span><br><span class="line">  &#125; <span class="keyword">while</span> (iter_-&gt;<span class="built_in">Valid</span>());</span><br><span class="line">  saved_key_.<span class="built_in">clear</span>();</span><br><span class="line">  valid_ = <span class="literal">false</span>;</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+<p><strong>建议：</strong></p>
+<ul>
+<li>prepare 阶段持续时间不宜过长</li>
+<li>建议在业务低峰期执行</li>
+<li>完成验证后尽快执行 done</li>
+</ul>
+<h3 id="场景5：多个-Sentinel-同时收到命令"><a href="#场景5：多个-Sentinel-同时收到命令" class="headerlink" title="场景5：多个 Sentinel 同时收到命令"></a>场景5：多个 Sentinel 同时收到命令</h3><figure class="highlight plaintext"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br></pre></td><td class="code"><pre><span class="line">用户 -&gt; Sentinel 1: prepare</span><br><span class="line">     -&gt; Sentinel 2: prepare (同一条)</span><br></pre></td></tr></table></figure>
 
-<p>最外层的<code>DBIter</code>的<code>Next()</code>逻辑基本清楚了，深入到底层<code>MergingIterator</code>的<code>Next()</code>，代码相当简单，即推进<code>current_</code>指向的迭代器的<code>Next()</code>即可，因为<code>current_</code>指向的迭代器的key值，是当前所有迭代器中最小的，因此只需要推进最小的那个值即可，类似归并排序。</p>
-<figure class="highlight c++"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">class</span> <span class="title class_">MergingIterator</span> : <span class="keyword">public</span> Iterator &#123;</span><br><span class="line">  <span class="function"><span class="type">void</span> <span class="title">Next</span><span class="params">()</span> <span class="keyword">override</span> </span>&#123;</span><br><span class="line">    <span class="built_in">assert</span>(<span class="built_in">Valid</span>());</span><br><span class="line">    ...</span><br><span class="line">    current_-&gt;<span class="built_in">Next</span>();</span><br><span class="line">    <span class="built_in">FindSmallest</span>();</span><br><span class="line">  &#125;</span><br><span class="line">&#125;;</span><br></pre></td></tr></table></figure>
+<p><strong>处理：</strong></p>
+<ul>
+<li>第一个 Sentinel 设置 <code>silent_initiator=1</code></li>
+<li>其他 Sentinel 通过 Hello 消息同步，设置为 <code>silent_initiator=0</code></li>
+<li>确保状态一致性</li>
+</ul>
+<h2 id="核心数据结构"><a href="#核心数据结构" class="headerlink" title="核心数据结构"></a>核心数据结构</h2><p>sentinelRedisInstance 结构体中新增的字段：</p>
+<figure class="highlight c++"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">struct</span> <span class="title class_">sentinelRedisInstance</span> &#123;</span><br><span class="line">    <span class="comment">// ... 其他字段 ...</span></span><br><span class="line">    <span class="keyword">struct</span> <span class="title class_">sentinelRedisInstance</span> *silent_failover_slave;  <span class="comment">// silent failover 目标从节点</span></span><br><span class="line">    <span class="type">unsigned</span> <span class="type">long</span> <span class="type">long</span> silent_done_epoch;                 <span class="comment">// silent failover done 阶段的 epoch</span></span><br><span class="line">    <span class="type">int</span> silent_initiator;                                 <span class="comment">// 标记是否是发起 silent-failover 的 sentinel</span></span><br><span class="line">    <span class="type">int</span> slave_can_auto_revert_to_configured_master;       <span class="comment">// 是否允许自动修正从节点到配置的主节点</span></span><br><span class="line">&#125;;</span><br></pre></td></tr></table></figure>
 
-<p>每次推进<code>current_</code>后都需要更新最新的<code>current_</code>指向当前最小的key的迭代器。所以可以注意到，key可能重复也可能带有del操作，不过这些都由上层迭代器<code>DBIter</code>处理了。</p>
-<figure class="highlight c++"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br></pre></td><td class="code"><pre><span class="line"><span class="function"><span class="type">void</span> <span class="title">MergingIterator::FindSmallest</span><span class="params">()</span> </span>&#123;</span><br><span class="line">  IteratorWrapper* smallest = <span class="literal">nullptr</span>;</span><br><span class="line">  <span class="keyword">for</span> (<span class="type">int</span> i = <span class="number">0</span>; i &lt; n_; i++) &#123;</span><br><span class="line">    IteratorWrapper* child = &amp;children_[i];</span><br><span class="line">    <span class="keyword">if</span> (child-&gt;<span class="built_in">Valid</span>()) &#123;</span><br><span class="line">      <span class="keyword">if</span> (smallest == <span class="literal">nullptr</span>) &#123;</span><br><span class="line">        smallest = child;</span><br><span class="line">      &#125; <span class="keyword">else</span> <span class="keyword">if</span> (comparator_-&gt;<span class="built_in">Compare</span>(child-&gt;<span class="built_in">key</span>(), smallest-&gt;<span class="built_in">key</span>()) &lt; <span class="number">0</span>) &#123;</span><br><span class="line">        smallest = child;</span><br><span class="line">      &#125;</span><br><span class="line">    &#125;</span><br><span class="line">  &#125;</span><br><span class="line">  current_ = smallest;</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+<h3 id="字段说明-1"><a href="#字段说明-1" class="headerlink" title="字段说明"></a>字段说明</h3><table>
+<thead>
+<tr>
+<th>字段</th>
+<th>说明</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>silent_failover_slave</td>
+<td>指向 silent-failover 目标从节点的指针</td>
+</tr>
+<tr>
+<td>silent_done_epoch</td>
+<td>done 阶段的 epoch，用于 hello 消息同步</td>
+</tr>
+<tr>
+<td>silent_initiator</td>
+<td>1 表示是发起 prepare 的 sentinel，0 表示是接收 hello 消息后被动进入的</td>
+</tr>
+<tr>
+<td>slave_can_auto_revert_to_configured_master</td>
+<td>控制是否允许 sentinel 自动修正从节点的复制关系</td>
+</tr>
+</tbody></table>
+<h2 id="监控指标"><a href="#监控指标" class="headerlink" title="监控指标"></a>监控指标</h2><p>Sentinel 新增了以下统计指标，用于监控 silent-failover 状态：</p>
+<h3 id="统计指标"><a href="#统计指标" class="headerlink" title="统计指标"></a>统计指标</h3><table>
+<thead>
+<tr>
+<th>指标名</th>
+<th>说明</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><code>total_silent_failover_prepare</code></td>
+<td>进入 prepare 阶段的次数</td>
+</tr>
+<tr>
+<td><code>total_silent_failover_done</code></td>
+<td>完成 done 阶段的次数（成功切换）</td>
+</tr>
+<tr>
+<td><code>total_silent_failover_excp_abort</code></td>
+<td>因异常中止的次数</td>
+</tr>
+</tbody></table>
+<h3 id="查看方式"><a href="#查看方式" class="headerlink" title="查看方式"></a>查看方式</h3><p>通过 Sentinel 的 INFO 命令查看：</p>
+<figure class="highlight plaintext"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br></pre></td><td class="code"><pre><span class="line"># Sentinel</span><br><span class="line">sentinel_masters:3</span><br><span class="line">...</span><br><span class="line">total_silent_failover_prepare:1</span><br><span class="line">total_silent_failover_done:1</span><br><span class="line">total_silent_failover_excp_abort:0</span><br></pre></td></tr></table></figure>
 
-<h3 id="Prev-的实现"><a href="#Prev-的实现" class="headerlink" title="Prev()的实现"></a>Prev()的实现</h3><p><code>MergingIterator</code>的<code>Prev()</code>实现跟<code>Next()</code>一模一样，不赘述。</p>
-<p>对于<code>DBiter</code>的<code>Prev()</code>实现摘录如下，比较简单，不赘述</p>
-<figure class="highlight c++"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br><span class="line">27</span><br><span class="line">28</span><br><span class="line">29</span><br><span class="line">30</span><br><span class="line">31</span><br><span class="line">32</span><br><span class="line">33</span><br><span class="line">34</span><br><span class="line">35</span><br><span class="line">36</span><br><span class="line">37</span><br><span class="line">38</span><br><span class="line">39</span><br><span class="line">40</span><br><span class="line">41</span><br><span class="line">42</span><br><span class="line">43</span><br><span class="line">44</span><br><span class="line">45</span><br><span class="line">46</span><br></pre></td><td class="code"><pre><span class="line"><span class="function"><span class="type">void</span> <span class="title">DBIter::Prev</span><span class="params">()</span> </span>&#123;</span><br><span class="line">    ...</span><br><span class="line">  <span class="built_in">FindPrevUserEntry</span>();</span><br><span class="line">&#125;</span><br><span class="line"><span class="function"><span class="type">void</span> <span class="title">DBIter::FindPrevUserEntry</span><span class="params">()</span> </span>&#123;</span><br><span class="line">  <span class="built_in">assert</span>(direction_ == kReverse);</span><br><span class="line"></span><br><span class="line">  ValueType value_type = kTypeDeletion;</span><br><span class="line">  <span class="keyword">if</span> (iter_-&gt;<span class="built_in">Valid</span>()) &#123;</span><br><span class="line">    <span class="keyword">do</span> &#123;</span><br><span class="line">      ParsedInternalKey ikey;</span><br><span class="line">      <span class="keyword">if</span> (<span class="built_in">ParseKey</span>(&amp;ikey) &amp;&amp; ikey.sequence &lt;= sequence_) &#123;</span><br><span class="line">        <span class="comment">// 找到了前一个非del的比当前key小的key了，可以返回</span></span><br><span class="line">        <span class="keyword">if</span> ((value_type != kTypeDeletion) &amp;&amp;</span><br><span class="line">            user_comparator_-&gt;<span class="built_in">Compare</span>(ikey.user_key, saved_key_) &lt; <span class="number">0</span>) &#123;</span><br><span class="line">          <span class="comment">// We encountered a non-deleted value in entries for previous keys,</span></span><br><span class="line">          <span class="keyword">break</span>;</span><br><span class="line">        &#125;</span><br><span class="line">        value_type = ikey.type;</span><br><span class="line">        <span class="keyword">if</span> (value_type == kTypeDeletion) &#123;</span><br><span class="line">          saved_key_.<span class="built_in">clear</span>();</span><br><span class="line">          <span class="built_in">ClearSavedValue</span>();</span><br><span class="line">        &#125; <span class="keyword">else</span> &#123;</span><br><span class="line">          Slice raw_value = iter_-&gt;<span class="built_in">value</span>();</span><br><span class="line">          <span class="keyword">if</span> (saved_value_.<span class="built_in">capacity</span>() &gt; raw_value.<span class="built_in">size</span>() + <span class="number">1048576</span>) &#123;</span><br><span class="line">            std::string empty;</span><br><span class="line">            <span class="built_in">swap</span>(empty, saved_value_);</span><br><span class="line">          &#125;</span><br><span class="line">          <span class="built_in">SaveKey</span>(<span class="built_in">ExtractUserKey</span>(iter_-&gt;<span class="built_in">key</span>()), &amp;saved_key_);</span><br><span class="line">          saved_value_.<span class="built_in">assign</span>(raw_value.<span class="built_in">data</span>(), raw_value.<span class="built_in">size</span>());</span><br><span class="line">        &#125;</span><br><span class="line">      &#125;</span><br><span class="line">      iter_-&gt;<span class="built_in">Prev</span>();</span><br><span class="line">    &#125; <span class="keyword">while</span> (iter_-&gt;<span class="built_in">Valid</span>());</span><br><span class="line">  &#125;</span><br><span class="line"></span><br><span class="line">  <span class="keyword">if</span> (value_type == kTypeDeletion) &#123;</span><br><span class="line">    <span class="comment">// End</span></span><br><span class="line">    valid_ = <span class="literal">false</span>;</span><br><span class="line">    saved_key_.<span class="built_in">clear</span>();</span><br><span class="line">    <span class="built_in">ClearSavedValue</span>();</span><br><span class="line">    direction_ = kForward;</span><br><span class="line">  &#125; <span class="keyword">else</span> &#123;</span><br><span class="line">    valid_ = <span class="literal">true</span>;</span><br><span class="line">  &#125;</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+<h3 id="查看-Master-状态"><a href="#查看-Master-状态" class="headerlink" title="查看 Master 状态"></a>查看 Master 状态</h3><p>通过 <code>SENTINEL master master-name</code> 命令查看当前 master 的详细状态：</p>
+<figure class="highlight plaintext"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br></pre></td><td class="code"><pre><span class="line"># SENTINEL master mymaster</span><br><span class="line">...</span><br><span class="line">flags:master</span><br><span class="line">link_status:up</span><br><span class="line">slave_priority:100</span><br><span class="line">slave_repl_offset:12345</span><br><span class="line">sentinel_flags:silent_failover</span><br></pre></td></tr></table></figure>
 
-<p>最后提一句，为什么说<code>Prev()</code>的性能比<code>Next()</code>稍差。主要还是memtable的跳表结构没有反向指针，其执行prev的时候，实际上会从头找，时间复杂度是log(n)</p>
-<figure class="highlight c++"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br><span class="line">27</span><br><span class="line">28</span><br><span class="line">29</span><br><span class="line">30</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">template</span> &lt;<span class="keyword">typename</span> Key, <span class="keyword">class</span> <span class="title class_">Comparator</span>&gt;</span><br><span class="line"><span class="keyword">inline</span> <span class="type">void</span> SkipList&lt;Key, Comparator&gt;::Iterator::<span class="built_in">Prev</span>() &#123;</span><br><span class="line">  <span class="comment">// Instead of using explicit &quot;prev&quot; links, we just search for the</span></span><br><span class="line">  <span class="comment">// last node that falls before key.</span></span><br><span class="line">  <span class="built_in">assert</span>(<span class="built_in">Valid</span>());</span><br><span class="line">  node_ = list_-&gt;<span class="built_in">FindLessThan</span>(node_-&gt;key);</span><br><span class="line">  <span class="keyword">if</span> (node_ == list_-&gt;head_) &#123;</span><br><span class="line">    node_ = <span class="literal">nullptr</span>;</span><br><span class="line">  &#125;</span><br><span class="line">&#125;</span><br><span class="line"><span class="keyword">template</span> &lt;<span class="keyword">typename</span> Key, <span class="keyword">class</span> <span class="title class_">Comparator</span>&gt;</span><br><span class="line"><span class="keyword">typename</span> SkipList&lt;Key, Comparator&gt;::Node*</span><br><span class="line">SkipList&lt;Key, Comparator&gt;::<span class="built_in">FindLessThan</span>(<span class="type">const</span> Key&amp; key) <span class="type">const</span> &#123;</span><br><span class="line">  Node* x = head_;</span><br><span class="line">  <span class="type">int</span> level = <span class="built_in">GetMaxHeight</span>() - <span class="number">1</span>;</span><br><span class="line">  <span class="keyword">while</span> (<span class="literal">true</span>) &#123;</span><br><span class="line">    <span class="built_in">assert</span>(x == head_ || <span class="built_in">compare_</span>(x-&gt;key, key) &lt; <span class="number">0</span>);</span><br><span class="line">    Node* next = x-&gt;<span class="built_in">Next</span>(level);</span><br><span class="line">    <span class="keyword">if</span> (next == <span class="literal">nullptr</span> || <span class="built_in">compare_</span>(next-&gt;key, key) &gt;= <span class="number">0</span>) &#123;</span><br><span class="line">      <span class="keyword">if</span> (level == <span class="number">0</span>) &#123;</span><br><span class="line">        <span class="keyword">return</span> x;</span><br><span class="line">      &#125; <span class="keyword">else</span> &#123;</span><br><span class="line">        <span class="comment">// Switch to next list</span></span><br><span class="line">        level--;</span><br><span class="line">      &#125;</span><br><span class="line">    &#125; <span class="keyword">else</span> &#123;</span><br><span class="line">      x = next;</span><br><span class="line">    &#125;</span><br><span class="line">  &#125;</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+<p>注意：<code>sentinel_flags</code> 中包含 <code>silent_failover</code> 表示当前处于 silent-failover 流程中。</p>
+<h2 id="使用示例"><a href="#使用示例" class="headerlink" title="使用示例"></a>使用示例</h2><h3 id="完整两阶段命令示例"><a href="#完整两阶段命令示例" class="headerlink" title="完整两阶段命令示例"></a>完整两阶段命令示例</h3><h4 id="步骤1-查看当前主从状态"><a href="#步骤1-查看当前主从状态" class="headerlink" title="步骤1: 查看当前主从状态"></a>步骤1: 查看当前主从状态</h4><figure class="highlight bash"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br></pre></td><td class="code"><pre><span class="line"><span class="comment"># 查看 master 信息</span></span><br><span class="line">SENTINEL master mymaster</span><br><span class="line"></span><br><span class="line"><span class="comment"># 查看所有从节点</span></span><br><span class="line">SENTINEL slaves mymaster</span><br></pre></td></tr></table></figure>
 
-<h1 id="Snapshot"><a href="#Snapshot" class="headerlink" title="Snapshot"></a>Snapshot</h1><p>leveldb提供了两个接口，用于获取和释放<code>Snapshot</code></p>
-<figure class="highlight c++"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br></pre></td><td class="code"><pre><span class="line"><span class="comment">// Return a handle to the current DB state.  Iterators created with</span></span><br><span class="line"><span class="comment">// this handle will all observe a stable snapshot of the current DB</span></span><br><span class="line"><span class="comment">// state.  The caller must call ReleaseSnapshot(result) when the</span></span><br><span class="line"><span class="comment">// snapshot is no longer needed.</span></span><br><span class="line"><span class="function"><span class="keyword">virtual</span> <span class="type">const</span> Snapshot* <span class="title">GetSnapshot</span><span class="params">()</span> </span>= <span class="number">0</span>;</span><br><span class="line"></span><br><span class="line"><span class="comment">// Release a previously acquired snapshot.  The caller must not</span></span><br><span class="line"><span class="comment">// use &quot;snapshot&quot; after this call.</span></span><br><span class="line"><span class="function"><span class="keyword">virtual</span> <span class="type">void</span> <span class="title">ReleaseSnapshot</span><span class="params">(<span class="type">const</span> Snapshot* snapshot)</span> </span>= <span class="number">0</span>;</span><br></pre></td></tr></table></figure>
+<p>输出示例：</p>
+<figure class="highlight plaintext"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br></pre></td><td class="code"><pre><span class="line"># 127.0.0.1:26379</span><br><span class="line">name: mymaster</span><br><span class="line">ip: 10.0.0.1</span><br><span class="line">port: 6379</span><br><span class="line">flags: master</span><br><span class="line">...</span><br><span class="line"></span><br><span class="line"># 从节点信息</span><br><span class="line">ip: 10.0.0.2</span><br><span class="line">port: 6379</span><br><span class="line">flags: slave</span><br><span class="line">master_link_status: up</span><br><span class="line">...</span><br></pre></td></tr></table></figure>
 
-<p>实际上快照只是一个最新seq，创建后用双向链表存储起来（因此是有序存放的）</p>
-<figure class="highlight c++"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br></pre></td><td class="code"><pre><span class="line"><span class="function"><span class="type">const</span> Snapshot* <span class="title">DBImpl::GetSnapshot</span><span class="params">()</span> </span>&#123;</span><br><span class="line">  <span class="function">MutexLock <span class="title">l</span><span class="params">(&amp;mutex_)</span></span>;</span><br><span class="line">  <span class="keyword">return</span> snapshots_.<span class="built_in">New</span>(versions_-&gt;<span class="built_in">LastSequence</span>());</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+<h4 id="步骤2-执行-Prepare-阶段"><a href="#步骤2-执行-Prepare-阶段" class="headerlink" title="步骤2: 执行 Prepare 阶段"></a>步骤2: 执行 Prepare 阶段</h4><figure class="highlight bash"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br></pre></td><td class="code"><pre><span class="line"><span class="comment"># 向任意一个 sentinel 发送 prepare 命令</span></span><br><span class="line">SENTINEL SILENT-FAILOVER mymaster 10.0.0.2:6379 prepare</span><br><span class="line"></span><br><span class="line"><span class="comment"># 返回 OK 表示 prepare 成功</span></span><br></pre></td></tr></table></figure>
 
-<p>释放也就是释放双向链表的这个节点而已。之所以要保留这个seq，是用于compaction时，防止删除了一些用户能看到的数据。</p>
-<p>比如key1有三个版本，seq 10、20、30，seq30这个是del操作。snapshot创建时的seq是25。那么如果没有snapshot，实际上这个key在sst上完全可以被清理掉，但是有snapshot，其必须能看到seq20这个数据版本，因此compaction就不能删除seq20，只能清理掉seq10。</p>
+<p>此时：</p>
+<ul>
+<li>Sentinel 会发送 <code>+switch-master</code> 事件</li>
+<li>Proxy 会将流量切换到 10.0.0.2:6379</li>
+<li>但实际主从关系未变，10.0.0.2 仍从 10.0.0.1 同步数据</li>
+</ul>
+<h4 id="步骤3-验证-Prepare-状态"><a href="#步骤3-验证-Prepare-状态" class="headerlink" title="步骤3: 验证 Prepare 状态"></a>步骤3: 验证 Prepare 状态</h4><figure class="highlight bash"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br></pre></td><td class="code"><pre><span class="line"><span class="comment"># 查看 master 状态，确认 flags 包含 silent_failover</span></span><br><span class="line">SENTINEL master mymaster</span><br><span class="line"></span><br><span class="line"><span class="comment"># flags 中应包含 silent_failover</span></span><br></pre></td></tr></table></figure>
+
+<h4 id="步骤4-执行-Done-阶段"><a href="#步骤4-执行-Done-阶段" class="headerlink" title="步骤4: 执行 Done 阶段"></a>步骤4: 执行 Done 阶段</h4><figure class="highlight bash"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br></pre></td><td class="code"><pre><span class="line"><span class="comment"># 确认流量已切换到目标从节点后，执行 done</span></span><br><span class="line">SENTINEL SILENT-FAILOVER mymaster 10.0.0.2:6379 <span class="keyword">done</span></span><br><span class="line"></span><br><span class="line"><span class="comment"># 返回 OK 表示切换完成</span></span><br></pre></td></tr></table></figure>
+
+<h4 id="步骤5-验证最终状态"><a href="#步骤5-验证最终状态" class="headerlink" title="步骤5: 验证最终状态"></a>步骤5: 验证最终状态</h4><figure class="highlight bash"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br></pre></td><td class="code"><pre><span class="line"><span class="comment"># 查看新的主节点</span></span><br><span class="line">SENTINEL master mymaster</span><br><span class="line"></span><br><span class="line"><span class="comment"># 应该显示新的主节点 IP 为 10.0.0.2</span></span><br></pre></td></tr></table></figure>
+
+<h3 id="配置从节点可写（可选）"><a href="#配置从节点可写（可选）" class="headerlink" title="配置从节点可写（可选）"></a>配置从节点可写（可选）</h3><p>如果目标从节点默认配置为只读，需要先打开可写开关：</p>
+<figure class="highlight bash"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br></pre></td><td class="code"><pre><span class="line"><span class="comment"># 在目标从节点上执行</span></span><br><span class="line">CONFIG SET replica-read-only no</span><br><span class="line"></span><br><span class="line"><span class="comment"># 或者在配置文件中设置</span></span><br><span class="line">replica-read-only no</span><br></pre></td></tr></table></figure>
+
+<h3 id="关闭自动修正（可选）"><a href="#关闭自动修正（可选）" class="headerlink" title="关闭自动修正（可选）"></a>关闭自动修正（可选）</h3><p>在某些场景下，可能需要关闭 sentinel 自动修正从节点复制关系：</p>
+<figure class="highlight bash"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br></pre></td><td class="code"><pre><span class="line"><span class="comment"># 关闭自动修正</span></span><br><span class="line">SENTINEL SET mymaster slave-can-auto-revert-to-configured-master no</span><br><span class="line"></span><br><span class="line"><span class="comment"># 执行 silent-failover ...</span></span><br><span class="line"></span><br><span class="line"><span class="comment"># 重新打开自动修正</span></span><br><span class="line">SENTINEL SET mymaster slave-can-auto-revert-to-configured-master <span class="built_in">yes</span></span><br></pre></td></tr></table></figure>
+
+<h2 id="常见错误场景"><a href="#常见错误场景" class="headerlink" title="常见错误场景"></a>常见错误场景</h2><h3 id="错误1-从节点状态不满足"><a href="#错误1-从节点状态不满足" class="headerlink" title="错误1: 从节点状态不满足"></a>错误1: 从节点状态不满足</h3><figure class="highlight plaintext"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">ERR Slave status is not ready</span><br></pre></td></tr></table></figure>
+
+<p><strong>原因</strong>：目标从节点不满足升级条件（优先级为0、S_DOWN、O_DOWN等）</p>
+<p><strong>解决</strong>：确保目标从节点健康，检查主从复制状态</p>
+<h3 id="错误2-已在-silent-failover-状态"><a href="#错误2-已在-silent-failover-状态" class="headerlink" title="错误2: 已在 silent-failover 状态"></a>错误2: 已在 silent-failover 状态</h3><figure class="highlight plaintext"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">ERR Failover is already in progress</span><br></pre></td></tr></table></figure>
+
+<p><strong>原因</strong>：当前已有 silent-failover 在进行中</p>
+<p><strong>解决</strong>：等待当前流程完成，或检查是否有异常导致未正常结束</p>
+<h3 id="错误3-执行-RESET-命令被拒绝"><a href="#错误3-执行-RESET-命令被拒绝" class="headerlink" title="错误3: 执行 RESET 命令被拒绝"></a>错误3: 执行 RESET 命令被拒绝</h3><figure class="highlight plaintext"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">ERR This master is in silent failover state, can not reset</span><br></pre></td></tr></table></figure>
+
+<p><strong>原因</strong>：在 silent-failover 状态下拒绝执行 RESET</p>
+<p><strong>解决</strong>：先执行 <code>done</code> 完成切换，或等待异常中止后自动恢复</p>
+<h2 id="使用前提与限制"><a href="#使用前提与限制" class="headerlink" title="使用前提与限制"></a>使用前提与限制</h2><ol>
+<li><p><strong>并发限制</strong>：同一时刻只能有一个 master 处于 silent-failover 状态</p>
+</li>
+<li><p><strong>从节点要求</strong>：目标从节点必须满足：</p>
+<ul>
+<li>优先级不为 0</li>
+<li>不是 S_DOWN 或 O_DOWN</li>
+<li>主从连接正常</li>
+<li>复制链路健康</li>
+</ul>
+</li>
+<li><p><strong>Sentinel 集群要求</strong>：建议至少3个 Sentinel 节点，确保状态共识</p>
+</li>
+</ol>
+<h2 id="总结"><a href="#总结" class="headerlink" title="总结"></a>总结</h2><p>silent-failover 命令通过两阶段的设计，实现了在用户无感知的情况下迁移 Redis 主节点：</p>
+<ol>
+<li><strong>prepare 阶段</strong>：发送假的 +switch-master 事件，让 proxy 切流到从节点，但实际主从关系未变</li>
+<li><strong>done 阶段</strong>：执行真正的主从切换，将从节点提升为主节点</li>
+</ol>
+<p>这套方案的核心挑战在于多 sentinel 之间的状态共识，通过 hello 消息扩展字段实现状态的同步与传播。</p>
 
       
     </div>
@@ -282,7 +575,7 @@
 
 
   <nav class="pagination">
-    <a class="extend prev" rel="prev" title="上一页" aria-label="上一页" href="/page/3/"><i class="fa fa-angle-left"></i></a><a class="page-number" href="/">1</a><span class="space">&hellip;</span><a class="page-number" href="/page/3/">3</a><span class="page-number current">4</span><a class="page-number" href="/page/5/">5</a><span class="space">&hellip;</span><a class="page-number" href="/page/42/">42</a><a class="extend next" rel="next" title="下一页" aria-label="下一页" href="/page/5/"><i class="fa fa-angle-right"></i></a>
+    <a class="extend prev" rel="prev" title="上一页" aria-label="上一页" href="/page/3/"><i class="fa fa-angle-left"></i></a><a class="page-number" href="/">1</a><span class="space">&hellip;</span><a class="page-number" href="/page/3/">3</a><span class="page-number current">4</span><a class="page-number" href="/page/5/">5</a><span class="space">&hellip;</span><a class="page-number" href="/page/44/">44</a><a class="extend next" rel="next" title="下一页" aria-label="下一页" href="/page/5/"><i class="fa fa-angle-right"></i></a>
   </nav>
 
 </div>
