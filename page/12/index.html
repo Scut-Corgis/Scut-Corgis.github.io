@@ -123,7 +123,7 @@
   <nav class="site-state">
       <div class="site-state-item site-state-posts">
         <a href="/archives/">
-          <span class="site-state-item-count">44</span>
+          <span class="site-state-item-count">48</span>
           <span class="site-state-item-name">日志</span>
         </a>
       </div>
@@ -159,7 +159,7 @@
   
 
   <article itemscope itemtype="http://schema.org/Article" class="post-content" lang="">
-    <link itemprop="mainEntityOfPage" href="https://scut-corgis.github.io/2025-11-24-%E7%94%A8CMS%E5%AE%9E%E7%8E%B0redis%E7%83%ADkey%E9%87%87%E9%9B%86.md/%E7%94%A8CMS%E5%AE%9E%E7%8E%B0redis%E7%83%ADkey%E9%87%87%E9%9B%86/">
+    <link itemprop="mainEntityOfPage" href="https://scut-corgis.github.io/2025-12-08-redis%E5%BC%80%E6%BA%90%E8%B4%A1%E7%8C%AE(1)-%E5%BC%82%E6%AD%A5%E9%87%8A%E6%94%BE%E4%BB%8E%E8%8A%82%E7%82%B9%E8%BF%87%E6%9C%9F%E5%AD%97%E5%85%B8/">
 
     <span hidden itemprop="author" itemscope itemtype="http://schema.org/Person">
       <meta itemprop="image" content="/images/corgis.jpg">
@@ -177,7 +177,7 @@
     </span>
       <header class="post-header">
         <h2 class="post-title" itemprop="name headline">
-          <a href="/2025-11-24-%E7%94%A8CMS%E5%AE%9E%E7%8E%B0redis%E7%83%ADkey%E9%87%87%E9%9B%86.md/%E7%94%A8CMS%E5%AE%9E%E7%8E%B0redis%E7%83%ADkey%E9%87%87%E9%9B%86/" class="post-title-link" itemprop="url">用CMS实现redis热key采集</a>
+          <a href="/2025-12-08-redis%E5%BC%80%E6%BA%90%E8%B4%A1%E7%8C%AE(1)-%E5%BC%82%E6%AD%A5%E9%87%8A%E6%94%BE%E4%BB%8E%E8%8A%82%E7%82%B9%E8%BF%87%E6%9C%9F%E5%AD%97%E5%85%B8/" class="post-title-link" itemprop="url">redis开源贡献(1)-异步释放从节点过期字典</a>
         </h2>
 
         <div class="post-meta-container">
@@ -188,7 +188,7 @@
       </span>
       <span class="post-meta-item-text">发表于</span>
 
-      <time title="创建时间：2025-11-24 14:27:05" itemprop="dateCreated datePublished" datetime="2025-11-24T14:27:05+08:00">2025-11-24</time>
+      <time title="创建时间：2025-12-08 16:03:05" itemprop="dateCreated datePublished" datetime="2025-12-08T16:03:05+08:00">2025-12-08</time>
     </span>
     <span class="post-meta-item">
       <span class="post-meta-item-icon">
@@ -210,40 +210,20 @@
     
     
     <div class="post-body" itemprop="articleBody">
-          <h1 id="背景"><a href="#背景" class="headerlink" title="背景"></a>背景</h1><p>之前其实已经看过了非常多种的热key算法，自己也用space-saving实现过一套proxy上的热key收集和缓存。但是最近看到的CMS算法，我觉得也非常好，时间复杂度低，原理清晰简单，空间消耗也是常数。</p>
-<p>CMS算法的全称叫Count-Min Sketch，redis的开源module布隆过滤器RedisBloom就是基于它实现的统计元素的使用计数。</p>
-<h1 id="Count-Min-Sketch"><a href="#Count-Min-Sketch" class="headerlink" title="Count-Min Sketch"></a>Count-Min Sketch</h1><h2 id="核心原理"><a href="#核心原理" class="headerlink" title="核心原理"></a>核心原理</h2><p>基于哈希函数和二维数组（矩阵），通过多个哈希函数将元素映射到二维数组的不同位置，并对对应位置的计数器进行累加，以此来估算元素的频率。</p>
-<p><img src="/%E5%8E%9F%E7%90%86.png"></p>
-<h2 id="具体逻辑"><a href="#具体逻辑" class="headerlink" title="具体逻辑"></a>具体逻辑</h2><p><img src="/%E5%8E%9F%E7%90%862.png"></p>
-<ol>
-<li>数据结构：假设有 d 个哈希函数h1, h2 … hd ，以及一个大小为w*d的二维数组（计数器矩阵） C 。这里 w 表示每个哈希函数映射的桶（bucket）的数量， d 表示哈希函数的个数。</li>
-<li>元素计数：当一个元素 x 出现时，分别通过 d 个哈希函数计算其在二维数组中的位置。即对于第 i 个哈希函数hi，计算hi(x) ，得到一个在 0 到 w 之间的索引值，然后将矩阵 C 中第 i 列、索引值对应的位置的计数器加 1 ，也就是 (C[i][hi(x)]++) 。</li>
-<li>频率估算：当需要估算元素 x 的出现频率时，分别计算 d 个哈希函数映射位置的计数器值，取其中的最小值作为元素 x 出现频率的近似值。</li>
-</ol>
-<p>时间窗口优化</p>
+          <h1 id="问题描述"><a href="#问题描述" class="headerlink" title="问题描述"></a>问题描述</h1><p>最近给redis和valkey的社区提了一个pr，解决了一个在redis中存在了数年的问题。截止目前，valkey的已经pr通过并合入了主线，redis的还在cr中。</p>
+<p>pr链接如下：</p>
 <ul>
-<li>划分时间窗口(1s、5s)，每个新窗口开始时，重置 Count - Min Sketch 矩阵，并重新开始计数。假设窗口长度为 T 秒，某个键在上一个窗口中的计数为 count，则其 QPS 为 count &#x2F; T。</li>
+<li>valkey：<a target="_blank" rel="noopener" href="https://github.com/valkey-io/valkey/pull/2849">https://github.com/valkey-io/valkey/pull/2849</a></li>
+<li>redis: <a target="_blank" rel="noopener" href="https://github.com/redis/redis/pull/14583">https://github.com/redis/redis/pull/14583</a></li>
 </ul>
-<h2 id="讨论"><a href="#讨论" class="headerlink" title="讨论"></a>讨论</h2><p>优势</p>
-<ul>
-<li>内存高效：只需要存储一个大小固定的二维数组和少量的哈希函数，占用的内存空间小。</li>
-<li>快速计算：对元素的计数和频率估算操作的时间复杂度低，均为 O(d) ，可以实时处理大量的元素</li>
-</ul>
-<p>局限</p>
-<ul>
-<li>个人感觉就是哈希桶的数量不太好确定。且计算哈希函数不能太慢，但一般密码算法都不算快。</li>
-<li>估算误差：由于哈希冲突的存在，对元素频率的估算结果可能会高估实际频率。</li>
-</ul>
-<p>内存占用</p>
-<ul>
-<li>O (d×w)，其中 d 是哈希函数的数量，w 是每个哈希函数对应的桶数量。</li>
-<li>例如：d 个哈希函数 × 4 字节 int 计数器 × w 个桶 ：4 × 4 × 10000 &#x3D; 160,000B ≈ 156.25KB.</li>
-</ul>
-<h1 id="具体实现方式"><a href="#具体实现方式" class="headerlink" title="具体实现方式"></a>具体实现方式</h1><ol>
-<li>对于某个统计时间窗口，当发现热key时，可以直接用字典来保存当前热key的【key-&gt;次数】的映射</li>
-<li>对于历史数据统计，可以采用lru，比如使用双向链表+字典来实现，比如每个统计时间窗口到达时，倾倒当前的热key字典到lru结构中。</li>
-<li>历史数据记录保持多久有一个时间窗口，可以定期遍历lru双向链表来清理过期的热key历史数据。</li>
-</ol>
+<p>该pr解决问题描述如下：</p>
+<p>redis的从节点有一个配置开关，可以打开写功能，即可以直接往从节点写入数据。</p>
+<p>那么这个会导致一个一致性问题，我们知道redis的从节点是不允许自己删除过期数据的，只能主节点过期删除后，同步del命令给从节点，从节点才能删除。但这样直接往从节点写入的带过期时间的数据，就永远不会被删除了，因为不会有del命令从主节点同步过来。</p>
+<p>因此redis内部有一个字典，专门记录属于slave的过期key，用于解决以上问题。</p>
+<p>但这个字典在删除时，比如<code>flushall async</code>时，是同步操作，实测每一百万个key，会阻塞一秒主线程，这不符合异步删除的预期。</p>
+<p>因此我简单添加了一些异步删除的代码逻辑，解决了此问题。</p>
+<h1 id="pr过程"><a href="#pr过程" class="headerlink" title="pr过程"></a>pr过程</h1><p>其实在valkey的合并过程中，跟维护者有过一段必要性的探讨。主要是探讨什么场景有可能会大量的往从节点写入数据。因为在redis场景下，是不鼓励往从节点写数据的。</p>
+<p>具体的cr comment在链接中有详细的记录，这里不再赘述。<a target="_blank" rel="noopener" href="https://github.com/valkey-io/valkey/pull/2849">https://github.com/valkey-io/valkey/pull/2849</a></p>
 
       
     </div>
@@ -263,7 +243,7 @@
 
 
   <nav class="pagination">
-    <a class="extend prev" rel="prev" title="上一页" aria-label="上一页" href="/page/11/"><i class="fa fa-angle-left"></i></a><a class="page-number" href="/">1</a><span class="space">&hellip;</span><a class="page-number" href="/page/11/">11</a><span class="page-number current">12</span><a class="page-number" href="/page/13/">13</a><span class="space">&hellip;</span><a class="page-number" href="/page/44/">44</a><a class="extend next" rel="next" title="下一页" aria-label="下一页" href="/page/13/"><i class="fa fa-angle-right"></i></a>
+    <a class="extend prev" rel="prev" title="上一页" aria-label="上一页" href="/page/11/"><i class="fa fa-angle-left"></i></a><a class="page-number" href="/">1</a><span class="space">&hellip;</span><a class="page-number" href="/page/11/">11</a><span class="page-number current">12</span><a class="page-number" href="/page/13/">13</a><span class="space">&hellip;</span><a class="page-number" href="/page/48/">48</a><a class="extend next" rel="next" title="下一页" aria-label="下一页" href="/page/13/"><i class="fa fa-angle-right"></i></a>
   </nav>
 
 </div>
