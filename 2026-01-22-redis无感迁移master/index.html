@@ -28,11 +28,11 @@
 <meta property="og:locale" content="zh_CN">
 <meta property="og:image" content="https://scut-corgis.github.io/2026-01-22-redis%E6%97%A0%E6%84%9F%E8%BF%81%E7%A7%BBmaster/redis%E6%9E%B6%E6%9E%84%E5%9B%BE.svg">
 <meta property="og:image" content="https://scut-corgis.github.io/2026-01-22-redis%E6%97%A0%E6%84%9F%E8%BF%81%E7%A7%BBmaster/sentinel-proxy%E5%8D%8F%E4%BD%9C%E6%B5%81%E7%A8%8B.svg">
-<meta property="og:image" content="https://scut-corgis.github.io/2026-01-22-redis%E6%97%A0%E6%84%9F%E8%BF%81%E7%A7%BBmaster/%E8%BF%81%E7%A7%BB%E7%A4%BA%E6%84%8F%E5%9B%BE.png">
+<meta property="og:image" content="https://scut-corgis.github.io/%E8%BF%81%E7%A7%BB%E7%A4%BA%E6%84%8F%E5%9B%BE.png">
 <meta property="og:image" content="https://scut-corgis.github.io/2026-01-22-redis%E6%97%A0%E6%84%9F%E8%BF%81%E7%A7%BBmaster/%E4%B8%A4%E9%98%B6%E6%AE%B5%E7%8A%B6%E6%80%81%E6%9C%BA.svg">
 <meta property="og:image" content="https://scut-corgis.github.io/2026-01-22-redis%E6%97%A0%E6%84%9F%E8%BF%81%E7%A7%BBmaster/prepare%E9%98%B6%E6%AE%B5%E6%97%B6%E5%BA%8F%E5%9B%BE.svg">
 <meta property="article:published_time" content="2026-01-22T13:17:05.000Z">
-<meta property="article:modified_time" content="2026-04-17T08:55:15.633Z">
+<meta property="article:modified_time" content="2026-04-17T08:59:34.936Z">
 <meta property="article:author" content="Corgis">
 <meta name="twitter:card" content="summary">
 <meta name="twitter:image" content="https://scut-corgis.github.io/2026-01-22-redis%E6%97%A0%E6%84%9F%E8%BF%81%E7%A7%BBmaster/redis%E6%9E%B6%E6%9E%84%E5%9B%BE.svg">
@@ -132,7 +132,7 @@
   <nav class="site-state">
       <div class="site-state-item site-state-posts">
         <a href="/archives/">
-          <span class="site-state-item-count">48</span>
+          <span class="site-state-item-count">45</span>
           <span class="site-state-item-name">日志</span>
         </a>
       </div>
@@ -275,7 +275,7 @@
 <p>但<code>failover to</code>命令是有感的，其有两种工作方式，一种是禁写主节点，直到从的offset完全跟上主后再主从切换。一种是直接切换，也就是会丢失所有未同步到从节点的数据。</p>
 <p>因此本文阐述了一种新能力，可以让业务无感知的迁移master节点。</p>
 <h1 id="方法"><a href="#方法" class="headerlink" title="方法"></a>方法</h1><p>主要方法如下：通过修改sentinel的内核，引入了<code>silent-failover</code>命令，通过两阶段的failover，即<code>prepare</code>和<code>done</code>实现无感迁移master。其中从节点需要打开可写开关。</p>
-<p>一种迁移的示意图如下:<br><img src="/2026-01-22-redis%E6%97%A0%E6%84%9F%E8%BF%81%E7%A7%BBmaster/%E8%BF%81%E7%A7%BB%E7%A4%BA%E6%84%8F%E5%9B%BE.png"></p>
+<p>一种迁移的示意图如下:<br><img src="/%E8%BF%81%E7%A7%BB%E7%A4%BA%E6%84%8F%E5%9B%BE.png"></p>
 <p>引入一个新的哨兵命令，格式如下</p>
 <blockquote>
 <p>sentinel silent-failover master-name slave-node &lt;prepare|done&gt;</p>

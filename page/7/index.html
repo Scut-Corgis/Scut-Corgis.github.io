@@ -123,7 +123,7 @@
   <nav class="site-state">
       <div class="site-state-item site-state-posts">
         <a href="/archives/">
-          <span class="site-state-item-count">48</span>
+          <span class="site-state-item-count">45</span>
           <span class="site-state-item-name">日志</span>
         </a>
       </div>
@@ -159,7 +159,7 @@
   
 
   <article itemscope itemtype="http://schema.org/Article" class="post-content" lang="">
-    <link itemprop="mainEntityOfPage" href="https://scut-corgis.github.io/2026-03-02-transformer%E5%AD%A6%E4%B9%A0/">
+    <link itemprop="mainEntityOfPage" href="https://scut-corgis.github.io/2025-12-20-zookeeper%E5%AD%A6%E4%B9%A0/">
 
     <span hidden itemprop="author" itemscope itemtype="http://schema.org/Person">
       <meta itemprop="image" content="/images/corgis.jpg">
@@ -177,7 +177,7 @@
     </span>
       <header class="post-header">
         <h2 class="post-title" itemprop="name headline">
-          <a href="/2026-03-02-transformer%E5%AD%A6%E4%B9%A0/" class="post-title-link" itemprop="url">transformer学习</a>
+          <a href="/2025-12-20-zookeeper%E5%AD%A6%E4%B9%A0/" class="post-title-link" itemprop="url">ZooKeeper学习</a>
         </h2>
 
         <div class="post-meta-container">
@@ -188,7 +188,7 @@
       </span>
       <span class="post-meta-item-text">发表于</span>
 
-      <time title="创建时间：2026-03-02 22:27:05" itemprop="dateCreated datePublished" datetime="2026-03-02T22:27:05+08:00">2026-03-02</time>
+      <time title="创建时间：2025-12-20 21:20:01" itemprop="dateCreated datePublished" datetime="2025-12-20T21:20:01+08:00">2025-12-20</time>
     </span>
     <span class="post-meta-item">
       <span class="post-meta-item-icon">
@@ -196,7 +196,7 @@
       </span>
       <span class="post-meta-item-text">分类于</span>
         <span itemprop="about" itemscope itemtype="http://schema.org/Thing">
-          <a href="/categories/AI/" itemprop="url" rel="index"><span itemprop="name">AI</span></a>
+          <a href="/categories/zookeeper/" itemprop="url" rel="index"><span itemprop="name">zookeeper</span></a>
         </span>
     </span>
 
@@ -210,100 +210,211 @@
     
     
     <div class="post-body" itemprop="articleBody">
-          <h1 id="前言"><a href="#前言" class="headerlink" title="前言"></a>前言</h1><p>考虑到现在各大公司对AI的要求越来越高了，我决定开始全面学习AI，目的是做到基本理解ai原理，能够实现ai应用，能够听得懂各种AI名词。</p>
-<p>transformer作为当前AI最基本的训练原理，决定作为第一个开始学习的篇章，我学的是李宏毅的视频课程，链接如下：</p>
-<p><a target="_blank" rel="noopener" href="https://www.bilibili.com/video/BV1r8nMz4EAj?spm_id_from=333.788.videopod.sections&vd_source=1e3090bc7a88f02cda5247bc11cd548d">https://www.bilibili.com/video/BV1r8nMz4EAj?spm_id_from=333.788.videopod.sections&amp;vd_source=1e3090bc7a88f02cda5247bc11cd548d</a></p>
-<h1 id="一些神经网络名词"><a href="#一些神经网络名词" class="headerlink" title="一些神经网络名词"></a>一些神经网络名词</h1><h2 id="神经网络"><a href="#神经网络" class="headerlink" title="神经网络"></a>神经网络</h2><p>最简单的神经网络示意图如下，网络可以有多个标量输入，经过神经元处理后，得到一个输出<br><img src="/2026-03-02-transformer%E5%AD%A6%E4%B9%A0/%E6%9C%80%E7%AE%80%E5%8D%95%E7%9A%84%E7%A5%9E%E7%BB%8F%E7%BD%91%E7%BB%9C%E7%A4%BA%E6%84%8F.png"></p>
-<h2 id="fully-connected-network"><a href="#fully-connected-network" class="headerlink" title="fully-connected network"></a>fully-connected network</h2><p>全连接网络，理解为给一个输入，经过神经网络处理后，给一个输出</p>
+          <h1 id="ZooKeeper核心"><a href="#ZooKeeper核心" class="headerlink" title="ZooKeeper核心"></a>ZooKeeper核心</h1><blockquote>
+<p>本文主要是阅读其他文章后的理解和删减，十分简明扼要介绍了zk的原理</p>
+</blockquote>
+<p>为了应对大流量，现代应用&#x2F;中间件通常采用分布式部署，此时不得不考虑CAP问题。ZooKeeper（后文简称ZK）是面向CP设计的一个开源的<strong>分布式协调框架</strong>，将那些复杂且容易出错的分布式一致性服务封装起来，构成一个高效可靠的原语集，并以一系列简单易用的接口提供给用户使用，分布式应用程序可以基于它实现诸如 <strong>数据发布&#x2F;订阅、负载均衡、命名服务、集群管理、Master 选举、分布式锁、分布式队列</strong> 等功能。ZK之所以能够提供上述一套分布式数据一致性解决方案，核心在于其设计精妙的<strong>数据结构、watcher机制、Zab一致性协议</strong>等，下面将依次剖析。</p>
+<h2 id="数据结构"><a href="#数据结构" class="headerlink" title="数据结构"></a>数据结构</h2><p>ZK在内存中维护了一个<strong>类似文件系统的树状数据</strong>结构实现命名空间（如下），树中的节点称为<strong>znode</strong>。<br><img src="/2025-12-20-zookeeper%E5%AD%A6%E4%B9%A0/zk%E6%A0%91%E5%BD%A2%E6%96%87%E4%BB%B6%E7%B3%BB%E7%BB%9F.webp"><br>然而，znode要比文件系统的路径复杂，既可以通过路径访问，又可以存储数据。znode具有四个属性data、acl、stat、children，如下</p>
+<figure class="highlight java"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">public</span> <span class="keyword">class</span> <span class="title class_">DataNode</span> <span class="keyword">implements</span> <span class="title class_">Record</span> &#123; </span><br><span class="line">    <span class="type">byte</span> data[];                     </span><br><span class="line">    Long acl;                        </span><br><span class="line">    <span class="keyword">public</span> StatPersisted stat;        </span><br><span class="line">    <span class="keyword">private</span> Set&lt;String&gt; children = <span class="literal">null</span>;  </span><br><span class="line">&#125; </span><br></pre></td></tr></table></figure>
 <ul>
-<li>输入：一组固定长度的数字（比如 [年龄，收入，点击数，停留时间]）</li>
-<li>输出：一个结果（分类 &#x2F; 预测值）</li>
-<li>中间：所有神经元两两全部连在一起，所以叫 “全连接”</li>
-</ul>
-<p>全连接网络 &#x3D; 一次性看所有特征，做判断。</p>
-<p>特点</p>
-<ul>
-<li>只能吃 固定长度 的输入</li>
-<li>不理解 顺序、时序、前后关系</li>
-</ul>
-<h2 id="RNN-循环神经网络"><a href="#RNN-循环神经网络" class="headerlink" title="RNN-循环神经网络"></a>RNN-循环神经网络</h2><p><img src="/2026-03-02-transformer%E5%AD%A6%E4%B9%A0/RNN.png"><br>理解为可以处理时序或者说有前后顺序的数据，每一个step的输出不仅取决于此次的输入，还取决于前一次的输出。</p>
-<p>RNN已经可以处理seq-2-seq的问题了，但是显然它只能串行处理，效率低，且不能看全局信息，每一个step的输出只取决于本次step之前的输入，之后的输入不会影响它。</p>
-<p>特点:</p>
-<ul>
-<li>输入可以是任意长度</li>
-<li>有记忆（状态）</li>
-<li>串行</li>
-</ul>
-<h2 id="CNN-卷积神经网络"><a href="#CNN-卷积神经网络" class="headerlink" title="CNN-卷积神经网络"></a>CNN-卷积神经网络</h2><p>作用：提取局部特征、空间结构。</p>
-<p>理解成：一个滑动窗口，在图片 &#x2F; 数据上扫来扫去，找规律。</p>
-<p>CNN 就像：</p>
-<ul>
-<li>遍历式特征提取器</li>
-<li>像滑动窗口统计</li>
-<li>像 filter 过滤器</li>
-</ul>
-<p>cnn不关心全局，只关心这一块附近的像素&#x2F;点，然后做处理。</p>
-<h1 id="self-attention机制"><a href="#self-attention机制" class="headerlink" title="self-attention机制"></a>self-attention机制</h1><p>attention机制是seq-2-seq的一种处理架构，输入一系列的数据（如时序数据），输出相同长度的数据。</p>
-<p>比如输入一段文字描述、或者有时序的声音信号，经过attention机制处理后，输出一串顺序输出。</p>
-<p>特点是<strong>并行计算，全局视角</strong>。</p>
-<p>如下图所示，self-attention可以当作一个处理黑盒，输入一个向量，经过attention处理后会给出一个相同长度的输出向量，attention只是用于综合整个输入信息，使得每一个位置的输出能参考到整体输入。因此attention并不是处理的结束，其输出的每一个元素还需要经过类似fully-connection network处理得到最终的输出。</p>
-<p><img src="/2026-03-02-transformer%E5%AD%A6%E4%B9%A0/attention1.png"></p>
-<p>下图是计算某个输入与其他输入的attention关系因子的示意图，Wq和Wk均是待训练矩阵</p>
-<p><img src="/2026-03-02-transformer%E5%AD%A6%E4%B9%A0/attention2.png"></p>
-<p>比如计算1号位置的输入和2号位置输入的attention，是通过q1和k2向量做点乘得到的，得到1号位置和所有位置的attention后，一般会做一个soft-max（理解为概率归一化），得到一个相加和为1的输出结果。</p>
-<p>再看下图，计算1号位置的最终输出的方法是一个求和，可以看到某个输入位置与1号位置的attention系数越大，其对最终结果的影响最大</p>
-<p><img src="/2026-03-02-transformer%E5%AD%A6%E4%B9%A0/attention3.png"></p>
-<p>其引入了第三个待训练矩阵Wv，因此一次self-attention需要训练3个矩阵，矩阵维度和每一个位置输入向量的维度一致，比如说输入元素长度为10，那么训练矩阵便是10 X 10，注意这里指的输入元素的长度是单个元素，不是整体的全部seq-2-seq的输入总长。</p>
-<p>可以看到每一个位置输出结果可以并行计算，互不干扰。并且都参考了整体的输入seq的所有信息。</p>
-<p>以下是衍生的概念: multi-head self-attention，只是引入了更多的待训练矩阵，增加输出结果的变数</p>
-<p><img src="/2026-03-02-transformer%E5%AD%A6%E4%B9%A0/multi-head-attention.png"></p>
-<p><strong>位置编码：</strong> 可以看到以上的计算过程，每一个输入元素其实没有位置信息，所有的位置都是等价的，因此为了引入时序的概念，会在做self-attention计算前，对输入向量整体添加位置信息（+一个位置向量）。</p>
-<p><strong>与CNN的关系</strong>: cnn只会看局部的位置，而self-attention通过关系系数可以看全部的位置，因此可以认为cnn是简化版的self-attention。显然self-attention的seq输入总长越长，计算量越大，待训练参数也越多。</p>
-<h1 id="transformer架构"><a href="#transformer架构" class="headerlink" title="transformer架构"></a>transformer架构</h1><p>transformer的核心步骤是前文的attention机制，是一个seq-2-seq的处理架构，可以输入任意长度的序列，输出一个不定长的序列。每一个输出的结果不仅与所有的输入相关，还与该输出位置之前的所有输出相关。</p>
-<p>下图是一些简单应用</p>
-<p><img src="/2026-03-02-transformer%E5%AD%A6%E4%B9%A0/transformer%E5%BA%94%E7%94%A8.png"></p>
-<p>transformer由编码器和解码器构成，整体架构图如下</p>
-<p><img src="/2026-03-02-transformer%E5%AD%A6%E4%B9%A0/transformer%E6%9E%B6%E6%9E%84.png"></p>
-<h2 id="encoder"><a href="#encoder" class="headerlink" title="encoder"></a>encoder</h2><p>编码器的计算流程示意图如下，请注意左上角是第一步，右上角是把左上角的计算结果做第二步处理。<br><img src="/2026-03-02-transformer%E5%AD%A6%E4%B9%A0/%E7%BC%96%E7%A0%81%E5%99%A8.png"></p>
-<p><img src="/2026-03-02-transformer%E5%AD%A6%E4%B9%A0/%E7%BC%96%E7%A0%81%E5%99%A82.png"></p>
-<p>总结一下步骤：</p>
-<ol>
-<li>对embedding后的输入数据添加位置编码信息，然后做self-attention计算</li>
-<li>得到的结果和原输入结果做和处理，再整体做这一阶段的输出做归一化处理</li>
-<li>对前一阶段的输出经过前馈神经网络(理解为fully-connected network)做单独处理，再做一次和与归一化处理</li>
-<li>得到最终的输出序列</li>
-</ol>
-<h2 id="解码器"><a href="#解码器" class="headerlink" title="解码器"></a>解码器</h2><p>查看解码器的整体架构图，整体过程也比较清晰, 步骤如下</p>
-<p>注意是每一个输出位置的计算过程：</p>
-<ol>
-<li>输出经过位置编码后自己用masked self-attention计算一轮得到结果</li>
-<li>将前一轮的结果跟编码器的结果合并做一次self-attention</li>
-<li>最终用神经网络+线性层+softmax处理一遍得到概率分布</li>
-<li>取概率最大的为该位置的输出结果</li>
-</ol>
-<p><strong>masked self-attention</strong>: 因为输出某一个位置的结果时无法知道后续位置的输出结果，因此只是看了该输出结果的前面的输出结果，来做self attention，不是全局视角，所以叫<strong>masked</strong>。</p>
-<p><strong>解码器特殊标识</strong>：解码器起始的输出是用特殊标识<code>BEGIN</code>代替的，来作为解码器的输入来得到该起始位置的输出，而输出的结束是用特殊标识<code>END</code>，程序发现了<code>END</code>标识则结束整个语句的输出。</p>
-<p><img src="/2026-03-02-transformer%E5%AD%A6%E4%B9%A0/%E8%A7%A3%E7%A0%81%E5%99%A8%E7%89%B9%E6%AE%8A%E6%A0%87%E8%AF%86.png"></p>
-<p>下图也诠释了每一个输出位置的结果受到之前输出的影响，但无法受到之后输出的影响</p>
-<p><img src="/2026-03-02-transformer%E5%AD%A6%E4%B9%A0/%E8%A7%A3%E7%A0%81%E5%99%A82.png"></p>
-<ul>
-<li><p>线性层linear：核心是「维度映射」，把编码器输出的高维特征向量映射到任务所需维度（如分类的类别数、NER 的标签数），输出无范围限制的原始分数（logits）</p>
+<li><p><strong>data</strong>: znode相关的业务数据均存储在这里，但是，父节点不可存储数据；</p>
 </li>
-<li><p>Softmax：核心是「归一化」，通过指数运算放大分数差异，再除以所有指数的和，把 logits 转换成 0~1 之间的概率分布，且所有概率之和为 1。</p>
+<li><p><strong>children</strong>: 存储当前节点的子节点引用信息，因为内存限制，所以 znode 的子节点数不是无限的；</p>
+</li>
+<li><p><strong>stat</strong>: 包含znode节点的状态信息，比如: 事务id、版本号、时间戳等，其中事务id和ZK的数据一直性、选主相关，下面将重点介绍；</p>
+</li>
+<li><p><strong>acl</strong>: 记录客户端对znode节点的访问权限；</p>
 </li>
 </ul>
-<p>这里有个核心困惑点，结合跟AI的问题如下：</p>
-<p>Q: transformer输入了一串seq，然后结合输出的BEGIN标识，会得到输出位置的一个结果。但attention机制得到的是和输入seq长度一样的seq向量串，经过linear和softmax也只是得到一串概率分布，缺失了最终选出一个唯一值的过程</p>
-<p>A: 必须先把 “和输入等长的向量串” 压缩成「一个单向量」，再对这个单向量做线性层 + Softmax + 选唯一值。</p>
+<p>注意： znode的<strong>数据操作具有原子性</strong>，读操作将获取与节点相关的所有数据，写操作也将替换掉节点的所有数据。<strong>znode可存储的最大数据量是1MB</strong> ，但实际上我们在znode的数据量应该尽可能小，因为数据过大会导致zk的性能明显下降。<strong>每个ZNode都对应一个唯一的路径</strong>。</p>
+<h3 id="事物ID：Zxid"><a href="#事物ID：Zxid" class="headerlink" title="事物ID：Zxid"></a>事物ID：Zxid</h3><p>Zxid由Leader节点生成。当有新写入事件时，Leader节点生成新的Zxid，并随提案一起广播。Zxid的生成规则如下<br><img src="/2025-12-20-zookeeper%E5%AD%A6%E4%B9%A0/zxid.webp"></p>
 <ul>
-<li>方式 1：特殊 Token（最经典，BERT&#x2F;LLM 首选）</li>
+<li><p>epoch：任期&#x2F;纪元，Zxid的高32位， ZAB协议通过epoch编号来区分Leader 周期变化，每次一个 leader 被选出来，它都会有一个新的 epoch&#x3D;（原来的epoch+1），标识当前属于那个leader的 统治时期；可以假设leader 就像皇帝，epoch则相当于年号，每个皇帝都有自己的年号；</p>
+</li>
+<li><p>事务计数器：Zxid的低32位，每次数据变更，计数器都会加一；</p>
+</li>
 </ul>
-<p>逻辑：输入序列开头强行加一个特殊 Token（如 [CLS]&#x2F;<BEGIN>&#x2F;<SOS>），Self-Attention 输出时，只取这个特殊 Token 对应的向量作为 “单向量”。</p>
-<p>例子：输入序列：[<BEGIN>, 我, 爱, 编, 码]（长度 5）→ Self-Attention 输出：[v_cls, v1, v2, v3, v4]（长度 5）→ 只取 v_cls（1 个向量）。</p>
+<p>zxid是递增的，所以谁的zxid越大，就表示谁的数据是最新的。每个节点都保存了当前最近一次事务的Zxid。<strong>Zxid对于ZK的数据一致性以及选主都有着重要意义</strong>，后边在介绍相关知识时会重点讲解其作用原理。</p>
+<h3 id="znode类型"><a href="#znode类型" class="headerlink" title="znode类型"></a>znode类型</h3><p>节点根据<strong>生命周期</strong>的不同可以将划分为<strong>持久节点</strong>和<strong>临时节点</strong>。持久节点的存活时间不依赖于客户端会话，只有客户端在显式执行删除节点操作时，节点才消失；临时节点的存活时间依赖于客户端会话，当会话结束，临时节点将会被自动删除（当然也可以手动删除临时节点）。<strong>注意：临时节点不能拥有子节点</strong>。</p>
+<p><strong>节点类型是在创建时进行制定，后续不能改变</strong>。如 <code>create /n1 node1</code>创建了一个数据为”node1”的持久节点&#x2F;n1；在上述指令基础上加上参数-e： <code>create -e /n1/n3 node3</code>，则创建了一个数据为”node3”的临时节点 &#x2F;n1&#x2F;n3。</p>
+<p><strong>create命令还有一个可选参数-s 用于指定创建的节点是否具有顺序特性</strong>。创建顺序节点时，zk会在路径后面自动追加一个 <strong>递增的序列号</strong> ，这个序列号可以保证在<strong>同一个父节点下是唯一的</strong>，利用该特性我们可以实现<strong>分布式锁</strong> 等功能。</p>
+<p>基于znode的上述两组特性，两两组合后可构建4种类型的节点：</p>
 <ul>
-<li>方式 2：平均池化（Mean Pooling，最通用）</li>
+<li><p>PERSISTENT：永久节点</p>
+</li>
+<li><p>EPHEMERAL：临时节点</p>
+</li>
+<li><p>PERSISTENT_SEQUENTIAL：永久顺序节点</p>
+</li>
+<li><p>EPHEMERAL_SEQUENTIAL：临时顺序节点</p>
+</li>
 </ul>
-<p>逻辑：把 Self-Attention 输出的所有向量（v1~v5）做逐维度平均，得到 1 个融合了所有位置信息的单向量。<br>公式：vpooled​&#x3D;(v1​+v2​+v3​+v4​+v5​​)&#x2F;5</p>
+<h2 id="Watcher监听机制"><a href="#Watcher监听机制" class="headerlink" title="Watcher监听机制"></a>Watcher监听机制</h2><p>Watcher监听机制是ZK非常重要的一个特性。ZK允许Client端在指定节点上注册Watcher，监听节点数据变更、节点删除、子节点状态变更等事件，当特定事件发生时，ZK服务端会异步通知注册了相应Watcher的客户端，通过该机制，我们可以利用ZK实现数据的发布和订阅等功能。</p>
+<p>Watcher监听机制由三部分协作完成：ZK服务端、ZK客户端、客户端的WatchManager对象。工作时，客户端首先将Watcher 注册到服务端，同时将Watcher对象保存到客户端的Watch管理器中。当ZK服务端监听的数据状态发生变化时，服务端会主动通知客户端，接着客户端的Watch管理器会触发相关Watcher来回调相应处理逻辑。</p>
+<p><img src="/2025-12-20-zookeeper%E5%AD%A6%E4%B9%A0/zk-watch%E6%9C%BA%E5%88%B6.webp"></p>
+<p>注意：</p>
+<ul>
+<li><p><strong>watcher变更通知是一次性的</strong>：当数据发生变化的时候， ZK会产生一个watcher事件，并且会发送到客户端。但是客户端只会收到一次通知。如果后续这个节点再次发生变化，那么之前设置 Watcher的客户端不会再次收到消息。可以通过循环监听去达到永久监听效果。</p>
+</li>
+<li><p><strong>客户端watcher顺序回调</strong>：watcher回调是顺序串行化执行的，只有回调后客户端才能看到节点最新的状态。watcher回调逻辑不应太复杂，否则可能影响watcher执行。</p>
+</li>
+<li><p><strong>不会告诉节点变化前后的具体内容</strong>：watchEvent是最小的通信单元，结构上包含通知状态、事件类型和节点路径，但是，不会告诉节点变化前后的具体内容。</p>
+</li>
+<li><p><strong>时效性</strong>：watcher只有在当前session彻底失效时才会无效，若在session有效期内快速重连成功，则watcher依然存在，仍可收到事件通知。</p>
+</li>
+</ul>
+<h2 id="ZK集群"><a href="#ZK集群" class="headerlink" title="ZK集群"></a>ZK集群</h2><blockquote>
+<p>和raft大同小异,可以跳过不看</p>
+</blockquote>
+<p>为了确保服务的高可用性，ZK采用集群化部署，如下</p>
+<p><img src="/2025-12-20-zookeeper%E5%AD%A6%E4%B9%A0/zk%E9%9B%86%E7%BE%A4.webp"></p>
+<p>ZK集群服务器有三种角色：Leader、Follower和Observer</p>
+<ul>
+<li><p><strong>Leader</strong>：一个 ZK 集群同一时间只会有一个实际工作的 Leader，它会发起并维护与各 Follwer 及 Observer 间的心跳。所有的写操作必须要通过 Leader 完成再由 Leader 将写操作广播给其它服务器。</p>
+</li>
+<li><p><strong>Follower</strong>： 一个 ZK 集群可同时存在多个 Follower，它会响应 Leader 的心跳。Follower 可直接处理并返回客户端的读请求，同时会将写请求转发给 Leader 处理，参与事务请求Proposal的投票及Leader选举投票。</p>
+</li>
+<li><p><strong>Observer</strong>：Observer是3.3.0 版本开始引入的一个服务器角色，一个 ZK 集群可同时存在多个 Observer， 功能与 Follower 类似，但是，不参与投票。</p>
+</li>
+</ul>
+<blockquote>
+<p>“早期的 ZooKeeper 集群服务运行过程中，只有Leader服务器和Follow服务器。随着集群规模扩大，follower变多，ZK在创建节点和选主等事务性请求时，需要一半以上节点AC，所以导致性能下降写入操作越来越耗时，follower之间通信越来越耗时。为了解决这个问题，就引入了观察者，可以处理读，但是不参与投票。既保证了集群的扩展性，又避免过多服务器参与投票导致的集群处理请求能力下降。”</p>
+</blockquote>
+<p>ZK集群中通常有很多服务器，那么如何区分不同的服务器的角色呢？可以通过服务器的状态进行区分</p>
+<ul>
+<li><p>LOOKING：寻找Leader状态。当服务器处于该状态时，它会认为当前集群中没有 Leader，因此需要进入 Leader 选举状态。</p>
+</li>
+<li><p>LEADING：领导者状态。表明当前服务器角色是Leader。</p>
+</li>
+<li><p>FOLLOWING：跟随者状态，同步 leader 状态，参与投票。表明当前服务器角色是Follower。</p>
+</li>
+<li><p>OBSERVING：观察者状态，同步 leader 状态，不参与投票。表明当前服务器角色是Observer。</p>
+</li>
+</ul>
+<p>ZK集群是一主多从的结构，所有的所有的写操作必须要通过 Leader 完成，Follower 可直接处理并返回客户端的读请求。那么如何保证从Follower服务器读取的数据与Leader写入的数据的一致性呢？Leader万一由于某些原因崩溃了，如何选出新的Leader，如何保证数据恢复？ Leader 是怎么选出来的？</p>
+<h3 id="Zab一致性协议"><a href="#Zab一致性协议" class="headerlink" title="Zab一致性协议"></a>Zab一致性协议</h3><p>ZK专门设计了ZAB协议(Zookeeper Atomic Broadcast)来保证主从节点数据的一致性。下面分别从client向Leader和Follower写数据场景展开陈述。</p>
+<p>写 Leader场景数据一致性 </p>
+<p><img src="/2025-12-20-zookeeper%E5%AD%A6%E4%B9%A0/zk-zab%E5%86%99%E4%B8%80%E8%87%B4%E6%80%A7.webp"></p>
+<ol>
+<li><p>客户端向 Leader 发起写请求</p>
+</li>
+<li><p>Leader 将写请求以 Proposal 的形式发给所有 Follower 并等待 ACK</p>
+</li>
+<li><p>Follower 收到 Leader 的 Proposal 后返回 ACK</p>
+</li>
+<li><p>Leader 得到过半数的 ACK（Leader 对自己默认有一个 ACK）后向所有的 Follower 和 Observer 发送 Commmit</p>
+</li>
+<li><p>Leader 将处理结果返回给客户端</p>
+</li>
+</ol>
+<p>注意：</p>
+<ul>
+<li><p>Leader不需要得到所有Follower的ACK，只要收到过半的ACK即可，同时Leader本身对自己有一个ACK。上图中有2个Follower，只需其中两个返回ACK即可，因为(1+1) &#x2F; (2+1) &gt; 1&#x2F;2</p>
+</li>
+<li><p>Observer虽然无投票权，但仍须同步Leader的数据从而在处理读请求时可以返回尽可能新的数据</p>
+</li>
+</ul>
+<p>最终一致性<br>Zab 协议消息广播使用两阶段提交的方式，达到主从数据的最终一致性。为什么是最终一致性呢？从上文可知数据写入过程核心分成下面两阶段：</p>
+<p>第一阶段：Leader数据写入事件作为提案广播给所有 Follower 结点；可以写入的Follower结点返回确认信息 ACK。</p>
+<p>第二阶段：Leader 收到一半以上的 ACK 信息后确认写入可以生效，向所有结点广播 COMMIT 将提案生效。</p>
+<p>根据写入过程的两阶段的描述，可以知道 ZooKeeper 保证的是最终一致性，即 Leader 向客户端返回写入成功后，可能有部分 Follower 还没有写入最新的数据，所以是最终一致性。ZooKeeper 保证的最终一致性也叫顺序一致性，即每个结点的数据都是严格按事务的发起顺序生效的。ZooKeeper 集群的写入是由 Leader 结点协调的，真实场景下写入会有一定的并发量，那 Zab 协议的两阶段提交是如何保证事务严格按顺序生效的呢？ZK事物的顺序性是借助上文中的Zxid实现的。Leader 在收到半数以上 ACK 后会将提案生效并广播给所有 Follower 结点，Leader 为了保证提案按 ZXID 顺序生效，使用了一个 ConcurrentHashMap，记录所有未提交的提案，命名为 outstandingProposals，key 为 ZXID，Value 为提案的信息。对 outstandingProposals 的访问逻辑如下：</p>
+<ol>
+<li><p>Leader 每发起一个提案，会将提案的 ZXID 和内容放到 outstandingProposals 中，作为待提交的提案；</p>
+</li>
+<li><p>Leader收到 Follower 的 ACK 信息后，根据 ACK 中的 ZXID 从 outstandingProposals 中找到对应的提案，对 ACK 计数;</p>
+</li>
+<li><p>执行 tryToCommit 尝试将提案提交：判断流程是，先判断当前 ZXID 之前是否还有未提交提案，如果有，当前提案暂时不能提交；再判断提案是否收到半数以上 ACK，如果达到半数则可以提交；如果可以提交，将当前 ZXID 从 outstandingProposals 中清除并向 Followers 广播提交当前提案；</p>
+</li>
+</ol>
+<p>Leader 是如何判断当前 ZXID 之前是否还有未提交提案的呢？由于前提是保证顺序提交的，所以 Leader 只需判断 outstandingProposals 里，当前 ZXID 的前一个 ZXID 是否存在。</p>
+<p>所以 ZooKeeper 是通过两阶段提交保证数据的最终一致性，并且通过严格按照 ZXID 的顺序生效提案保证其顺序一致性的。</p>
+<h3 id="选主原理"><a href="#选主原理" class="headerlink" title="选主原理"></a>选主原理</h3><blockquote>
+<p>和raft基本一模一样</p>
+</blockquote>
+<h2 id="典型应用场景"><a href="#典型应用场景" class="headerlink" title="典型应用场景"></a>典型应用场景</h2><h3 id="数据发布-订阅"><a href="#数据发布-订阅" class="headerlink" title="数据发布&#x2F;订阅"></a>数据发布&#x2F;订阅</h3><p>我们可基于ZK的Watcher监听机制实现数据的发布与订阅功能。ZK的发布订阅模式采用的是推拉结合的方式实现的，实现原理如下：</p>
+<p><img src="/2025-12-20-zookeeper%E5%AD%A6%E4%B9%A0/zk-%E6%95%B0%E6%8D%AE%E5%8F%91%E5%B8%83.webp"></p>
+<ol>
+<li><p>当集群中的服务启动时，客户端向ZK注册watcher监听特定节点，并从节点拉取数据获取配置信息；</p>
+</li>
+<li><p>当发布者变更配置时，节点数据发生变化，ZK会发送watcher事件给各个客户端；客户端在接收到watcher事件后，会从该节点重新拉取数据获取最新配置信息。</p>
+</li>
+</ol>
+<p><strong>注意： Watch 具有一次性，所以当获得服务器通知后要再次添加 Watch 事件</strong>。</p>
+<blockquote>
+<p>disconf便是这么做的，不过节点里不是存配置数据，而是存的mysql用的元数据，原理是一样的</p>
+</blockquote>
+<h3 id="负载均衡"><a href="#负载均衡" class="headerlink" title="负载均衡"></a>负载均衡</h3><p>利用ZK的临时节点、watcher机制等特性可实现负载均衡，具体思路如下：</p>
+<p><img src="/2025-12-20-zookeeper%E5%AD%A6%E4%B9%A0/zk-%E8%B4%9F%E8%BD%BD%E5%9D%87%E8%A1%A1.webp"></p>
+<p>把ZK作为一个服务的注册中心，基本流程:</p>
+<ol>
+<li><p>服务提供者server启动时在ZK进行服务注册（创建临时文件）;</p>
+</li>
+<li><p>服务消费者client启动时，请求ZK获取最新的服务存活列表并注册watcher，然后将获得服务列表保存到本地缓存中;</p>
+</li>
+<li><p>client请求server时，根据自己的负载均衡算法，从服务器列表选取一个进行通信。</p>
+</li>
+<li><p>若在运行过程中，服务提供者出现异常或人工关闭不能提供服务，临时节点失效，ZK探测到变化更新本地服务列表并异步通知到服务消费者，服务消费者监听到服务列表的变化，更新本地缓存</p>
+</li>
+</ol>
+<p><strong>注意</strong>：服务发现可能存在延迟，因为服务提供者挂掉到缓存更新大约需要3-5s的时间（根据网络环境不同还需仔细测试）。为了保证服务的实时可用，client请求server发生异常时，需要根据服务消费报错信息，进行重负载均衡重试等。</p>
+<h3 id="命名服务"><a href="#命名服务" class="headerlink" title="命名服务"></a>命名服务</h3><p>命名服务是指通过指定的名字来获取资源或者服务的地址、提供者等信息。以znode的路径为名字，znode存储的数据为值，可以很容易构建出一个命名服务。例如Dubbo使用ZK来作为其命名服务，如下</p>
+<p><img src="/2025-12-20-zookeeper%E5%AD%A6%E4%B9%A0/zk-%E5%90%8D%E5%AD%97%E6%9C%8D%E5%8A%A1.webp"></p>
+<ul>
+<li>所有 Dubbo 相关的数据都组织在 <code>/dubbo</code> 的根节点下；</li>
+</ul>
+<p>二级目录是服务名，如 <code>com.foo.BarService</code> ；</p>
+<p>三级目录有两个子节点，分别是 <code>providers</code> 和 <code>consumers</code> ，表示该服务的提供者和消费者；</p>
+<p>四级目录记录了与该服务相关的每一个应用实例的 URL 信息，在 <code>providers</code> 下的表示该服务的所有提供者，而在 <code>consumers</code> 下的表示该服务的所有消费者。举例说明， <code>com.foo.BarService</code> 的服务提供者在启动时将自己的 URL 信息注册到 <code>/dubbo/com.foo.BarService/providers</code> 下；同样的，服务消费者将自己的信息注册到相应的 <code>consumers </code>下，同时，服务消费者会订阅其所对应的 <code>providers </code>节点，以便能够感知到服务提供方地址列表的变化。</p>
+<h3 id="集群管理"><a href="#集群管理" class="headerlink" title="集群管理"></a>集群管理</h3><p>基于ZK的临时节点和watcher监听机制可实现集群管理。集群管理通常指监控集群中各个主机的运行时状态、存活状况等信息。如下图所示，主机向ZK注册临时节点，监控系统注册监听集群下的临时节点，从而获取集群中服务的状态等信息。</p>
+<p><img src="/2025-12-20-zookeeper%E5%AD%A6%E4%B9%A0/zk-%E9%9B%86%E7%BE%A4%E7%AE%A1%E7%90%86.webp"></p>
+<h3 id="Master-选举"><a href="#Master-选举" class="headerlink" title="Master 选举"></a>Master 选举</h3><p>ZK中某节点同一层子节点，名称具有唯一性，所以，多个客户端创建同一节点时，只会有一个客户端成功。利用该特性，可以实现maser选举，具体如下：</p>
+<p><img src="/2025-12-20-zookeeper%E5%AD%A6%E4%B9%A0/zk-%E9%A2%86%E5%AF%BC%E9%80%89%E4%B8%BE.webp"></p>
+<ol>
+<li><p>多个客户端同时竞争创建同一临时节点&#x2F;master-election&#x2F;master，最终只能有一个客户端成功。这个成功的客户端成为Master，其它客户端置为Slave。</p>
+</li>
+<li><p>Slave客户端都向这个临时节点的父节点&#x2F;master-election 注册一个子节点列表的watcher 监听。</p>
+</li>
+<li><p>一旦原Master宕机，临时节点就会消失，zk 服务器就会向所有 Slave 发送子节点变更事件，Slave 在接收到事件后会竞争创建新的master临时子节点。谁创建成功，谁就是新的 Master。</p>
+</li>
+</ol>
+<h3 id="分布式锁"><a href="#分布式锁" class="headerlink" title="分布式锁"></a>分布式锁</h3><p>基于ZK的临时顺序节点和Watcher 机制可实现公平分布式锁。下面具体看下多客户端获取及释放zk分布式锁的整个流程及背后的原理。</p>
+<p>假如说客户端A先发起请求，就会搞出来一个顺序节点，因为客户端A是第一个发起请求的，所以给他搞出来的顺序节点的序号是”1”。接着客户端A会查一下”my_lock”这个锁节点下的所有子节点，并且这些子节点是按照序号排序的，这个时候大概会拿到一个集合.接着客户端A会走一个关键性的判断：唉！兄弟，这个集合里，我创建的那个顺序节点，是不是排在第一个啊？如果是的话，那我就可以加锁了啊！因为明明我就是第一个来创建顺序节点的人，所以我就是第一个尝试加分布式锁的人啊！bingo！加锁成功！大家看下面的图，再来直观的感受一下整个过程。<br><img src="/2025-12-20-zookeeper%E5%AD%A6%E4%B9%A0/zk-%E5%85%AC%E5%B9%B3%E5%88%86%E5%B8%83%E5%BC%8F%E9%94%811.webp"></p>
+<p>假如说客户端A加完锁完后，客户端B过来想要加锁，这个时候它会干一样的事儿：先是在”my_lock”这个锁节点下创建一个临时顺序节点，因为是第二个来创建顺序节点的，所以zk内部会维护序号为”2”。接着客户端B会走加锁判断逻辑，查询”my_lock”锁节点下的所有子节点，按序号顺序排列，此时看到的类似于：</p>
+<p><img src="/2025-12-20-zookeeper%E5%AD%A6%E4%B9%A0/zk-%E5%85%AC%E5%B9%B3%E5%88%86%E5%B8%83%E5%BC%8F%E9%94%812.webp"></p>
+<p>同时检查自己创建的顺序节点，是不是集合中的第一个？明显不是，此时第一个是客户端A创建的那个顺序节点，序号为”01”的那个。所以加锁失败！加锁失败了以后，客户端B就会通过ZK的API对他的顺序节点的上一个顺序节点加一个监听器， 即对客户端A创建的那个顺序节加监听器！如下</p>
+<p><img src="/2025-12-20-zookeeper%E5%AD%A6%E4%B9%A0/zk-%E5%85%AC%E5%B9%B3%E5%88%86%E5%B8%83%E5%BC%8F%E9%94%813.webp"></p>
+<p>接着，客户端A加锁之后，可能处理了一些代码逻辑，然后就会释放锁。那么，释放锁是个什么过程呢？</p>
+<p>其实很简单，就是把自己在zk里创建的那个顺序节点删除</p>
+<p>删除了那个节点之后，zk会负责通知监听这个节点的监听器，也就是客户端B之前加的那个监听器，说：兄弟，你监听的那个节点被删除了，有人释放了锁。</p>
+<p><img src="/2025-12-20-zookeeper%E5%AD%A6%E4%B9%A0/zk-%E5%85%AC%E5%B9%B3%E5%88%86%E5%B8%83%E5%BC%8F%E9%94%814.webp"></p>
+<p>此时客户端B的监听器感知到了上一个顺序节点被删除，也就是排在他之前的某个客户端释放了锁。</p>
+<p>此时，就会通知客户端B重新尝试去获取锁，也就是获取”my_lock”节点下的子节点集合，此时集合里此时只有客户端B创建的唯一的一个顺序节点了！</p>
+<p>然后呢，客户端B判断自己居然是集合中的第一个顺序节点，bingo！可以加锁了！直接完成加锁，运行后续的业务代码即可，运行完了之后再次释放锁。</p>
+<p><strong>注意</strong>：利用ZK实现分布式锁时要避免出现<strong>惊群效应</strong>。上述策略中，客户端B通过监听比其节点顺序小的那个临时节点，解决了惊群效应问题</p>
+<h3 id="分布式队列"><a href="#分布式队列" class="headerlink" title="分布式队列"></a>分布式队列</h3><p>基于ZK的临时顺序节点和Watcher 机制可实现简单的FIFO分布式队列。ZK分布式队列和上节中的分布式锁本质是一样的，都是基于对上一个顺序节点进行监听实现的。具体原理如下：</p>
+<p><img src="/2025-12-20-zookeeper%E5%AD%A6%E4%B9%A0/zk-%E5%88%86%E5%B8%83%E5%BC%8F%E9%98%9F%E5%88%97.webp"></p>
+<ol>
+<li><p>利用顺序节点的有序性，为每个数据在&#x2F;FIFO下创建一个相应的临时子节点；且每个消费者均在&#x2F;FIFO注册一个watcher；</p>
+</li>
+<li><p>消费者从分布式队列获取数据时，首先尝试获取分布式锁，获取锁后从&#x2F;FIFO获取序号最小的数据，消费成功后，删除相应节点；</p>
+</li>
+<li><p>由于消费者均监听了父节点&#x2F;FIFO，所以均会收到数据变化的异步通知，然后重复2的过程，尝试消费队列数据。依此循环，直到消费完毕。</p>
+</li>
+</ol>
+<h2 id="中间件落地案例"><a href="#中间件落地案例" class="headerlink" title="中间件落地案例"></a>中间件落地案例</h2><h3 id="kafka"><a href="#kafka" class="headerlink" title="kafka"></a>kafka</h3><p>ZK在Kafka 集群中扮演着极其重要的角色。Kafka中很多信息都在ZK中维护，如 broker集群信息、consumer集群信息、 topic相关信息、 partition信息等。Kafka的很多功能也是基于ZK实现的，如partition选主、broker集群管理、consumer负载均衡等，限于篇幅本文将不展开陈述，这里先附一张网上截图大家感受下，详情将在Kafka专题中细聊。<br><img src="/2025-12-20-zookeeper%E5%AD%A6%E4%B9%A0/kafka-zk%E7%BB%93%E6%9E%84.jpeg"></p>
+<h3 id="Dubbo"><a href="#Dubbo" class="headerlink" title="Dubbo"></a>Dubbo</h3><p>Dubbo 使用 Zookeeper 用于服务的注册发现和配置管理，详情见上文“命名服务”。</p>
+<h2 id="参考文献"><a href="#参考文献" class="headerlink" title="参考文献"></a>参考文献</h2><p><a target="_blank" rel="noopener" href="https://mp.weixin.qq.com/s/tiAQQXbh7Tj45_1IQmQqZg">https://mp.weixin.qq.com/s/tiAQQXbh7Tj45_1IQmQqZg</a></p>
+<p><a target="_blank" rel="noopener" href="https://www.jianshu.com/p/68b45694026c">https://www.jianshu.com/p/68b45694026c</a></p>
+<p><a target="_blank" rel="noopener" href="https://time.geekbang.org/column/article/239261">https://time.geekbang.org/column/article/239261</a></p>
+<p><a target="_blank" rel="noopener" href="https://blog.csdn.net/lihao21/article/details/51810395">https://blog.csdn.net/lihao21/article/details/51810395</a></p>
+<p><a target="_blank" rel="noopener" href="https://zhuanlan.zhihu.com/p/378018463">https://zhuanlan.zhihu.com/p/378018463</a></p>
+<p><a target="_blank" rel="noopener" href="https://juejin.cn/post/6974737393324654628">https://juejin.cn/post/6974737393324654628</a></p>
+<p><a target="_blank" rel="noopener" href="https://blog.csdn.net/liuao107329/article/details/78936160">https://blog.csdn.net/liuao107329/article/details/78936160</a></p>
+<p><a target="_blank" rel="noopener" href="https://blog.csdn.net/en_joker/article/details/78799737">https://blog.csdn.net/en_joker/article/details/78799737</a></p>
+<p><a target="_blank" rel="noopener" href="https://blog.51cto.com/u_15077535/4199740">https://blog.51cto.com/u_15077535/4199740</a></p>
+<p><a target="_blank" rel="noopener" href="https://juejin.cn/post/6844903729406148622">https://juejin.cn/post/6844903729406148622</a></p>
+<p><a target="_blank" rel="noopener" href="https://blog.csdn.net/Saintmm/article/details/124110149">https://blog.csdn.net/Saintmm/article/details/124110149</a></p>
+<p><a target="_blank" rel="noopener" href="https://www.wumingx.com/linux/zk-kafka.html">https://www.wumingx.com/linux/zk-kafka.html</a></p>
 
       
     </div>
@@ -323,7 +434,7 @@
 
 
   <nav class="pagination">
-    <a class="extend prev" rel="prev" title="上一页" aria-label="上一页" href="/page/6/"><i class="fa fa-angle-left"></i></a><a class="page-number" href="/">1</a><span class="space">&hellip;</span><a class="page-number" href="/page/6/">6</a><span class="page-number current">7</span><a class="page-number" href="/page/8/">8</a><span class="space">&hellip;</span><a class="page-number" href="/page/48/">48</a><a class="extend next" rel="next" title="下一页" aria-label="下一页" href="/page/8/"><i class="fa fa-angle-right"></i></a>
+    <a class="extend prev" rel="prev" title="上一页" aria-label="上一页" href="/page/6/"><i class="fa fa-angle-left"></i></a><a class="page-number" href="/">1</a><span class="space">&hellip;</span><a class="page-number" href="/page/6/">6</a><span class="page-number current">7</span><a class="page-number" href="/page/8/">8</a><span class="space">&hellip;</span><a class="page-number" href="/page/45/">45</a><a class="extend next" rel="next" title="下一页" aria-label="下一页" href="/page/8/"><i class="fa fa-angle-right"></i></a>
   </nav>
 
 </div>
