@@ -123,7 +123,7 @@
   <nav class="site-state">
       <div class="site-state-item site-state-posts">
         <a href="/archives/">
-          <span class="site-state-item-count">45</span>
+          <span class="site-state-item-count">47</span>
           <span class="site-state-item-name">日志</span>
         </a>
       </div>
@@ -159,7 +159,7 @@
   
 
   <article itemscope itemtype="http://schema.org/Article" class="post-content" lang="">
-    <link itemprop="mainEntityOfPage" href="https://scut-corgis.github.io/2026-01-22-redis%E6%97%A0%E6%84%9F%E8%BF%81%E7%A7%BBmaster/">
+    <link itemprop="mainEntityOfPage" href="https://scut-corgis.github.io/2026-04-15-nanobot%E6%BA%90%E7%A0%81%E5%AD%A6%E4%B9%A0(1)-memory/">
 
     <span hidden itemprop="author" itemscope itemtype="http://schema.org/Person">
       <meta itemprop="image" content="/images/corgis.jpg">
@@ -177,7 +177,7 @@
     </span>
       <header class="post-header">
         <h2 class="post-title" itemprop="name headline">
-          <a href="/2026-01-22-redis%E6%97%A0%E6%84%9F%E8%BF%81%E7%A7%BBmaster/" class="post-title-link" itemprop="url">redis无感迁移master</a>
+          <a href="/2026-04-15-nanobot%E6%BA%90%E7%A0%81%E5%AD%A6%E4%B9%A0(1)-memory/" class="post-title-link" itemprop="url">nanobot源码学习(1)-memory</a>
         </h2>
 
         <div class="post-meta-container">
@@ -188,7 +188,7 @@
       </span>
       <span class="post-meta-item-text">发表于</span>
 
-      <time title="创建时间：2026-01-22 21:17:05" itemprop="dateCreated datePublished" datetime="2026-01-22T21:17:05+08:00">2026-01-22</time>
+      <time title="创建时间：2026-04-15 21:00:00" itemprop="dateCreated datePublished" datetime="2026-04-15T21:00:00+08:00">2026-04-15</time>
     </span>
     <span class="post-meta-item">
       <span class="post-meta-item-icon">
@@ -196,7 +196,7 @@
       </span>
       <span class="post-meta-item-text">分类于</span>
         <span itemprop="about" itemscope itemtype="http://schema.org/Thing">
-          <a href="/categories/redis/" itemprop="url" rel="index"><span itemprop="name">redis</span></a>
+          <a href="/categories/AI/" itemprop="url" rel="index"><span itemprop="name">AI</span></a>
         </span>
     </span>
 
@@ -210,352 +210,196 @@
     
     
     <div class="post-body" itemprop="articleBody">
-          <h1 id="背景"><a href="#背景" class="headerlink" title="背景"></a>背景</h1><h2 id="现有方案的痛点"><a href="#现有方案的痛点" class="headerlink" title="现有方案的痛点"></a>现有方案的痛点</h2><p>在生产环境中，Redis主节点迁移是一个高风险操作。传统的迁移方案存在以下问题：</p>
-<h3 id="1-故障切换丢失数据"><a href="#1-故障切换丢失数据" class="headerlink" title="1. 故障切换丢失数据"></a>1. 故障切换丢失数据</h3><p>使用 Redis 内置的 <code>FAILOVER</code> 命令进行切换时：</p>
+          <h1 id="背景"><a href="#背景" class="headerlink" title="背景"></a>背景</h1><p>最近我在系统地学习AI底层，transformer学完了之后我想往更”应用层”靠近一点，理解AI Agent框架是怎么构建的。现有的框架太多了，LangChain、AutoGPT之类的太重，代码太杂，读起来头皮发麻。nanobot这个项目吸引我的地方在于它足够轻量——整个项目就几千行Python，没有乱七八糟的抽象层，却把一个完整的AI agent所需要的东西都实现了：多渠道接入、工具调用、记忆系统、定时任务……</p>
+<p>所以我打算系统地走读一遍它的源码。这是第一篇，先把整体结构搞清楚，然后重点把记忆系统看透。</p>
+<p>几个有用的链接：</p>
 <ul>
-<li><strong>同步模式</strong>：需要等待从节点数据完全同步完成才能切换，期间主节点不可写入，影响业务</li>
-<li><strong>异步模式</strong>：直接切换，但会丢失尚未复制到从节点的数据</li>
+<li>项目github：<a target="_blank" rel="noopener" href="https://github.com/HKUDS/nanobot">https://github.com/HKUDS/nanobot</a></li>
+<li>内置记忆文档：<code>docs/MEMORY.md</code>（仓库内）</li>
 </ul>
-<h3 id="2-客户端感知切换"><a href="#2-客户端感知切换" class="headerlink" title="2. 客户端感知切换"></a>2. 客户端感知切换</h3><p>无论哪种模式，当主从切换发生时：</p>
+<p>本笔记内容截止至时间2026-04-15，main分支的commit id：<code>2b8e90d8fd962ba3ca30e67e3ce060cddc6791d2</code>。</p>
+<h1 id="项目结构"><a href="#项目结构" class="headerlink" title="项目结构"></a>项目结构</h1><p>先看整体目录：</p>
+<figure class="highlight plaintext"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br></pre></td><td class="code"><pre><span class="line">nanobot/</span><br><span class="line">├── agent/          核心处理逻辑（重点）</span><br><span class="line">│   ├── loop.py     AgentLoop：消息调度总控</span><br><span class="line">│   ├── runner.py   AgentRunner：单次LLM调用循环</span><br><span class="line">│   ├── memory.py   记忆系统：MemoryStore / Consolidator / Dream</span><br><span class="line">│   ├── context.py  上下文构建：System Prompt组装</span><br><span class="line">│   └── skills.py   skill加载</span><br><span class="line">├── cli/</span><br><span class="line">│   └── commands.py CLI命令入口</span><br><span class="line">├── providers/      LLM provider抽象层（Anthropic / OpenAI / …）</span><br><span class="line">├── config/</span><br><span class="line">│   └── schema.py   Pydantic配置定义</span><br><span class="line">├── session/        会话持久化</span><br><span class="line">├── channels/       多渠道接入（Telegram / 钉钉 / Slack / …）</span><br><span class="line">└── templates/      各种prompt模板（.md文件）</span><br></pre></td></tr></table></figure>
+
+<p>依赖管理在<code>pyproject.toml</code>里，CLI入口是：</p>
+<figure class="highlight toml"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br></pre></td><td class="code"><pre><span class="line"><span class="section">[project.scripts]</span></span><br><span class="line"><span class="attr">nanobot</span> = <span class="string">&quot;nanobot.cli.commands:app&quot;</span></span><br></pre></td></tr></table></figure>
+
+<p>也就是说安装完之后，<code>nanobot</code>这个命令就指向<code>commands.py</code>里的<code>app</code>（typer应用）。</p>
+<h1 id="配置文件"><a href="#配置文件" class="headerlink" title="配置文件"></a>配置文件</h1><p>nanobot用JSON格式的配置文件。默认路径是<code>~/.nanobot/config.json</code>，结构大致如下：</p>
+<figure class="highlight json"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br></pre></td><td class="code"><pre><span class="line"><span class="punctuation">&#123;</span></span><br><span class="line">  <span class="attr">&quot;agents&quot;</span><span class="punctuation">:</span> <span class="punctuation">&#123;</span></span><br><span class="line">    <span class="attr">&quot;defaults&quot;</span><span class="punctuation">:</span> <span class="punctuation">&#123;</span></span><br><span class="line">      <span class="attr">&quot;model&quot;</span><span class="punctuation">:</span> <span class="string">&quot;anthropic/claude-opus-4-5&quot;</span><span class="punctuation">,</span></span><br><span class="line">      <span class="attr">&quot;contextWindowTokens&quot;</span><span class="punctuation">:</span> <span class="number">65536</span><span class="punctuation">,</span></span><br><span class="line">      <span class="attr">&quot;maxToolIterations&quot;</span><span class="punctuation">:</span> <span class="number">200</span><span class="punctuation">,</span></span><br><span class="line">      <span class="attr">&quot;timezone&quot;</span><span class="punctuation">:</span> <span class="string">&quot;Asia/Shanghai&quot;</span><span class="punctuation">,</span></span><br><span class="line">      <span class="attr">&quot;dream&quot;</span><span class="punctuation">:</span> <span class="punctuation">&#123;</span></span><br><span class="line">        <span class="attr">&quot;intervalH&quot;</span><span class="punctuation">:</span> <span class="number">2</span><span class="punctuation">,</span></span><br><span class="line">        <span class="attr">&quot;maxBatchSize&quot;</span><span class="punctuation">:</span> <span class="number">20</span><span class="punctuation">,</span></span><br><span class="line">        <span class="attr">&quot;maxIterations&quot;</span><span class="punctuation">:</span> <span class="number">10</span></span><br><span class="line">      <span class="punctuation">&#125;</span></span><br><span class="line">    <span class="punctuation">&#125;</span></span><br><span class="line">  <span class="punctuation">&#125;</span><span class="punctuation">,</span></span><br><span class="line">  <span class="attr">&quot;providers&quot;</span><span class="punctuation">:</span> <span class="punctuation">&#123;</span></span><br><span class="line">    <span class="attr">&quot;anthropic&quot;</span><span class="punctuation">:</span> <span class="punctuation">&#123;</span></span><br><span class="line">      <span class="attr">&quot;apiKey&quot;</span><span class="punctuation">:</span> <span class="string">&quot;sk-ant-xxx&quot;</span></span><br><span class="line">    <span class="punctuation">&#125;</span></span><br><span class="line">  <span class="punctuation">&#125;</span></span><br><span class="line"><span class="punctuation">&#125;</span></span><br></pre></td></tr></table></figure>
+
+<p>配置的Python定义在<code>nanobot/config/schema.py</code>，用的是Pydantic v2。有几个值得关注的参数：</p>
 <ul>
-<li>客户端会收到 <code>+switch-master</code> 事件通知</li>
-<li>客户端需要重建连接，可能导致请求失败</li>
-<li>对于延迟敏感的业务，影响显著</li>
+<li><code>contextWindowTokens</code>：context window大小，默认65536 tokens，用于触发记忆压缩</li>
+<li><code>maxToolIterations</code>：一次对话最多允许agent循环调用工具多少轮，默认200</li>
+<li><code>dream.intervalH</code>：Dream任务的执行间隔（小时），默认2小时</li>
+<li><code>timezone</code>：时区，这个会注入到每次请求的system prompt里</li>
 </ul>
-<h3 id="3-维护窗口不可控"><a href="#3-维护窗口不可控" class="headerlink" title="3. 维护窗口不可控"></a>3. 维护窗口不可控</h3><ul>
-<li>传统的迁移需要停止服务或设置维护窗口</li>
-<li>无法在业务高峰期进行无缝迁移</li>
-<li>对业务连续性要求高的场景无法接受</li>
+<h1 id="CLI启动过程：nanobot-agent-m"><a href="#CLI启动过程：nanobot-agent-m" class="headerlink" title="CLI启动过程：nanobot agent -m"></a>CLI启动过程：<code>nanobot agent -m</code></h1><p>最常用的启动方式是<code>nanobot agent -m &quot;你好&quot;</code>，加<code>-m</code>表示单条消息模式，不加就是交互式终端。</p>
+<p>下图是完整的调用链：</p>
+<p><img src="/2026-04-15-nanobot%E6%BA%90%E7%A0%81%E5%AD%A6%E4%B9%A0(1)-memory/cli_flow.svg" alt="CLI启动流程"></p>
+<h2 id="入口：def-agent"><a href="#入口：def-agent" class="headerlink" title="入口：def agent()"></a>入口：<code>def agent()</code></h2><p>代码在<code>nanobot/cli/commands.py</code>的<code>agent()</code>函数，大概做了这几件事：</p>
+<p><strong>① 加载配置</strong></p>
+<figure class="highlight python"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br></pre></td><td class="code"><pre><span class="line">config = _load_runtime_config(config, workspace)</span><br><span class="line">sync_workspace_templates(config.workspace_path)</span><br></pre></td></tr></table></figure>
+<p><code>sync_workspace_templates</code>会把一些初始模板文件（<code>SOUL.md</code>、<code>USER.md</code>、<code>AGENTS.md</code>等）同步到workspace目录。如果用户还没有这些文件，就复制过去；如果已经有了，就保留用户的版本。</p>
+<p><strong>② 初始化AgentLoop</strong></p>
+<figure class="highlight python"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br></pre></td><td class="code"><pre><span class="line">agent_loop = AgentLoop(</span><br><span class="line">    bus=bus,</span><br><span class="line">    provider=provider,</span><br><span class="line">    workspace=config.workspace_path,</span><br><span class="line">    model=config.agents.defaults.model,</span><br><span class="line">    ...</span><br><span class="line">)</span><br></pre></td></tr></table></figure>
+<p><code>AgentLoop</code>是整个系统的核心。它的<code>__init__</code>里会创建<code>ContextBuilder</code>（负责组装prompt）、<code>Consolidator</code>（负责压缩历史）、<code>Dream</code>（负责更新长期记忆），以及注册默认工具（读写文件、执行命令、网络搜索等）。</p>
+<p><strong>③ 单条消息模式</strong></p>
+<figure class="highlight python"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br></pre></td><td class="code"><pre><span class="line">response = <span class="keyword">await</span> agent_loop.process_direct(</span><br><span class="line">    message, session_id,</span><br><span class="line">    on_progress=_cli_progress,</span><br><span class="line">    on_stream=renderer.on_delta,</span><br><span class="line">)</span><br></pre></td></tr></table></figure>
+
+<h2 id="process-direct-→-process-message"><a href="#process-direct-→-process-message" class="headerlink" title="process_direct → _process_message"></a><code>process_direct</code> → <code>_process_message</code></h2><p><code>process_direct</code>把字符串包装成<code>InboundMessage</code>对象，然后调用<code>_process_message</code>。<code>_process_message</code>才是真正的处理核心：</p>
+<figure class="highlight python"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br></pre></td><td class="code"><pre><span class="line"><span class="comment"># 1. 加载或新建session</span></span><br><span class="line">session = <span class="variable language_">self</span>.sessions.get_or_create(key)</span><br><span class="line"></span><br><span class="line"><span class="comment"># 2. 恢复中断的任务（进程被杀时的容错）</span></span><br><span class="line"><span class="variable language_">self</span>._restore_runtime_checkpoint(session)</span><br><span class="line"></span><br><span class="line"><span class="comment"># 3. 检查是否需要压缩上下文（核心记忆操作之一）</span></span><br><span class="line"><span class="keyword">await</span> <span class="variable language_">self</span>.consolidator.maybe_consolidate_by_tokens(session)</span><br><span class="line"></span><br><span class="line"><span class="comment"># 4. 组装消息列表</span></span><br><span class="line">initial_messages = <span class="variable language_">self</span>.context.build_messages(</span><br><span class="line">    history=history,</span><br><span class="line">    current_message=msg.content,</span><br><span class="line">    ...</span><br><span class="line">)</span><br><span class="line"></span><br><span class="line"><span class="comment"># 5. 提前持久化用户消息（防止进程crash导致丢失）</span></span><br><span class="line">session.add_message(<span class="string">&quot;user&quot;</span>, msg.content)</span><br><span class="line"><span class="variable language_">self</span>.sessions.save(session)</span><br><span class="line"></span><br><span class="line"><span class="comment"># 6. 进入agent loop</span></span><br><span class="line">final_content, _, all_msgs, stop_reason, _ = <span class="keyword">await</span> <span class="variable language_">self</span>._run_agent_loop(...)</span><br><span class="line"></span><br><span class="line"><span class="comment"># 7. 保存本轮对话 + 触发后台压缩</span></span><br><span class="line"><span class="variable language_">self</span>._save_turn(session, all_msgs, save_skip)</span><br><span class="line"><span class="variable language_">self</span>._schedule_background(<span class="variable language_">self</span>.consolidator.maybe_consolidate_by_tokens(session))</span><br></pre></td></tr></table></figure>
+
+<p>第5步我觉得设计很细心——它在进入LLM循环之前就把用户消息写入文件。这是为了防止进程在中途被OOM-kill或者agent自重启时，用户的那句话彻底丢失。第7步的<code>_schedule_background</code>是把压缩操作扔到后台异步执行，不阻塞响应。</p>
+<h1 id="workspace中间文件"><a href="#workspace中间文件" class="headerlink" title="workspace中间文件"></a>workspace中间文件</h1><p>运行过一段时间后，<code>~/.nanobot/workspace</code>目录里会出现很多文件，下图列出了它们的结构、用途以及读写关系：</p>
+<p><img src="/2026-04-15-nanobot%E6%BA%90%E7%A0%81%E5%AD%A6%E4%B9%A0(1)-memory/workspace_files.svg" alt="workspace文件结构"></p>
+<p>挨个看一下：</p>
+<p><strong><code>AGENTS.md</code></strong> — 给agent的工具使用规范，比如”用cron工具创建定时提醒，不要直接写到MEMORY.md里”。这个文件会被直接注入到每次请求的system prompt里，属于”行为约束”文件。</p>
+<p><strong><code>SOUL.md</code></strong> — agent的”人格设定”，默认内容就是：</p>
+<figure class="highlight plaintext"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br></pre></td><td class="code"><pre><span class="line">I am nanobot 🐈, a personal AI assistant.</span><br><span class="line">I solve problems by doing, not by describing what I would do.</span><br><span class="line">I keep responses short unless depth is asked for.</span><br></pre></td></tr></table></figure>
+<p>可以自由修改。Dream进程会根据对话内容逐渐更新这个文件。</p>
+<p><strong><code>USER.md</code></strong> — 关于用户的稳定知识，初始是个模板，时区、名字、偏好等。Dream会往里面填信息。</p>
+<p><strong><code>TOOLS.md</code></strong> — 工具使用的补充说明，比如<code>exec</code>命令的超时限制、<code>glob</code>的使用建议等。</p>
+<p><strong><code>memory/history.jsonl</code></strong> — 中期记忆的核心，每行是一条JSON：</p>
+<figure class="highlight json"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line"><span class="punctuation">&#123;</span><span class="attr">&quot;cursor&quot;</span><span class="punctuation">:</span> <span class="number">42</span><span class="punctuation">,</span> <span class="attr">&quot;timestamp&quot;</span><span class="punctuation">:</span> <span class="string">&quot;2026-04-03 00:02&quot;</span><span class="punctuation">,</span> <span class="attr">&quot;content&quot;</span><span class="punctuation">:</span> <span class="string">&quot;- User asks about nanobot memory design\n- Discussed Consolidator and Dream flow&quot;</span><span class="punctuation">&#125;</span></span><br></pre></td></tr></table></figure>
+<p>注意是<code>cursor + timestamp + content</code>的结构，不是原始对话，而是<strong>LLM摘要</strong>。</p>
+<p><strong><code>memory/.cursor</code></strong> — 纯文本文件，存一个整数，是<code>history.jsonl</code>的写游标。Consolidator每次追加新条目时递增这个值，用于生成下一条的cursor ID。</p>
+<p><strong><code>memory/.dream_cursor</code></strong> — 同样是纯文本整数，是Dream的读游标。Dream每次处理完一批<code>history.jsonl</code>条目后，把最后一条的cursor写进来，下次从这里往后读，避免重复处理。这个值也被<code>build_system_prompt</code>拿来判断”哪些历史条目还没被Dream消化，需要注入Recent History”。</p>
+<p><strong><code>memory/MEMORY.md</code></strong> — 长期记忆，存放项目相关的持久化事实，由Dream写入和更新。</p>
+<p><strong><code>memory/.git/</code></strong> — Dream每次修改<code>SOUL.md</code>、<code>USER.md</code>、<code>MEMORY.md</code>后，会用<code>GitStore</code>做一次自动commit，这三个文件的变更历史都在这里。支持<code>/dream-log</code>查看、<code>/dream-restore</code>回滚。</p>
+<h2 id="session文件详解"><a href="#session文件详解" class="headerlink" title="session文件详解"></a>session文件详解</h2><p><code>sessions/cli_direct.jsonl</code>是短期记忆，但值得单独讲一下它的格式，因为不只是消息列表那么简单。</p>
+<p><strong>第一行是metadata行</strong>，不是消息：</p>
+<figure class="highlight json"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br></pre></td><td class="code"><pre><span class="line"><span class="punctuation">&#123;</span></span><br><span class="line">  <span class="attr">&quot;_type&quot;</span><span class="punctuation">:</span> <span class="string">&quot;metadata&quot;</span><span class="punctuation">,</span></span><br><span class="line">  <span class="attr">&quot;key&quot;</span><span class="punctuation">:</span> <span class="string">&quot;cli:direct&quot;</span><span class="punctuation">,</span></span><br><span class="line">  <span class="attr">&quot;created_at&quot;</span><span class="punctuation">:</span> <span class="string">&quot;2026-04-14T20:49:51.526861&quot;</span><span class="punctuation">,</span></span><br><span class="line">  <span class="attr">&quot;updated_at&quot;</span><span class="punctuation">:</span> <span class="string">&quot;2026-04-15T15:48:39.037309&quot;</span><span class="punctuation">,</span></span><br><span class="line">  <span class="attr">&quot;metadata&quot;</span><span class="punctuation">:</span> <span class="punctuation">&#123;</span><span class="punctuation">&#125;</span><span class="punctuation">,</span></span><br><span class="line">  <span class="attr">&quot;last_consolidated&quot;</span><span class="punctuation">:</span> <span class="number">0</span></span><br><span class="line"><span class="punctuation">&#125;</span></span><br></pre></td></tr></table></figure>
+
+<p>这里有几个重要字段：</p>
+<ul>
+<li><code>key</code>：session的唯一标识，格式是<code>channel:chat_id</code>，多渠道下各自独立（<code>cli:direct</code>、<code>telegram:12345</code>、<code>discord:67890</code>各有各的文件）</li>
+<li><code>last_consolidated</code>：这个整数很关键——它记录的是<code>messages</code>数组里<strong>有多少条已经被Consolidator摘要走了</strong>。<code>get_history()</code>只返回<code>messages[last_consolidated:]</code>，确保已压缩的历史不会重复喂给LLM</li>
+<li><code>metadata</code>：临时运行时状态，比如进程中途被杀时，这里会存<code>runtime_checkpoint</code>（记录当前工具调用进度）和<code>pending_user_turn</code>（标记用户消息已写入但LLM还没回复），重启后用来恢复中断的任务</li>
 </ul>
-<h2 id="为什么需要”无感”迁移"><a href="#为什么需要”无感”迁移" class="headerlink" title="为什么需要”无感”迁移"></a>为什么需要”无感”迁移</h2><p>以下业务场景对”无感”迁移有强烈需求：</p>
+<p>后续每行是一条消息，完整保留所有字段：</p>
+<figure class="highlight json"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br></pre></td><td class="code"><pre><span class="line"><span class="punctuation">&#123;</span><span class="attr">&quot;role&quot;</span><span class="punctuation">:</span> <span class="string">&quot;user&quot;</span><span class="punctuation">,</span> <span class="attr">&quot;content&quot;</span><span class="punctuation">:</span> <span class="string">&quot;你用的大模型是哪家的？&quot;</span><span class="punctuation">,</span> <span class="attr">&quot;timestamp&quot;</span><span class="punctuation">:</span> <span class="string">&quot;2026-04-15T14:58:32.117159&quot;</span><span class="punctuation">&#125;</span></span><br><span class="line"><span class="punctuation">&#123;</span><span class="attr">&quot;role&quot;</span><span class="punctuation">:</span> <span class="string">&quot;assistant&quot;</span><span class="punctuation">,</span> <span class="attr">&quot;content&quot;</span><span class="punctuation">:</span> <span class="string">&quot;...&quot;</span><span class="punctuation">,</span> <span class="attr">&quot;tool_calls&quot;</span><span class="punctuation">:</span> <span class="punctuation">[</span>...<span class="punctuation">]</span><span class="punctuation">,</span> <span class="attr">&quot;timestamp&quot;</span><span class="punctuation">:</span> <span class="string">&quot;...&quot;</span><span class="punctuation">&#125;</span></span><br><span class="line"><span class="punctuation">&#123;</span><span class="attr">&quot;role&quot;</span><span class="punctuation">:</span> <span class="string">&quot;tool&quot;</span><span class="punctuation">,</span> <span class="attr">&quot;tool_call_id&quot;</span><span class="punctuation">:</span> <span class="string">&quot;call_xxx&quot;</span><span class="punctuation">,</span> <span class="attr">&quot;name&quot;</span><span class="punctuation">:</span> <span class="string">&quot;read_file&quot;</span><span class="punctuation">,</span> <span class="attr">&quot;content&quot;</span><span class="punctuation">:</span> <span class="string">&quot;...&quot;</span><span class="punctuation">,</span> <span class="attr">&quot;timestamp&quot;</span><span class="punctuation">:</span> <span class="string">&quot;...&quot;</span><span class="punctuation">&#125;</span></span><br></pre></td></tr></table></figure>
+
+<p>重启时，<code>SessionManager._load()</code>会读第一行恢复<code>last_consolidated</code>和时间戳，后续行恢复完整的消息列表，进程重启后可以无缝续接之前的对话上下文。</p>
+<h1 id="记忆系统设计"><a href="#记忆系统设计" class="headerlink" title="记忆系统设计"></a>记忆系统设计</h1><p>记忆系统是nanobot最有意思的部分，文档里把它分成三层：</p>
+<p><img src="/2026-04-15-nanobot%E6%BA%90%E7%A0%81%E5%AD%A6%E4%B9%A0(1)-memory/memory_arch.svg" alt="记忆系统架构"></p>
+<p><strong>短记忆</strong>：当前session的完整消息列表，存在<code>sessions/</code>目录下。每次对话时，这些历史消息会直接放进LLM的messages数组里参与推理，上下文越长越消耗token。</p>
+<p><strong>中记忆</strong>：<code>memory/history.jsonl</code>，append-only的历史摘要文件。当短记忆太长（超过context window阈值）时，Consolidator会把最老的一段对话用LLM做摘要，然后追加到这里。</p>
+<p><strong>长记忆</strong>：<code>SOUL.md</code>、<code>USER.md</code>、<code>memory/MEMORY.md</code>，这三个文件存放的是真正持久化的知识。由Dream定期（默认每2小时）从<code>history.jsonl</code>里提炼，用外科手术式的方式更新这些文件（不是整体重写，而是精确修改）。</p>
+<h2 id="build-system-prompt-—-system-prompt怎么组装的"><a href="#build-system-prompt-—-system-prompt怎么组装的" class="headerlink" title="build_system_prompt — system prompt怎么组装的"></a><code>build_system_prompt</code> — system prompt怎么组装的</h2><p>每次请求前，<code>ContextBuilder.build_system_prompt()</code>会把以下内容拼成一个system prompt，用<code>---</code>分隔：</p>
+<figure class="highlight python"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br><span class="line">27</span><br><span class="line">28</span><br><span class="line">29</span><br><span class="line">30</span><br><span class="line">31</span><br><span class="line">32</span><br><span class="line">33</span><br><span class="line">34</span><br></pre></td><td class="code"><pre><span class="line">parts = [<span class="variable language_">self</span>._get_identity(channel=channel)]  <span class="comment"># runtime信息</span></span><br><span class="line"></span><br><span class="line">bootstrap = <span class="variable language_">self</span>._load_bootstrap_files()  <span class="comment"># AGENTS.md + SOUL.md + USER.md + TOOLS.md</span></span><br><span class="line"><span class="comment"># 每个文件用 ## &#123;filename&#125; 包裹后直接拼接文件内容</span></span><br><span class="line"><span class="comment"># 文件内部如果有自己的 # 一级标题（如 TOOLS.md 里的 &quot;# Tool Usage Notes&quot;），</span></span><br><span class="line"><span class="comment"># 就会出现二级包裹 + 内部一级标题的&quot;层级倒置&quot;现象，但这对LLM无影响</span></span><br><span class="line"><span class="keyword">if</span> bootstrap:</span><br><span class="line">    parts.append(bootstrap)</span><br><span class="line"></span><br><span class="line">memory = <span class="variable language_">self</span>.memory.get_memory_context()  <span class="comment"># MEMORY.md（若非空且非模板）</span></span><br><span class="line"><span class="keyword">if</span> memory:</span><br><span class="line">    parts.append(<span class="string">f&quot;# Memory\n\n<span class="subst">&#123;memory&#125;</span>&quot;</span>)</span><br><span class="line"></span><br><span class="line">always_skills = <span class="variable language_">self</span>.skills.get_always_skills()  <span class="comment"># 总是激活的skill</span></span><br><span class="line"><span class="keyword">if</span> always_skills:</span><br><span class="line">    always_content = <span class="variable language_">self</span>.skills.load_skills_for_context(always_skills)</span><br><span class="line">    parts.append(<span class="string">f&quot;# Active Skills\n\n<span class="subst">&#123;always_content&#125;</span>&quot;</span>)</span><br><span class="line"></span><br><span class="line">skills_summary = <span class="variable language_">self</span>.skills.build_skills_summary(exclude=<span class="built_in">set</span>(always_skills))</span><br><span class="line"><span class="keyword">if</span> skills_summary:</span><br><span class="line">    parts.append(render_template(<span class="string">&quot;agent/skills_section.md&quot;</span>, skills_summary=skills_summary))</span><br><span class="line"><span class="comment"># ↑ skills_section.md 模板内容：</span></span><br><span class="line"><span class="comment"># &quot;The following skills extend your capabilities. To use a skill, read its SKILL.md file.&quot;</span></span><br><span class="line"><span class="comment"># &#123;&#123; skills_summary &#125;&#125;</span></span><br><span class="line"></span><br><span class="line"><span class="comment"># Recent History：history.jsonl中未被Dream处理的条目</span></span><br><span class="line">entries = <span class="variable language_">self</span>.memory.read_unprocessed_history(since_cursor=<span class="variable language_">self</span>.memory.get_last_dream_cursor())</span><br><span class="line"><span class="keyword">if</span> entries:</span><br><span class="line">    capped = entries[-<span class="number">50</span>:]  <span class="comment"># 最多50条</span></span><br><span class="line">    parts.append(<span class="string">&quot;# Recent History\n\n&quot;</span> + <span class="string">&quot;\n&quot;</span>.join(</span><br><span class="line">        <span class="string">f&quot;- [<span class="subst">&#123;e[<span class="string">&#x27;timestamp&#x27;</span>]&#125;</span>] <span class="subst">&#123;e[<span class="string">&#x27;content&#x27;</span>]&#125;</span>&quot;</span> <span class="keyword">for</span> e <span class="keyword">in</span> capped</span><br><span class="line">    ))</span><br><span class="line"></span><br><span class="line"><span class="keyword">return</span> <span class="string">&quot;\n\n---\n\n&quot;</span>.join(parts)</span><br></pre></td></tr></table></figure>
+
+<p>这里有个细节：<code>Recent History</code>注入的是<code>.dream_cursor</code>之后的<code>history.jsonl</code>条目——那些已经被Consolidator摘要但还没被Dream”消化”进长记忆的中期记忆内容。这样可以保证中期记忆的内容不丢，哪怕Dream还没来得及跑。</p>
+<h2 id="Active-Skills是怎么来的"><a href="#Active-Skills是怎么来的" class="headerlink" title="Active Skills是怎么来的"></a>Active Skills是怎么来的</h2><p>system prompt里的<code>Active Skills</code>部分，来自frontmatter里标了<code>always: true</code>的skill。以内置的<code>memory</code> skill为例，它的<code>SKILL.md</code>开头长这样：</p>
+<figure class="highlight yaml"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br></pre></td><td class="code"><pre><span class="line"><span class="meta">---</span></span><br><span class="line"><span class="attr">name:</span> <span class="string">memory</span></span><br><span class="line"><span class="attr">description:</span> <span class="string">Two-layer</span> <span class="string">memory</span> <span class="string">system</span> <span class="string">with</span> <span class="string">Dream-managed</span> <span class="string">knowledge</span> <span class="string">files.</span></span><br><span class="line"><span class="attr">always:</span> <span class="literal">true</span></span><br><span class="line"><span class="meta">---</span></span><br></pre></td></tr></table></figure>
+
+<p><code>get_always_skills()</code>就是扫描所有skill的frontmatter，把有<code>always: true</code>且依赖满足的挑出来，内容完整加载进system prompt。对比一下<code>weather</code> skill的frontmatter：</p>
+<figure class="highlight yaml"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br></pre></td><td class="code"><pre><span class="line"><span class="meta">---</span></span><br><span class="line"><span class="attr">name:</span> <span class="string">weather</span></span><br><span class="line"><span class="attr">description:</span> <span class="string">Get</span> <span class="string">current</span> <span class="string">weather</span> <span class="string">and</span> <span class="string">forecasts</span> <span class="string">(no</span> <span class="string">API</span> <span class="string">key</span> <span class="string">required).</span></span><br><span class="line"><span class="attr">metadata:</span> &#123;<span class="string">&quot;nanobot&quot;</span><span class="string">:</span>&#123;<span class="string">&quot;requires&quot;</span><span class="string">:</span>&#123;<span class="string">&quot;bins&quot;</span><span class="string">:</span>[<span class="string">&quot;curl&quot;</span>]&#125;&#125;&#125;</span><br><span class="line"><span class="meta">---</span></span><br></pre></td></tr></table></figure>
+
+<p><code>weather</code>没有<code>always: true</code>，而且依赖<code>curl</code>命令，所以它<strong>不会</strong>被自动加载全文，只会出现在Skills目录列表里，等模型需要时自己去读。</p>
+<p>这就是<strong>渐进式加载（Progressive Loading）</strong>的核心设计：</p>
+<figure class="highlight plaintext"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br></pre></td><td class="code"><pre><span class="line">system prompt里的 # Skills 节：</span><br><span class="line">- **memory** — Two-layer memory system...  [全文已加载，在 # Active Skills]</span><br><span class="line">- **cron** — Schedule reminders...  `/path/to/cron/SKILL.md`     ← 只有路径，没有内容</span><br><span class="line">- **weather** — Get current weather...  `/path/to/weather/SKILL.md`  ← 只有路径，没有内容</span><br><span class="line">- **github** — GitHub CLI...  (unavailable: CLI: gh)              ← 依赖缺失</span><br></pre></td></tr></table></figure>
+
+<p>模型看到<code>cron</code> skill的路径后，如果判断当前任务需要用到定时功能，就会自己调<code>read_file</code>去读那个路径的内容，拿到完整的使用说明。这样不需要把所有skill的全文都塞进system prompt，节省大量token。</p>
+<h2 id="最终prompt长什么样"><a href="#最终prompt长什么样" class="headerlink" title="最终prompt长什么样"></a>最终prompt长什么样</h2><p>光看代码可能不直观，来看一个接近真实的完整例子。假设是CLI渠道，用户名Corgis，已有部分会话历史被压缩到<code>history.jsonl</code>，则实际发给LLM的请求由三部分组成：</p>
+<h3 id="①-system消息（build-system-prompt组装）"><a href="#①-system消息（build-system-prompt组装）" class="headerlink" title="① system消息（build_system_prompt组装）"></a>① system消息（<code>build_system_prompt</code>组装）</h3><figure class="highlight plaintext"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br><span class="line">27</span><br><span class="line">28</span><br><span class="line">29</span><br><span class="line">30</span><br><span class="line">31</span><br><span class="line">32</span><br><span class="line">33</span><br><span class="line">34</span><br><span class="line">35</span><br><span class="line">36</span><br><span class="line">37</span><br><span class="line">38</span><br><span class="line">39</span><br><span class="line">40</span><br><span class="line">41</span><br><span class="line">42</span><br><span class="line">43</span><br><span class="line">44</span><br><span class="line">45</span><br><span class="line">46</span><br><span class="line">47</span><br><span class="line">48</span><br><span class="line">49</span><br><span class="line">50</span><br><span class="line">51</span><br><span class="line">52</span><br><span class="line">53</span><br><span class="line">54</span><br><span class="line">55</span><br><span class="line">56</span><br><span class="line">57</span><br><span class="line">58</span><br><span class="line">59</span><br><span class="line">60</span><br><span class="line">61</span><br><span class="line">62</span><br><span class="line">63</span><br><span class="line">64</span><br><span class="line">65</span><br><span class="line">66</span><br><span class="line">67</span><br><span class="line">68</span><br><span class="line">69</span><br><span class="line">70</span><br><span class="line">71</span><br><span class="line">72</span><br><span class="line">73</span><br><span class="line">74</span><br><span class="line">75</span><br><span class="line">76</span><br><span class="line">77</span><br><span class="line">78</span><br><span class="line">79</span><br><span class="line">80</span><br><span class="line">81</span><br><span class="line">82</span><br><span class="line">83</span><br><span class="line">84</span><br><span class="line">85</span><br><span class="line">86</span><br><span class="line">87</span><br><span class="line">88</span><br><span class="line">89</span><br><span class="line">90</span><br><span class="line">91</span><br><span class="line">92</span><br><span class="line">93</span><br><span class="line">94</span><br><span class="line">95</span><br><span class="line">96</span><br><span class="line">97</span><br><span class="line">98</span><br><span class="line">99</span><br><span class="line">100</span><br><span class="line">101</span><br><span class="line">102</span><br><span class="line">103</span><br></pre></td><td class="code"><pre><span class="line"># nanobot 🐈</span><br><span class="line"></span><br><span class="line">You are nanobot, a helpful AI assistant.</span><br><span class="line"></span><br><span class="line">## Runtime</span><br><span class="line">macOS arm64, Python 3.12.3</span><br><span class="line"></span><br><span class="line">## Workspace</span><br><span class="line">Your workspace is at: /Users/corgis/.nanobot/workspace</span><br><span class="line">- Long-term memory: /Users/corgis/.nanobot/workspace/memory/MEMORY.md</span><br><span class="line">- History log: /Users/corgis/.nanobot/workspace/memory/history.jsonl</span><br><span class="line"></span><br><span class="line">## Platform Policy (POSIX)</span><br><span class="line">- You are running on a POSIX system. Prefer UTF-8 and standard shell tools.</span><br><span class="line"></span><br><span class="line">## Format Hint</span><br><span class="line">Output is rendered in a terminal. Avoid markdown headings and tables.</span><br><span class="line"></span><br><span class="line">## Execution Rules</span><br><span class="line">- Act, don&#x27;t narrate. If you can do it with a tool, do it now...</span><br><span class="line"></span><br><span class="line">---</span><br><span class="line"></span><br><span class="line">## AGENTS.md</span><br><span class="line"></span><br><span class="line"># Agent Instructions</span><br><span class="line">## Scheduled Reminders</span><br><span class="line">Use the built-in `cron` tool to create/list/remove jobs...</span><br><span class="line"></span><br><span class="line">## SOUL.md</span><br><span class="line"></span><br><span class="line"># Soul</span><br><span class="line">I am nanobot 🐈, a personal AI assistant.</span><br><span class="line">I solve problems by doing, not by describing what I would do.</span><br><span class="line">I keep responses short unless depth is asked for.</span><br><span class="line"></span><br><span class="line">## USER.md</span><br><span class="line"></span><br><span class="line"># User Profile</span><br><span class="line">- **Name**: Corgis</span><br><span class="line">- **Timezone**: Asia/Shanghai (UTC+08:00)</span><br><span class="line">- **Language**: 简体中文</span><br><span class="line"></span><br><span class="line">## TOOLS.md</span><br><span class="line"></span><br><span class="line"># Tool Usage Notes</span><br><span class="line">Tool signatures are provided automatically via function calling.</span><br><span class="line">This file documents non-obvious constraints and usage patterns.</span><br><span class="line"></span><br><span class="line">## exec — Safety Limits</span><br><span class="line">- Commands have a configurable timeout (default 60s)</span><br><span class="line">- Dangerous commands are blocked (rm -rf, format, dd, etc.)</span><br><span class="line">- Output is truncated at 10,000 characters</span><br><span class="line"></span><br><span class="line">## grep — Content Search</span><br><span class="line">- Default behavior returns only matching file paths</span><br><span class="line">- Use output_mode=&quot;count&quot; to size a search before expanding</span><br><span class="line">...</span><br><span class="line"></span><br><span class="line">---</span><br><span class="line"></span><br><span class="line"># Memory</span><br><span class="line"></span><br><span class="line">## Long-term Memory</span><br><span class="line"># Project Context</span><br><span class="line">- User is studying nanobot source code</span><br><span class="line">- Prefers concise technical responses</span><br><span class="line"></span><br><span class="line">---</span><br><span class="line"></span><br><span class="line"># Active Skills</span><br><span class="line"></span><br><span class="line">### Skill: memory</span><br><span class="line"></span><br><span class="line"># Memory</span><br><span class="line">## Structure</span><br><span class="line">- `SOUL.md` — Bot personality and communication style. Managed by Dream. Do NOT edit.</span><br><span class="line">- `USER.md` — User profile and preferences. Managed by Dream. Do NOT edit.</span><br><span class="line">- `memory/MEMORY.md` — Long-term facts. Managed by Dream. Do NOT edit.</span><br><span class="line">- `memory/history.jsonl` — append-only JSONL, prefer built-in `grep` for search.</span><br><span class="line"></span><br><span class="line">## Search Past Events</span><br><span class="line">`memory/history.jsonl` is JSONL format — each line is a JSON object with `cursor`, `timestamp`, `content`.</span><br><span class="line">...</span><br><span class="line"></span><br><span class="line">---</span><br><span class="line"></span><br><span class="line"># Skills</span><br><span class="line"></span><br><span class="line">The following skills extend your capabilities. To use a skill, read its SKILL.md file.</span><br><span class="line"></span><br><span class="line">- **cron** — Schedule reminders and recurring tasks.  `/path/to/nanobot/skills/cron/SKILL.md`</span><br><span class="line">- **weather** — Get current weather and forecasts.  `/path/to/nanobot/skills/weather/SKILL.md`</span><br><span class="line">- **skill-creator** — Create and update skills.  `/path/to/nanobot/skills/skill-creator/SKILL.md`</span><br><span class="line">- **github** — GitHub CLI integration.  (unavailable: CLI: gh)</span><br><span class="line"></span><br><span class="line">---</span><br><span class="line"></span><br><span class="line"># Recent History</span><br><span class="line"></span><br><span class="line">- [2026-04-15 14:58] User asked about which LLM model is being used; answered MiniMax-M2.7</span><br><span class="line">- [2026-04-15 15:13] User changed contextWindowTokens from 64K to 200K</span><br><span class="line">- [2026-04-15 15:23] User changed timezone to Asia/Shanghai</span><br></pre></td></tr></table></figure>
+
+<h3 id="②-messages数组（历史-当前消息）"><a href="#②-messages数组（历史-当前消息）" class="headerlink" title="② messages数组（历史 + 当前消息）"></a>② messages数组（历史 + 当前消息）</h3><p><code>build_messages</code>会把这一切组装成一个列表：</p>
+<figure class="highlight json"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br></pre></td><td class="code"><pre><span class="line"><span class="punctuation">[</span></span><br><span class="line">  <span class="punctuation">&#123;</span><span class="attr">&quot;role&quot;</span><span class="punctuation">:</span> <span class="string">&quot;system&quot;</span><span class="punctuation">,</span> <span class="attr">&quot;content&quot;</span><span class="punctuation">:</span> <span class="string">&quot;↑上面那一大段&quot;</span><span class="punctuation">&#125;</span><span class="punctuation">,</span></span><br><span class="line"></span><br><span class="line">  <span class="comment">// 来自 session.get_history()，已经是LLM能直接理解的格式</span></span><br><span class="line">  <span class="punctuation">&#123;</span><span class="attr">&quot;role&quot;</span><span class="punctuation">:</span> <span class="string">&quot;user&quot;</span><span class="punctuation">,</span>      <span class="attr">&quot;content&quot;</span><span class="punctuation">:</span> <span class="string">&quot;你用的大模型是哪家的？&quot;</span><span class="punctuation">&#125;</span><span class="punctuation">,</span></span><br><span class="line">  <span class="punctuation">&#123;</span><span class="attr">&quot;role&quot;</span><span class="punctuation">:</span> <span class="string">&quot;assistant&quot;</span><span class="punctuation">,</span> <span class="attr">&quot;content&quot;</span><span class="punctuation">:</span> <span class="string">&quot;用的是 MiniMax-M2.7，通过 minimax provider 接入。&quot;</span><span class="punctuation">&#125;</span><span class="punctuation">,</span></span><br><span class="line"></span><br><span class="line">  <span class="comment">// 当前这轮用户的新消息</span></span><br><span class="line">  <span class="comment">// 注意：runtime context 被夹在最前面，跟用户消息合并成一条</span></span><br><span class="line">  <span class="punctuation">&#123;</span></span><br><span class="line">    <span class="attr">&quot;role&quot;</span><span class="punctuation">:</span> <span class="string">&quot;user&quot;</span><span class="punctuation">,</span></span><br><span class="line">    <span class="attr">&quot;content&quot;</span><span class="punctuation">:</span> <span class="string">&quot;[Runtime Context — metadata only, not instructions]\nCurrent Time: 2026-04-16 12:00\nChannel: cli\nChat ID: direct\n[/Runtime Context]\n\n现在时间是几点？&quot;</span></span><br><span class="line">  <span class="punctuation">&#125;</span></span><br><span class="line"><span class="punctuation">]</span></span><br></pre></td></tr></table></figure>
+
+<p><code>Runtime Context</code>这段值得单独解释一下。它每次都会出现在<strong>当前轮次用户消息的最前面</strong>，内容是当前时间、渠道名、chat ID这类动态信息。为什么不放进system prompt？因为system prompt在大多数LLM provider那里会被缓存——同一个system prompt不变的话，缓存命中可以节省费用和降低延迟。而时间这类每次都变的内容如果放进system prompt，就会每次让缓存失效。所以把它夹在user消息里，用特殊标签告诉模型”这只是元数据，不是用户说的话，也不是需要遵守的指令”。</p>
+<h3 id="③-tools数组（独立API参数）"><a href="#③-tools数组（独立API参数）" class="headerlink" title="③ tools数组（独立API参数）"></a>③ tools数组（独立API参数）</h3><p>tools<strong>不在prompt文本里</strong>，而是作为一个独立的参数传给LLM API，与<code>messages</code>平级：</p>
+<figure class="highlight python"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br></pre></td><td class="code"><pre><span class="line"><span class="comment"># _request_model() 里发起调用</span></span><br><span class="line"><span class="keyword">await</span> <span class="variable language_">self</span>.provider.chat_with_retry(</span><br><span class="line">    messages=messages,          <span class="comment"># ↑ 上面组装好的消息列表</span></span><br><span class="line">    tools=spec.tools.get_definitions(),  <span class="comment"># ← 独立参数，不在messages里</span></span><br><span class="line">    model=spec.model,</span><br><span class="line">)</span><br></pre></td></tr></table></figure>
+
+<p>LLM API（OpenAI兼容格式）的<code>tools</code>参数是JSON Schema格式的工具定义列表，模型天然支持这个格式，不需要在prompt里再写一遍”你可以调用哪些工具”：</p>
+<figure class="highlight json"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br></pre></td><td class="code"><pre><span class="line"><span class="punctuation">[</span></span><br><span class="line">  <span class="punctuation">&#123;</span></span><br><span class="line">    <span class="attr">&quot;type&quot;</span><span class="punctuation">:</span> <span class="string">&quot;function&quot;</span><span class="punctuation">,</span></span><br><span class="line">    <span class="attr">&quot;function&quot;</span><span class="punctuation">:</span> <span class="punctuation">&#123;</span></span><br><span class="line">      <span class="attr">&quot;name&quot;</span><span class="punctuation">:</span> <span class="string">&quot;read_file&quot;</span><span class="punctuation">,</span></span><br><span class="line">      <span class="attr">&quot;description&quot;</span><span class="punctuation">:</span> <span class="string">&quot;Read the contents of a file.&quot;</span><span class="punctuation">,</span></span><br><span class="line">      <span class="attr">&quot;parameters&quot;</span><span class="punctuation">:</span> <span class="punctuation">&#123;</span></span><br><span class="line">        <span class="attr">&quot;type&quot;</span><span class="punctuation">:</span> <span class="string">&quot;object&quot;</span><span class="punctuation">,</span></span><br><span class="line">        <span class="attr">&quot;properties&quot;</span><span class="punctuation">:</span> <span class="punctuation">&#123;</span></span><br><span class="line">          <span class="attr">&quot;path&quot;</span><span class="punctuation">:</span> <span class="punctuation">&#123;</span><span class="attr">&quot;type&quot;</span><span class="punctuation">:</span> <span class="string">&quot;string&quot;</span><span class="punctuation">,</span> <span class="attr">&quot;description&quot;</span><span class="punctuation">:</span> <span class="string">&quot;File path to read&quot;</span><span class="punctuation">&#125;</span><span class="punctuation">,</span></span><br><span class="line">          ...</span><br><span class="line">        <span class="punctuation">&#125;</span><span class="punctuation">,</span></span><br><span class="line">        <span class="attr">&quot;required&quot;</span><span class="punctuation">:</span> <span class="punctuation">[</span><span class="string">&quot;path&quot;</span><span class="punctuation">]</span></span><br><span class="line">      <span class="punctuation">&#125;</span></span><br><span class="line">    <span class="punctuation">&#125;</span></span><br><span class="line">  <span class="punctuation">&#125;</span><span class="punctuation">,</span></span><br><span class="line">  <span class="punctuation">&#123;</span><span class="attr">&quot;type&quot;</span><span class="punctuation">:</span> <span class="string">&quot;function&quot;</span><span class="punctuation">,</span> <span class="attr">&quot;function&quot;</span><span class="punctuation">:</span> <span class="punctuation">&#123;</span><span class="attr">&quot;name&quot;</span><span class="punctuation">:</span> <span class="string">&quot;write_file&quot;</span><span class="punctuation">,</span> ...<span class="punctuation">&#125;</span><span class="punctuation">&#125;</span><span class="punctuation">,</span></span><br><span class="line">  <span class="punctuation">&#123;</span><span class="attr">&quot;type&quot;</span><span class="punctuation">:</span> <span class="string">&quot;function&quot;</span><span class="punctuation">,</span> <span class="attr">&quot;function&quot;</span><span class="punctuation">:</span> <span class="punctuation">&#123;</span><span class="attr">&quot;name&quot;</span><span class="punctuation">:</span> <span class="string">&quot;exec&quot;</span><span class="punctuation">,</span> ...<span class="punctuation">&#125;</span><span class="punctuation">&#125;</span><span class="punctuation">,</span></span><br><span class="line">  ...</span><br><span class="line"><span class="punctuation">]</span></span><br></pre></td></tr></table></figure>
+
+<p>当模型决定要调用工具时，它不会在回复文本里说”我要调read_file”，而是直接在response里返回一个<code>tool_calls</code>数组，nanobot拿到之后去真正执行这些工具，把结果再喂回去。</p>
+<h2 id="三个cursor的区别"><a href="#三个cursor的区别" class="headerlink" title="三个cursor的区别"></a>三个cursor的区别</h2><p>记忆系统里有三个cursor，初看容易混淆，但它们追踪的是完全不同维度的东西：</p>
 <table>
 <thead>
 <tr>
-<th>场景</th>
-<th>需求</th>
+<th>cursor</th>
+<th>存放位置</th>
+<th>追踪对象</th>
+<th>谁维护</th>
 </tr>
 </thead>
 <tbody><tr>
-<td><strong>大促前资源调度</strong></td>
-<td>需要将 Redis 迁移到更高配置的机器，但不能影响业务</td>
+<td><code>memory/.cursor</code></td>
+<td><code>memory/</code>目录下的独立文件</td>
+<td><code>history.jsonl</code>里下一条要写入的全局ID</td>
+<td>Consolidator（追加时递增）</td>
 </tr>
 <tr>
-<td><strong>跨可用区迁移</strong></td>
-<td>从 Availability Zone A 迁移到 Zone B，期望用户无感知</td>
+<td><code>memory/.dream_cursor</code></td>
+<td><code>memory/</code>目录下的独立文件</td>
+<td><code>history.jsonl</code>里Dream已消化到的位置</td>
+<td>Dream（每次run后推进）</td>
 </tr>
 <tr>
-<td><strong>版本升级</strong></td>
-<td>升级 Redis 版本，需要切换主节点</td>
-</tr>
-<tr>
-<td><strong>机房搬迁</strong></td>
-<td>整体迁移到新机房，期望业务无感知</td>
+<td><code>last_consolidated</code></td>
+<td>session文件第一行metadata</td>
+<td><code>session.messages</code>数组里已被摘走的消息数</td>
+<td>Consolidator（压缩后更新）</td>
 </tr>
 </tbody></table>
-<h2 id="解决方案架构"><a href="#解决方案架构" class="headerlink" title="解决方案架构"></a>解决方案架构</h2><p>标准的 Redis 高可用架构如下：</p>
-<p><img src="/2026-01-22-redis%E6%97%A0%E6%84%9F%E8%BF%81%E7%A7%BBmaster/redis%E6%9E%B6%E6%9E%84%E5%9B%BE.svg"></p>
-<h3 id="组件通信关系"><a href="#组件通信关系" class="headerlink" title="组件通信关系"></a>组件通信关系</h3><ol>
-<li><strong>Sentinel 集群</strong>：通过 Hello 消息保持状态同步，监控 Redis 主从节点</li>
-<li><strong>Proxy 集群</strong>：订阅 Sentinel 的 <code>+switch-master</code> 事件，感知主从切换</li>
-<li><strong>Redis 集群</strong>：主从复制，Sentinel 负责故障检测和切换</li>
-</ol>
-<h3 id="Sentinel-Proxy-协作流程"><a href="#Sentinel-Proxy-协作流程" class="headerlink" title="Sentinel + Proxy 协作流程"></a>Sentinel + Proxy 协作流程</h3><p><img src="/2026-01-22-redis%E6%97%A0%E6%84%9F%E8%BF%81%E7%A7%BBmaster/sentinel-proxy%E5%8D%8F%E4%BD%9C%E6%B5%81%E7%A8%8B.svg"></p>
-<p>首先架构是标准的，sentinel + proxy + redis，即哨兵作为HA组件监控redis的存活情况，proxy作为流量入口转发用户流量到指定的redis节点。</p>
-<p>proxy实时监视sentinel，会订阅其<code>+switch-master</code>事件，一旦发现了该信号，proxy会直接切流到新节点中。</p>
-<p>在以上的架构背景下，若没有一些特殊能力，redis迁移主节点又不影响用户请求是不可能实现的。一种可能的方案是，给redis发送<code>failover to</code>命令让其做协调式主从切换，然后再把从节点迁移走。</p>
-<p>但<code>failover to</code>命令是有感的，其有两种工作方式，一种是禁写主节点，直到从的offset完全跟上主后再主从切换。一种是直接切换，也就是会丢失所有未同步到从节点的数据。</p>
-<p>因此本文阐述了一种新能力，可以让业务无感知的迁移master节点。</p>
-<h1 id="方法"><a href="#方法" class="headerlink" title="方法"></a>方法</h1><p>主要方法如下：通过修改sentinel的内核，引入了<code>silent-failover</code>命令，通过两阶段的failover，即<code>prepare</code>和<code>done</code>实现无感迁移master。其中从节点需要打开可写开关。</p>
-<p>一种迁移的示意图如下:<br><img src="/%E8%BF%81%E7%A7%BB%E7%A4%BA%E6%84%8F%E5%9B%BE.png"></p>
-<p>引入一个新的哨兵命令，格式如下</p>
-<blockquote>
-<p>sentinel silent-failover master-name slave-node &lt;prepare|done&gt;</p>
-</blockquote>
-<p>参数说明</p>
-<ul>
-<li>silent-failover: 无感迁移子命令</li>
-<li>master-name: 无感迁移的分片名称</li>
-<li>slave-node: 需要提主的从节点的 ip:port</li>
-<li>prepare | done: 两阶段，prepare可以认为是假切，只是对外发出<code>+switch-master</code>，done才认为是真的切了</li>
-</ul>
-<p><code>sentinel silent-failover masterName slavehost:port prepare</code>命令，可指定某个masterName的主节点进行<strong>预</strong>故障转移到指定的从节点。</p>
-<p>预故障转移的含义定义如下：通过发送<code>+switch-master</code>告知proxy已经主从切换了，要求切流到从节点，但真正意义的redis主从根本没切，也就是sentinel告知了proxy假消息。</p>
-<p>然后进行二阶段<code>sentinel silent-failover masterName slavehost:port done</code>，此时开始真正的主从切换。完成不丢任何数据的迁移master。</p>
-<p>切换完成后，proxy 会将流量路由到新的主节点，完成整个无感迁移流程。当然这时候会出现短暂的双写导致写顺序不一致的问题。</p>
-<h1 id="sentinel核心工作"><a href="#sentinel核心工作" class="headerlink" title="sentinel核心工作"></a>sentinel核心工作</h1><h2 id="难点"><a href="#难点" class="headerlink" title="难点"></a>难点</h2><p>sentinel内核改动的核心在于多哨兵之间的状态共识。假设一个集群有三个哨兵，当对一个哨兵发送<code>silent-failover</code>命令引入两阶段后，其他两个哨兵也必须感知到这个两阶段从而向proxy发送<code>+switch-master</code>消息。由于无法确定proxy连接的是哪个sentinel，因此需要一套共识机制，让所有哨兵协调进入两阶段failover状态。</p>
-<p>同时第一阶段后的中间状态，需要还能实时保障故障转移。比如原主挂了，哨兵应该能直接切换，比如新主挂了，哨兵也能选出一个从节点。换句话说，任何的宕机事件，哨兵都必须主动终止两阶段failover进行相应的故障转移，这部分的共识代码实现是相当困难的。</p>
-<h2 id="Hello-消息格式"><a href="#Hello-消息格式" class="headerlink" title="Hello 消息格式"></a>Hello 消息格式</h2><p>主要修改方法是在频道<code>hello</code>中修改一下互相打招呼的格式，用该事件通知其他sentinel本执行了prepare的sentinel收到了<code>silent-failover</code>事件。</p>
-<h3 id="原有-vs-新增协议对比"><a href="#原有-vs-新增协议对比" class="headerlink" title="原有 vs 新增协议对比"></a>原有 vs 新增协议对比</h3><table>
-<thead>
-<tr>
-<th>版本</th>
-<th>字段数</th>
-<th>格式</th>
-<th>说明</th>
-</tr>
-</thead>
-<tbody><tr>
-<td>原有</td>
-<td>8 字段</td>
-<td>sentinel信息 + master信息</td>
-<td>标准 Hello</td>
-</tr>
-<tr>
-<td>新增</td>
-<td>11 字段</td>
-<td>sentinel信息 + master信息 + silent信息</td>
-<td>含 silent-failover 状态</td>
-</tr>
-</tbody></table>
-<h3 id="字段说明"><a href="#字段说明" class="headerlink" title="字段说明"></a>字段说明</h3><figure class="highlight plaintext"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br></pre></td><td class="code"><pre><span class="line">原有8字段格式:</span><br><span class="line">[sentinel-ip],[sentinel-port],[sentinel-runid],[sentinel-epoch],</span><br><span class="line">[master-ip],[master-name],[master-port],[master-epoch]</span><br><span class="line"></span><br><span class="line">新增11字段格式 (新增3个字段):</span><br><span class="line">[sentinel-ip],[sentinel-port],[sentinel-runid],[sentinel-epoch],</span><br><span class="line">[master-ip],[master-name],[master-port],[master-epoch],</span><br><span class="line">[silent-done-epoch],[silent-master-ip],[silent-master-port]</span><br></pre></td></tr></table></figure>
+<p>前两个是<strong>全局级别</strong>的，跟<code>history.jsonl</code>这个文件绑定，所有session共用一份。第三个是<strong>per-session</strong>的——系统可能同时有<code>cli:direct</code>、<code>telegram:12345</code>、<code>discord:67890</code>多个会话，每个会话消息被压缩的进度各不相同，所以<code>last_consolidated</code>必须跟各自的session文件存在一起。</p>
+<h2 id="Consolidator-—-什么时候做，怎么做"><a href="#Consolidator-—-什么时候做，怎么做" class="headerlink" title="Consolidator — 什么时候做，怎么做"></a>Consolidator — 什么时候做，怎么做</h2><p>Consolidator的入口是<code>maybe_consolidate_by_tokens</code>，在<code>_process_message</code>里被调用两次：一次是处理消息之前，一次是处理完之后（异步后台执行）。</p>
+<p>触发逻辑如下：</p>
+<figure class="highlight python"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br></pre></td><td class="code"><pre><span class="line">budget = context_window_tokens - max_completion_tokens - SAFETY_BUFFER</span><br><span class="line">target = budget // <span class="number">2</span></span><br><span class="line"></span><br><span class="line">estimated, _ = <span class="variable language_">self</span>.estimate_session_prompt_tokens(session)</span><br><span class="line"></span><br><span class="line"><span class="keyword">if</span> estimated &lt; budget:</span><br><span class="line">    <span class="keyword">return</span>  <span class="comment"># 还有空间，不压缩</span></span><br><span class="line"></span><br><span class="line"><span class="keyword">for</span> round_num <span class="keyword">in</span> <span class="built_in">range</span>(<span class="number">5</span>):  <span class="comment"># 最多5轮</span></span><br><span class="line">    <span class="keyword">if</span> estimated &lt;= target:</span><br><span class="line">        <span class="keyword">return</span></span><br><span class="line"></span><br><span class="line">    boundary = <span class="variable language_">self</span>.pick_consolidation_boundary(session, <span class="built_in">max</span>(<span class="number">1</span>, estimated - target))</span><br><span class="line">    <span class="comment"># 找到一个&quot;user轮次&quot;的边界，划出需要压缩的消息块</span></span><br><span class="line">    chunk = session.messages[session.last_consolidated:end_idx]</span><br><span class="line"></span><br><span class="line">    <span class="keyword">await</span> <span class="variable language_">self</span>.archive(chunk)  <span class="comment"># 用LLM摘要，写入history.jsonl</span></span><br><span class="line">    session.last_consolidated = end_idx  <span class="comment"># 更新per-session游标</span></span><br><span class="line"></span><br><span class="line">    estimated = <span class="variable language_">self</span>.estimate_session_prompt_tokens(session)  <span class="comment"># 重新估算</span></span><br></pre></td></tr></table></figure>
 
-<h3 id="图示"><a href="#图示" class="headerlink" title="图示"></a>图示</h3><figure class="highlight plaintext"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br></pre></td><td class="code"><pre><span class="line">正常状态 Hello 消息 (8字段):</span><br><span class="line">┌────────────┬────────────┬──────────┬───────────┐</span><br><span class="line">│ Sentinel   │   Master   │          │           │</span><br><span class="line">│ 信息(4字段) │ 信息(4字段) │          │           │</span><br><span class="line">└────────────┴────────────┴──────────┴───────────┘</span><br><span class="line"></span><br><span class="line">Prepare 状态 Hello 消息 (11字段):</span><br><span class="line">┌────────────┬────────────┬─────────────────────────┐</span><br><span class="line">│ Sentinel   │   Master   │  Silent-Failover 信息  │</span><br><span class="line">│ 信息(4字段) │ 信息(4字段) │  (3字段: done_epoch,   │</span><br><span class="line">│            │           │   silent_master_ip, port) │</span><br><span class="line">└────────────┴────────────┴─────────────────────────┘</span><br></pre></td></tr></table></figure>
-
-<h3 id="状态同步机制"><a href="#状态同步机制" class="headerlink" title="状态同步机制"></a>状态同步机制</h3><figure class="highlight plaintext"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br></pre></td><td class="code"><pre><span class="line">字段数变化 -&gt; 状态变化</span><br><span class="line"></span><br><span class="line">8 字段 -&gt; 11 字段: silent-failover 开始 (prepare)</span><br><span class="line">          触发: 发送 +switch-master (假切换)</span><br><span class="line"></span><br><span class="line">11 字段 -&gt; 8 字段: silent-failover 结束 (done)</span><br><span class="line">          触发: 发送 +switch-master (真切换)</span><br></pre></td></tr></table></figure>
-
-<h3 id="关键设计点"><a href="#关键设计点" class="headerlink" title="关键设计点"></a>关键设计点</h3><p>约定了执行prepare后，哨兵的epoch++，done纪元又是prepare的纪元+1。</p>
-<p>通过hello消息字段数的变化，非prepare的sentinel能感知到无感切换的开始和结束，比如8字段到11字段就共识了切换的开始，并保存相关信息。反之11字段到8字段，说明切换的结束。</p>
-<p><strong>实现关键点：</strong></p>
-<p>执行 prepare 的 Sentinel 其认为的 Master 依然是原 Master：</p>
-<ul>
-<li>其 <code>master_name</code> 下的 <code>ip:port</code> 保持原主正确值</li>
-<li>标记 <code>silent_initiator=1</code></li>
-</ul>
-<p>被 Hello 共识传播的其他 Sentinel 会认为已经切换：</p>
-<ul>
-<li>其 <code>master_name</code> 下的 <code>ip:port</code> 指向新主（目标从节点）</li>
-<li>标记 <code>silent_initiator=0</code></li>
-</ul>
-<p>代码中通过特殊处理解决了这种状态差异，确保各 sentinel 能正确协同工作。</p>
-<h2 id="精确控制从节点复制关系"><a href="#精确控制从节点复制关系" class="headerlink" title="精确控制从节点复制关系"></a>精确控制从节点复制关系</h2><p>为了满足无感迁移的精细化控制需求，引入sentinel配置<code>slave-can-auto-revert-to-configured-master</code>：</p>
-<figure class="highlight c++"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br></pre></td><td class="code"><pre><span class="line"><span class="comment">// 关闭自动修正，允许保持当前复制关系</span></span><br><span class="line">SENTINEL SET masterName slave-can-<span class="keyword">auto</span>-revert-to-configured-master no</span><br><span class="line"><span class="comment">// 重新打开自动修正</span></span><br><span class="line">SENTINEL SET masterName slave-can-<span class="keyword">auto</span>-revert-to-configured-master yes</span><br></pre></td></tr></table></figure>
-
-<p>当关闭自动修正后，sentinel在收到从节点的info回复时，会保持当前的复制关系不变，确保无感迁移流程的稳定性。</p>
-<h2 id="安全的重置保护"><a href="#安全的重置保护" class="headerlink" title="安全的重置保护"></a>安全的重置保护</h2><p>在无感迁移过程中，sentinel提供了安全的保护机制。执行 <code>SENTINEL RESET master-name</code> 命令时，系统会检查当前 master 是否处于 silent-failover 状态，如果是则拒绝执行，确保迁移过程不受干扰。</p>
-<h2 id="两阶段状态机"><a href="#两阶段状态机" class="headerlink" title="两阶段状态机"></a>两阶段状态机</h2><p>silent-failover 引入两个新的故障转移状态，用于控制两阶段切换流程：</p>
-<figure class="highlight c++"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br></pre></td><td class="code"><pre><span class="line"><span class="meta">#<span class="keyword">define</span> SENTINEL_FAILOVER_STATE_SYNC_SILENT_MASTER 3  <span class="comment">// 同步silent master给其他sentinel，并发送+switch-master给订阅的客户端</span></span></span><br><span class="line"><span class="meta">#<span class="keyword">define</span> SENTINEL_FAILOVER_STATE_WAIT_SILENT_DONE 4     <span class="comment">// 等待用户执行done命令</span></span></span><br></pre></td></tr></table></figure>
-
-<h3 id="完整状态机"><a href="#完整状态机" class="headerlink" title="完整状态机"></a>完整状态机</h3><p><img src="/2026-01-22-redis%E6%97%A0%E6%84%9F%E8%BF%81%E7%A7%BBmaster/%E4%B8%A4%E9%98%B6%E6%AE%B5%E7%8A%B6%E6%80%81%E6%9C%BA.svg"></p>
-<h3 id="详细流程说明"><a href="#详细流程说明" class="headerlink" title="详细流程说明"></a>详细流程说明</h3><h4 id="Phase-1-Prepare-阶段"><a href="#Phase-1-Prepare-阶段" class="headerlink" title="Phase 1: Prepare 阶段"></a>Phase 1: Prepare 阶段</h4><p><img src="/2026-01-22-redis%E6%97%A0%E6%84%9F%E8%BF%81%E7%A7%BBmaster/prepare%E9%98%B6%E6%AE%B5%E6%97%B6%E5%BA%8F%E5%9B%BE.svg"></p>
-<p><strong>Prepare 阶段关键步骤：</strong></p>
+<p>几个关键点：</p>
 <ol>
-<li><strong>设置标记</strong>：在 master 上设置 <code>SRI_SILENT_FAILOVER</code> 标志</li>
-<li><strong>更新 Epoch</strong>：执行 <code>failover</code> 的 sentinel 的 epoch 自增</li>
-<li><strong>Hello 传播</strong>：发送 Hello 消息（11字段），通知其他 sentinel 进入 silent-failover 状态</li>
-<li><strong>发送假信号</strong>：发送 <code>+switch-master</code> 事件，但实际主从关系未变</li>
-<li><strong>Proxy 切流</strong>：Proxy 收到事件后，将流量切换到目标从节点</li>
+<li><strong>token估算</strong>：调用<code>estimate_session_prompt_tokens</code>，它会真的调用<code>build_messages</code>组装一遍prompt，然后用tiktoken估算token数（不实际请求LLM）。</li>
+<li><strong>边界选择</strong>：<code>pick_consolidation_boundary</code>会找一个user消息开头的位置作为切割点，确保不在assistant或tool消息中间切断，保持语义完整性。</li>
+<li><strong>单次cap</strong>：<code>_cap_consolidation_boundary</code>限制每轮最多压缩60条消息，防止一次LLM请求带太多内容。</li>
+<li><strong>摘要LLM调用</strong>：<code>archive()</code>方法会调一次LLM，让它把这段对话摘要成几条要点，然后<code>append_history</code>写入<code>history.jsonl</code>，同时把<code>memory/.cursor</code>递增。</li>
 </ol>
-<h4 id="Phase-2-Done-阶段"><a href="#Phase-2-Done-阶段" class="headerlink" title="Phase 2: Done 阶段"></a>Phase 2: Done 阶段</h4><p><strong>Done 阶段关键步骤：</strong></p>
-<ol>
-<li><strong>清除标记</strong>：清除 <code>SRI_SILENT_FAILOVER</code> 标志</li>
-<li><strong>真正切换</strong>：发送 <code>SLAVEOF NO ONE</code> 命令，将从节点提升为主节点</li>
-<li><strong>Hello 传播</strong>：发送 Hello 消息（8字段），通知其他 sentinel silent-failover 完成</li>
-<li><strong>发送真信号</strong>：再次发送 <code>+switch-master</code> 事件（此时为真切换）</li>
-<li><strong>后续流程</strong>：与其他 sentinel 协调完成从节点重新配置</li>
-</ol>
-<h4 id="中间状态说明"><a href="#中间状态说明" class="headerlink" title="中间状态说明"></a>中间状态说明</h4><table>
-<thead>
-<tr>
-<th>阶段</th>
-<th>状态</th>
-<th>Proxy 流量</th>
-<th>实际主从</th>
-<th>说明</th>
-</tr>
-</thead>
-<tbody><tr>
-<td>正常</td>
-<td>-</td>
-<td>原 Master</td>
-<td>原 Master→从节点</td>
-<td>正常运行</td>
-</tr>
-<tr>
-<td>Prepare</td>
-<td>SYNC_SILENT_MASTER → WAIT_SILENT_DONE</td>
-<td>目标从节点</td>
-<td><strong>未变</strong></td>
-<td>假切换完成，等待确认</td>
-</tr>
-<tr>
-<td>Done</td>
-<td>SEND_SLAVEOF_NOONE → …</td>
-<td>目标从节点</td>
-<td><strong>已变</strong></td>
-<td>真切换执行</td>
-</tr>
-</tbody></table>
-<p><strong>关键点</strong>：在 prepare 阶段，proxy 已经将流量切到目标从节点，但 Redis 主从关系未变。这意味着：</p>
+<p>如果LLM摘要调用失败，会退化到直接把原始消息dump进<code>history.jsonl</code>（<code>raw_archive</code>），加上<code>[RAW]</code>标记，确保数据不丢。</p>
+<h2 id="Dream-—-长记忆如何更新"><a href="#Dream-—-长记忆如何更新" class="headerlink" title="Dream — 长记忆如何更新"></a>Dream — 长记忆如何更新</h2><p>Dream是个两阶段的流程，在<code>Dream.run()</code>里实现。完整流程如下：</p>
+<figure class="highlight plaintext"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br></pre></td><td class="code"><pre><span class="line">history.jsonl (未处理条目)</span><br><span class="line">        +</span><br><span class="line">MEMORY.md / SOUL.md / USER.md (当前内容)</span><br><span class="line">        ↓</span><br><span class="line">    Phase 1：分析（纯LLM调用，无工具）</span><br><span class="line">        ↓</span><br><span class="line">    分析结论（结构化标注行）</span><br><span class="line">        +</span><br><span class="line">    当前文件内容（再次传入）</span><br><span class="line">        +</span><br><span class="line">    现有 skill 列表（去重用）</span><br><span class="line">        ↓</span><br><span class="line">    Phase 2：执行（AgentRunner + edit_file / write_file）</span><br><span class="line">        ↓</span><br><span class="line">    精确修改 SOUL.md / USER.md / MEMORY.md</span><br><span class="line">    或新建 skills/&lt;name&gt;/SKILL.md</span><br><span class="line">        ↓</span><br><span class="line">    更新 .dream_cursor + GitStore auto-commit</span><br></pre></td></tr></table></figure>
+
+<h3 id="Phase-1：分析"><a href="#Phase-1：分析" class="headerlink" title="Phase 1：分析"></a>Phase 1：分析</h3><p>先读出<code>.dream_cursor</code>之后未处理的<code>history.jsonl</code>条目（最多<code>max_batch_size</code>条，默认20），加上三个长记忆文件的当前内容，一起构造user消息：</p>
+<figure class="highlight python"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br></pre></td><td class="code"><pre><span class="line">history_text = <span class="string">&quot;\n&quot;</span>.join(<span class="string">f&quot;[<span class="subst">&#123;e[<span class="string">&#x27;timestamp&#x27;</span>]&#125;</span>] <span class="subst">&#123;e[<span class="string">&#x27;content&#x27;</span>]&#125;</span>&quot;</span> <span class="keyword">for</span> e <span class="keyword">in</span> batch)</span><br><span class="line"></span><br><span class="line">file_context = (</span><br><span class="line">    <span class="string">f&quot;## Current Date\n<span class="subst">&#123;current_date&#125;</span>\n\n&quot;</span></span><br><span class="line">    <span class="string">f&quot;## Current MEMORY.md (<span class="subst">&#123;<span class="built_in">len</span>(current_memory)&#125;</span> chars)\n<span class="subst">&#123;current_memory&#125;</span>\n\n&quot;</span></span><br><span class="line">    <span class="string">f&quot;## Current SOUL.md (<span class="subst">&#123;<span class="built_in">len</span>(current_soul)&#125;</span> chars)\n<span class="subst">&#123;current_soul&#125;</span>\n\n&quot;</span></span><br><span class="line">    <span class="string">f&quot;## Current USER.md (<span class="subst">&#123;<span class="built_in">len</span>(current_user)&#125;</span> chars)\n<span class="subst">&#123;current_user&#125;</span>&quot;</span></span><br><span class="line">)</span><br><span class="line"></span><br><span class="line">phase1_prompt = <span class="string">f&quot;## Conversation History\n<span class="subst">&#123;history_text&#125;</span>\n\n<span class="subst">&#123;file_context&#125;</span>&quot;</span></span><br></pre></td></tr></table></figure>
+
+<p>system消息来自<code>templates/agent/dream_phase1.md</code>，内容是一段简明指令：</p>
+<figure class="highlight plaintext"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br></pre></td><td class="code"><pre><span class="line">Compare conversation history against current memory files.</span><br><span class="line">Output one line per finding:</span><br><span class="line">[FILE] atomic fact (not already in memory)</span><br><span class="line">[FILE-REMOVE] reason for removal</span><br><span class="line">[SKILL] kebab-case-name: one-line description of the reusable pattern</span><br><span class="line"></span><br><span class="line">Files: USER (identity, preferences), SOUL (bot behavior, tone), MEMORY (knowledge, project context)</span><br><span class="line"></span><br><span class="line">Rules:</span><br><span class="line">- Atomic facts: &quot;has a cat named Luna&quot; not &quot;discussed pet care&quot;</span><br><span class="line">- Corrections: [USER] location is Tokyo, not Osaka</span><br><span class="line">- Capture confirmed approaches the user validated</span><br><span class="line"></span><br><span class="line">Staleness — flag for [FILE-REMOVE]:</span><br><span class="line">- Time-sensitive data older than 14 days: weather, daily status, one-time meetings</span><br><span class="line">- Completed one-time tasks, resolved tracking, superseded approaches</span><br><span class="line"></span><br><span class="line">Skill discovery — flag [SKILL] when ALL of these are true:</span><br><span class="line">- A specific, repeatable workflow appeared 2+ times in the conversation history</span><br><span class="line">- It involves clear steps (not vague preferences)</span><br><span class="line">- Substantial enough to warrant its own instruction set</span><br><span class="line"></span><br><span class="line">[SKIP] if nothing needs updating.</span><br></pre></td></tr></table></figure>
+
+<p>这次调用不给工具（<code>tools=None</code>），只让模型输出结构化的分析文本。<strong>Phase 1的产物是一堆标注行</strong>，比如：</p>
+<figure class="highlight plaintext"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br></pre></td><td class="code"><pre><span class="line">[USER] prefers responses in simplified Chinese</span><br><span class="line">[MEMORY] nanobot project uses MiniMax-M2.7 via minimax provider</span><br><span class="line">[SOUL] user prefers very concise answers, avoid markdown in CLI output</span><br><span class="line">[MEMORY-REMOVE] outdated API endpoint entry from 2026-03-01</span><br><span class="line">[SKILL] query-history: search history.jsonl using grep tool for past conversation context</span><br></pre></td></tr></table></figure>
+
+<h3 id="Phase-2：执行"><a href="#Phase-2：执行" class="headerlink" title="Phase 2：执行"></a>Phase 2：执行</h3><p>把Phase 1的分析结论再加上文件当前内容，构造Phase 2的user消息。这次还额外附上<strong>已有skill列表</strong>用于去重：</p>
+<figure class="highlight python"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br></pre></td><td class="code"><pre><span class="line">existing_skills = <span class="variable language_">self</span>._list_existing_skills()</span><br><span class="line"><span class="comment"># → [&quot;cron — Schedule reminders...&quot;, &quot;memory — Two-layer memory system...&quot;, ...]</span></span><br><span class="line"></span><br><span class="line">skills_section = <span class="string">&quot;\n\n## Existing Skills\n&quot;</span> + <span class="string">&quot;\n&quot;</span>.join(<span class="string">f&quot;- <span class="subst">&#123;s&#125;</span>&quot;</span> <span class="keyword">for</span> s <span class="keyword">in</span> existing_skills)</span><br><span class="line"></span><br><span class="line">phase2_prompt = <span class="string">f&quot;## Analysis Result\n<span class="subst">&#123;analysis&#125;</span>\n\n<span class="subst">&#123;file_context&#125;</span><span class="subst">&#123;skills_section&#125;</span>&quot;</span></span><br></pre></td></tr></table></figure>
+
+<p>system消息来自<code>templates/agent/dream_phase2.md</code>，核心规则：</p>
+<figure class="highlight plaintext"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br></pre></td><td class="code"><pre><span class="line">Update memory files based on the analysis below.</span><br><span class="line">- [FILE] entries: add the described content to the appropriate file</span><br><span class="line">- [FILE-REMOVE] entries: delete the corresponding content from memory files</span><br><span class="line">- [SKILL] entries: create a new skill under skills/&lt;name&gt;/SKILL.md using write_file</span><br><span class="line"></span><br><span class="line">## Editing rules</span><br><span class="line">- Edit directly — file contents provided below, no read_file needed</span><br><span class="line">- Use exact text as old_text, include surrounding blank lines for unique match</span><br><span class="line">- Batch changes to the same file into one edit_file call</span><br><span class="line">- Surgical edits only — never rewrite entire files</span><br><span class="line">- If nothing to update, stop without calling tools</span><br><span class="line"></span><br><span class="line">## Skill creation rules</span><br><span class="line">- Before writing, read skill-creator/SKILL.md for format reference</span><br><span class="line">- Dedup check: read existing skills listed below, skip if already covered</span><br><span class="line">- Include YAML frontmatter with name and description fields</span><br></pre></td></tr></table></figure>
+
+<p>这次用<code>AgentRunner</code>（而不是<code>AgentLoop</code>）驱动，给它三个工具：</p>
 <ul>
-<li>目标从节点仍从原主节点同步数据</li>
-<li>写请求被路由到目标从节点，但复制链路仍然存在</li>
-<li>数据一致性由 Redis 主从复制保证</li>
+<li><code>read_file</code>：读文件（允许读workspace目录 + 内置skills目录，用于skill格式参考）</li>
+<li><code>edit_file</code>：精确替换文件中的某段文本（只允许操作workspace目录）</li>
+<li><code>write_file</code>：写文件（<strong>只允许写入<code>skills/</code>子目录</strong>，防止模型乱覆盖主记忆文件）</li>
 </ul>
-<h2 id="高可用保障"><a href="#高可用保障" class="headerlink" title="高可用保障"></a>高可用保障</h2><p>silent-failover 设计充分考虑了各种异常场景，确保系统在任何情况下都能保持高可用：</p>
-<h3 id="场景1：原主节点故障"><a href="#场景1：原主节点故障" class="headerlink" title="场景1：原主节点故障"></a>场景1：原主节点故障</h3><p>如果原主节点在 prepare 阶段发生故障，其他 sentinel 会立即检测到并自动触发故障转移流程：</p>
-<figure class="highlight plaintext"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br></pre></td><td class="code"><pre><span class="line">原主故障 -&gt; 检测 O_DOWN -&gt; 清除 SRI_SILENT_FAILOVER</span><br><span class="line">         -&gt; 中止 silent-failover -&gt; 执行标准故障转移</span><br></pre></td></tr></table></figure>
+<p>最多循环10轮工具调用（<code>max_iterations=10</code>）。模型会基于Phase 1的分析，决定调哪些工具、怎么调。典型的执行序列大概是：</p>
+<figure class="highlight plaintext"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br></pre></td><td class="code"><pre><span class="line">→ edit_file(SOUL.md, old_text=&quot;...&quot;, new_text=&quot;...&quot;)        # 更新性格设定</span><br><span class="line">→ edit_file(USER.md, old_text=&quot;...&quot;, new_text=&quot;...&quot;)        # 更新用户偏好</span><br><span class="line">→ edit_file(memory/MEMORY.md, old_text=&quot;...&quot;, new_text=&quot;...&quot;) # 更新项目记忆</span><br><span class="line">→ read_file(skills/skill-creator/SKILL.md)                  # 读格式参考</span><br><span class="line">→ read_file(skills/cron/SKILL.md)                           # 去重检查</span><br><span class="line">→ write_file(skills/query-history/SKILL.md, content=&quot;...&quot;)  # 新建skill</span><br></pre></td></tr></table></figure>
 
-<p><strong>处理流程：</strong></p>
+<p><code>edit_file</code>做的是<strong>精确文本替换</strong>——传入<code>old_text</code>和<code>new_text</code>，在文件里找到精确匹配的那段文字然后替换掉，而不是重写整个文件。这就是所谓”外科手术式”更新，用户手动写入的内容完全不受影响。</p>
+<h3 id="收尾：cursor推进与git提交"><a href="#收尾：cursor推进与git提交" class="headerlink" title="收尾：cursor推进与git提交"></a>收尾：cursor推进与git提交</h3><p>Phase 2结束后无论成功与否，都推进游标（防止Phase 1失败导致同一批history条目被无限重试）：</p>
+<figure class="highlight python"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br></pre></td><td class="code"><pre><span class="line">new_cursor = batch[-<span class="number">1</span>][<span class="string">&quot;cursor&quot;</span>]</span><br><span class="line"><span class="variable language_">self</span>.store.set_last_dream_cursor(new_cursor)  <span class="comment"># 写入 memory/.dream_cursor</span></span><br><span class="line"><span class="variable language_">self</span>.store.compact_history()  <span class="comment"># 清理history.jsonl里过旧的条目</span></span><br></pre></td></tr></table></figure>
+
+<p>如果有实际文件改动（<code>result.tool_events</code>里有<code>status=ok</code>的事件），就用<code>GitStore</code>做一次自动commit：</p>
+<figure class="highlight python"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">if</span> changelog <span class="keyword">and</span> <span class="variable language_">self</span>.store.git.is_initialized():</span><br><span class="line">    ts = batch[-<span class="number">1</span>][<span class="string">&quot;timestamp&quot;</span>]</span><br><span class="line">    sha = <span class="variable language_">self</span>.store.git.auto_commit(<span class="string">f&quot;dream: <span class="subst">&#123;ts&#125;</span>, <span class="subst">&#123;<span class="built_in">len</span>(changelog)&#125;</span> change(s)&quot;</span>)</span><br></pre></td></tr></table></figure>
+
+<p>commit message格式是<code>dream: 2026-04-15 15:23, 3 change(s)</code>，<code>/dream-log</code>命令就是列这些commit，<code>/dream-restore</code>就是<code>git revert</code>到某个commit。</p>
+<h1 id="总结"><a href="#总结" class="headerlink" title="总结"></a>总结</h1><p>这篇主要把整体结构和记忆系统弄清楚了。源码层面有几个设计值得学：</p>
 <ol>
-<li>Sentinel 检测到原主节点不可达（O_DOWN）</li>
-<li>清除 <code>SRI_SILENT_FAILOVER</code> 标志</li>
-<li>中止 silent-failover 流程</li>
-<li><strong>自动执行标准故障转移</strong>，选择最优从节点作为新主</li>
-<li>Proxy 收到真正的 <code>+switch-master</code> 事件，完成切换</li>
+<li><strong>三层记忆分离</strong>：短&#x2F;中&#x2F;长期记忆各司其职，互相解耦。短记忆用于实时推理，中记忆做LLM摘要缓冲，长记忆存稳定知识。</li>
+<li><strong>token-based触发</strong>：Consolidator不是按消息数量触发，而是估算真实token数，比简单的”超过N条就压缩”精确很多。</li>
+<li><strong>三个独立cursor</strong>：写游标、Dream读游标、per-session压缩位置各自独立，Consolidator和Dream可以完全解耦地运行，互不干扰。</li>
+<li><strong>容错设计</strong>：提前持久化用户消息 + <code>runtime_checkpoint</code>机制，防止进程crash丢数据；session文件第一行的metadata确保重启后可以完整恢复对话状态。</li>
 </ol>
-<p><strong>业务影响：</strong> 故障自动恢复，但会触发真正的故障切换</p>
-<h3 id="场景2：目标从节点故障"><a href="#场景2：目标从节点故障" class="headerlink" title="场景2：目标从节点故障"></a>场景2：目标从节点故障</h3><p>如果在 prepare 阶段目标从节点不可用：</p>
-<figure class="highlight plaintext"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br></pre></td><td class="code"><pre><span class="line">目标从故障 -&gt; 检测状态变化 -&gt; 清除 SRI_SILENT_FAILOVER</span><br><span class="line">           -&gt; 可重新发起 silent-failover</span><br></pre></td></tr></table></figure>
-
-<p><strong>处理流程：</strong></p>
-<ol>
-<li>Sentinel 检测到目标从节点不可用</li>
-<li>清除 <code>SRI_SILENT_FAILOVER</code> 标志</li>
-<li>发送 <code>+switch-master</code> 事件恢复原主路由</li>
-<li>系统可选择其他健康从节点重新发起 silent-failover</li>
-</ol>
-<p><strong>业务影响：</strong> 流量切回原主，可重新选择从节点操作</p>
-<h3 id="场景3：sentinel节点故障"><a href="#场景3：sentinel节点故障" class="headerlink" title="场景3：sentinel节点故障"></a>场景3：sentinel节点故障</h3><p>如果执行 prepare 的 sentinel 节点故障，其他 sentinel 通过 hello 消息实时感知状态变化：</p>
-<figure class="highlight plaintext"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br></pre></td><td class="code"><pre><span class="line">Sentinel 1 故障 -&gt; Sentinel 2/3 收到 11 字段 Hello</span><br><span class="line">              -&gt; 同步 silent-done-epoch、silent-ip、silent-port</span><br><span class="line">              -&gt; 继续执行切换流程</span><br></pre></td></tr></table></figure>
-
-<p><strong>处理流程：</strong></p>
-<ol>
-<li>执行 prepare 的 Sentinel 节点故障</li>
-<li>其他 Sentinel 通过 Hello 消息（11字段）感知状态</li>
-<li>包含 <code>silent-done-epoch</code>、<code>silent-ip</code>、<code>silent-port</code> 关键数据</li>
-<li><strong>其他 Sentinel 自动同步状态</strong>，继续执行切换流程</li>
-<li>等待用户执行 done 命令完成切换</li>
-</ol>
-<p><strong>关键设计：</strong> Hello 消息扩展字段确保状态在 Sentinel 集群间同步</p>
-<h3 id="场景4：Done-命令超时"><a href="#场景4：Done-命令超时" class="headerlink" title="场景4：Done 命令超时"></a>场景4：Done 命令超时</h3><p>如果用户长时间不执行 done 命令：</p>
-<figure class="highlight plaintext"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br></pre></td><td class="code"><pre><span class="line">prepare 状态 -&gt; 等待用户 done</span><br><span class="line">            -&gt; 原主持续提供服务</span><br><span class="line">            -&gt; 从节点持续同步数据</span><br></pre></td></tr></table></figure>
-
-<p><strong>建议：</strong></p>
-<ul>
-<li>prepare 阶段持续时间不宜过长</li>
-<li>建议在业务低峰期执行</li>
-<li>完成验证后尽快执行 done</li>
-</ul>
-<h3 id="场景5：多个-Sentinel-同时收到命令"><a href="#场景5：多个-Sentinel-同时收到命令" class="headerlink" title="场景5：多个 Sentinel 同时收到命令"></a>场景5：多个 Sentinel 同时收到命令</h3><figure class="highlight plaintext"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br></pre></td><td class="code"><pre><span class="line">用户 -&gt; Sentinel 1: prepare</span><br><span class="line">     -&gt; Sentinel 2: prepare (同一条)</span><br></pre></td></tr></table></figure>
-
-<p><strong>处理：</strong></p>
-<ul>
-<li>第一个 Sentinel 设置 <code>silent_initiator=1</code></li>
-<li>其他 Sentinel 通过 Hello 消息同步，设置为 <code>silent_initiator=0</code></li>
-<li>确保状态一致性</li>
-</ul>
-<h2 id="核心数据结构"><a href="#核心数据结构" class="headerlink" title="核心数据结构"></a>核心数据结构</h2><p>sentinelRedisInstance 结构体中新增的字段：</p>
-<figure class="highlight c++"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">struct</span> <span class="title class_">sentinelRedisInstance</span> &#123;</span><br><span class="line">    <span class="comment">// ... 其他字段 ...</span></span><br><span class="line">    <span class="keyword">struct</span> <span class="title class_">sentinelRedisInstance</span> *silent_failover_slave;  <span class="comment">// silent failover 目标从节点</span></span><br><span class="line">    <span class="type">unsigned</span> <span class="type">long</span> <span class="type">long</span> silent_done_epoch;                 <span class="comment">// silent failover done 阶段的 epoch</span></span><br><span class="line">    <span class="type">int</span> silent_initiator;                                 <span class="comment">// 标记是否是发起 silent-failover 的 sentinel</span></span><br><span class="line">    <span class="type">int</span> slave_can_auto_revert_to_configured_master;       <span class="comment">// 是否允许自动修正从节点到配置的主节点</span></span><br><span class="line">&#125;;</span><br></pre></td></tr></table></figure>
-
-<h3 id="字段说明-1"><a href="#字段说明-1" class="headerlink" title="字段说明"></a>字段说明</h3><table>
-<thead>
-<tr>
-<th>字段</th>
-<th>说明</th>
-</tr>
-</thead>
-<tbody><tr>
-<td>silent_failover_slave</td>
-<td>指向 silent-failover 目标从节点的指针</td>
-</tr>
-<tr>
-<td>silent_done_epoch</td>
-<td>done 阶段的 epoch，用于 hello 消息同步</td>
-</tr>
-<tr>
-<td>silent_initiator</td>
-<td>1 表示是发起 prepare 的 sentinel，0 表示是接收 hello 消息后被动进入的</td>
-</tr>
-<tr>
-<td>slave_can_auto_revert_to_configured_master</td>
-<td>控制是否允许 sentinel 自动修正从节点的复制关系</td>
-</tr>
-</tbody></table>
-<h2 id="监控指标"><a href="#监控指标" class="headerlink" title="监控指标"></a>监控指标</h2><p>Sentinel 新增了以下统计指标，用于监控 silent-failover 状态：</p>
-<h3 id="统计指标"><a href="#统计指标" class="headerlink" title="统计指标"></a>统计指标</h3><table>
-<thead>
-<tr>
-<th>指标名</th>
-<th>说明</th>
-</tr>
-</thead>
-<tbody><tr>
-<td><code>total_silent_failover_prepare</code></td>
-<td>进入 prepare 阶段的次数</td>
-</tr>
-<tr>
-<td><code>total_silent_failover_done</code></td>
-<td>完成 done 阶段的次数（成功切换）</td>
-</tr>
-<tr>
-<td><code>total_silent_failover_excp_abort</code></td>
-<td>因异常中止的次数</td>
-</tr>
-</tbody></table>
-<h3 id="查看方式"><a href="#查看方式" class="headerlink" title="查看方式"></a>查看方式</h3><p>通过 Sentinel 的 INFO 命令查看：</p>
-<figure class="highlight plaintext"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br></pre></td><td class="code"><pre><span class="line"># Sentinel</span><br><span class="line">sentinel_masters:3</span><br><span class="line">...</span><br><span class="line">total_silent_failover_prepare:1</span><br><span class="line">total_silent_failover_done:1</span><br><span class="line">total_silent_failover_excp_abort:0</span><br></pre></td></tr></table></figure>
-
-<h3 id="查看-Master-状态"><a href="#查看-Master-状态" class="headerlink" title="查看 Master 状态"></a>查看 Master 状态</h3><p>通过 <code>SENTINEL master master-name</code> 命令查看当前 master 的详细状态：</p>
-<figure class="highlight plaintext"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br></pre></td><td class="code"><pre><span class="line"># SENTINEL master mymaster</span><br><span class="line">...</span><br><span class="line">flags:master</span><br><span class="line">link_status:up</span><br><span class="line">slave_priority:100</span><br><span class="line">slave_repl_offset:12345</span><br><span class="line">sentinel_flags:silent_failover</span><br></pre></td></tr></table></figure>
-
-<p>注意：<code>sentinel_flags</code> 中包含 <code>silent_failover</code> 表示当前处于 silent-failover 流程中。</p>
-<h2 id="使用示例"><a href="#使用示例" class="headerlink" title="使用示例"></a>使用示例</h2><h3 id="完整两阶段命令示例"><a href="#完整两阶段命令示例" class="headerlink" title="完整两阶段命令示例"></a>完整两阶段命令示例</h3><h4 id="步骤1-查看当前主从状态"><a href="#步骤1-查看当前主从状态" class="headerlink" title="步骤1: 查看当前主从状态"></a>步骤1: 查看当前主从状态</h4><figure class="highlight bash"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br></pre></td><td class="code"><pre><span class="line"><span class="comment"># 查看 master 信息</span></span><br><span class="line">SENTINEL master mymaster</span><br><span class="line"></span><br><span class="line"><span class="comment"># 查看所有从节点</span></span><br><span class="line">SENTINEL slaves mymaster</span><br></pre></td></tr></table></figure>
-
-<p>输出示例：</p>
-<figure class="highlight plaintext"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br></pre></td><td class="code"><pre><span class="line"># 127.0.0.1:26379</span><br><span class="line">name: mymaster</span><br><span class="line">ip: 10.0.0.1</span><br><span class="line">port: 6379</span><br><span class="line">flags: master</span><br><span class="line">...</span><br><span class="line"></span><br><span class="line"># 从节点信息</span><br><span class="line">ip: 10.0.0.2</span><br><span class="line">port: 6379</span><br><span class="line">flags: slave</span><br><span class="line">master_link_status: up</span><br><span class="line">...</span><br></pre></td></tr></table></figure>
-
-<h4 id="步骤2-执行-Prepare-阶段"><a href="#步骤2-执行-Prepare-阶段" class="headerlink" title="步骤2: 执行 Prepare 阶段"></a>步骤2: 执行 Prepare 阶段</h4><figure class="highlight bash"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br></pre></td><td class="code"><pre><span class="line"><span class="comment"># 向任意一个 sentinel 发送 prepare 命令</span></span><br><span class="line">SENTINEL SILENT-FAILOVER mymaster 10.0.0.2:6379 prepare</span><br><span class="line"></span><br><span class="line"><span class="comment"># 返回 OK 表示 prepare 成功</span></span><br></pre></td></tr></table></figure>
-
-<p>此时：</p>
-<ul>
-<li>Sentinel 会发送 <code>+switch-master</code> 事件</li>
-<li>Proxy 会将流量切换到 10.0.0.2:6379</li>
-<li>但实际主从关系未变，10.0.0.2 仍从 10.0.0.1 同步数据</li>
-</ul>
-<h4 id="步骤3-验证-Prepare-状态"><a href="#步骤3-验证-Prepare-状态" class="headerlink" title="步骤3: 验证 Prepare 状态"></a>步骤3: 验证 Prepare 状态</h4><figure class="highlight bash"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br></pre></td><td class="code"><pre><span class="line"><span class="comment"># 查看 master 状态，确认 flags 包含 silent_failover</span></span><br><span class="line">SENTINEL master mymaster</span><br><span class="line"></span><br><span class="line"><span class="comment"># flags 中应包含 silent_failover</span></span><br></pre></td></tr></table></figure>
-
-<h4 id="步骤4-执行-Done-阶段"><a href="#步骤4-执行-Done-阶段" class="headerlink" title="步骤4: 执行 Done 阶段"></a>步骤4: 执行 Done 阶段</h4><figure class="highlight bash"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br></pre></td><td class="code"><pre><span class="line"><span class="comment"># 确认流量已切换到目标从节点后，执行 done</span></span><br><span class="line">SENTINEL SILENT-FAILOVER mymaster 10.0.0.2:6379 <span class="keyword">done</span></span><br><span class="line"></span><br><span class="line"><span class="comment"># 返回 OK 表示切换完成</span></span><br></pre></td></tr></table></figure>
-
-<h4 id="步骤5-验证最终状态"><a href="#步骤5-验证最终状态" class="headerlink" title="步骤5: 验证最终状态"></a>步骤5: 验证最终状态</h4><figure class="highlight bash"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br></pre></td><td class="code"><pre><span class="line"><span class="comment"># 查看新的主节点</span></span><br><span class="line">SENTINEL master mymaster</span><br><span class="line"></span><br><span class="line"><span class="comment"># 应该显示新的主节点 IP 为 10.0.0.2</span></span><br></pre></td></tr></table></figure>
-
-<h3 id="配置从节点可写（可选）"><a href="#配置从节点可写（可选）" class="headerlink" title="配置从节点可写（可选）"></a>配置从节点可写（可选）</h3><p>如果目标从节点默认配置为只读，需要先打开可写开关：</p>
-<figure class="highlight bash"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br></pre></td><td class="code"><pre><span class="line"><span class="comment"># 在目标从节点上执行</span></span><br><span class="line">CONFIG SET replica-read-only no</span><br><span class="line"></span><br><span class="line"><span class="comment"># 或者在配置文件中设置</span></span><br><span class="line">replica-read-only no</span><br></pre></td></tr></table></figure>
-
-<h3 id="关闭自动修正（可选）"><a href="#关闭自动修正（可选）" class="headerlink" title="关闭自动修正（可选）"></a>关闭自动修正（可选）</h3><p>在某些场景下，可能需要关闭 sentinel 自动修正从节点复制关系：</p>
-<figure class="highlight bash"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br></pre></td><td class="code"><pre><span class="line"><span class="comment"># 关闭自动修正</span></span><br><span class="line">SENTINEL SET mymaster slave-can-auto-revert-to-configured-master no</span><br><span class="line"></span><br><span class="line"><span class="comment"># 执行 silent-failover ...</span></span><br><span class="line"></span><br><span class="line"><span class="comment"># 重新打开自动修正</span></span><br><span class="line">SENTINEL SET mymaster slave-can-auto-revert-to-configured-master <span class="built_in">yes</span></span><br></pre></td></tr></table></figure>
-
-<h2 id="常见错误场景"><a href="#常见错误场景" class="headerlink" title="常见错误场景"></a>常见错误场景</h2><h3 id="错误1-从节点状态不满足"><a href="#错误1-从节点状态不满足" class="headerlink" title="错误1: 从节点状态不满足"></a>错误1: 从节点状态不满足</h3><figure class="highlight plaintext"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">ERR Slave status is not ready</span><br></pre></td></tr></table></figure>
-
-<p><strong>原因</strong>：目标从节点不满足升级条件（优先级为0、S_DOWN、O_DOWN等）</p>
-<p><strong>解决</strong>：确保目标从节点健康，检查主从复制状态</p>
-<h3 id="错误2-已在-silent-failover-状态"><a href="#错误2-已在-silent-failover-状态" class="headerlink" title="错误2: 已在 silent-failover 状态"></a>错误2: 已在 silent-failover 状态</h3><figure class="highlight plaintext"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">ERR Failover is already in progress</span><br></pre></td></tr></table></figure>
-
-<p><strong>原因</strong>：当前已有 silent-failover 在进行中</p>
-<p><strong>解决</strong>：等待当前流程完成，或检查是否有异常导致未正常结束</p>
-<h3 id="错误3-执行-RESET-命令被拒绝"><a href="#错误3-执行-RESET-命令被拒绝" class="headerlink" title="错误3: 执行 RESET 命令被拒绝"></a>错误3: 执行 RESET 命令被拒绝</h3><figure class="highlight plaintext"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">ERR This master is in silent failover state, can not reset</span><br></pre></td></tr></table></figure>
-
-<p><strong>原因</strong>：在 silent-failover 状态下拒绝执行 RESET</p>
-<p><strong>解决</strong>：先执行 <code>done</code> 完成切换，或等待异常中止后自动恢复</p>
-<h2 id="使用前提与限制"><a href="#使用前提与限制" class="headerlink" title="使用前提与限制"></a>使用前提与限制</h2><ol>
-<li><p><strong>并发限制</strong>：同一时刻只能有一个 master 处于 silent-failover 状态</p>
-</li>
-<li><p><strong>从节点要求</strong>：目标从节点必须满足：</p>
-<ul>
-<li>优先级不为 0</li>
-<li>不是 S_DOWN 或 O_DOWN</li>
-<li>主从连接正常</li>
-<li>复制链路健康</li>
-</ul>
-</li>
-<li><p><strong>Sentinel 集群要求</strong>：建议至少3个 Sentinel 节点，确保状态共识</p>
-</li>
-</ol>
-<h2 id="总结"><a href="#总结" class="headerlink" title="总结"></a>总结</h2><p>silent-failover 命令通过两阶段的设计，实现了在用户无感知的情况下迁移 Redis 主节点：</p>
-<ol>
-<li><strong>prepare 阶段</strong>：发送假的 +switch-master 事件，让 proxy 切流到从节点，但实际主从关系未变</li>
-<li><strong>done 阶段</strong>：执行真正的主从切换，将从节点提升为主节点</li>
-</ol>
-<p>这套方案的核心挑战在于多 sentinel 之间的状态共识，通过 hello 消息扩展字段实现状态的同步与传播。</p>
 
       
     </div>
@@ -575,7 +419,7 @@
 
 
   <nav class="pagination">
-    <a class="extend prev" rel="prev" title="上一页" aria-label="上一页" href="/page/5/"><i class="fa fa-angle-left"></i></a><a class="page-number" href="/">1</a><span class="space">&hellip;</span><a class="page-number" href="/page/5/">5</a><span class="page-number current">6</span><a class="page-number" href="/page/7/">7</a><span class="space">&hellip;</span><a class="page-number" href="/page/45/">45</a><a class="extend next" rel="next" title="下一页" aria-label="下一页" href="/page/7/"><i class="fa fa-angle-right"></i></a>
+    <a class="extend prev" rel="prev" title="上一页" aria-label="上一页" href="/page/5/"><i class="fa fa-angle-left"></i></a><a class="page-number" href="/">1</a><span class="space">&hellip;</span><a class="page-number" href="/page/5/">5</a><span class="page-number current">6</span><a class="page-number" href="/page/7/">7</a><span class="space">&hellip;</span><a class="page-number" href="/page/47/">47</a><a class="extend next" rel="next" title="下一页" aria-label="下一页" href="/page/7/"><i class="fa fa-angle-right"></i></a>
   </nav>
 
 </div>

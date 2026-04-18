@@ -123,7 +123,7 @@
   <nav class="site-state">
       <div class="site-state-item site-state-posts">
         <a href="/archives/">
-          <span class="site-state-item-count">45</span>
+          <span class="site-state-item-count">47</span>
           <span class="site-state-item-name">日志</span>
         </a>
       </div>
@@ -159,7 +159,7 @@
   
 
   <article itemscope itemtype="http://schema.org/Article" class="post-content" lang="">
-    <link itemprop="mainEntityOfPage" href="https://scut-corgis.github.io/2025-06-27-memcached%E8%BF%81%E7%A7%BBredis%E5%AE%9E%E8%B7%B5/">
+    <link itemprop="mainEntityOfPage" href="https://scut-corgis.github.io/2025-07-21-redis-failover%E5%91%BD%E4%BB%A4%E5%AE%9E%E7%8E%B0/">
 
     <span hidden itemprop="author" itemscope itemtype="http://schema.org/Person">
       <meta itemprop="image" content="/images/corgis.jpg">
@@ -177,7 +177,7 @@
     </span>
       <header class="post-header">
         <h2 class="post-title" itemprop="name headline">
-          <a href="/2025-06-27-memcached%E8%BF%81%E7%A7%BBredis%E5%AE%9E%E8%B7%B5/" class="post-title-link" itemprop="url">memcached迁移redis实践</a>
+          <a href="/2025-07-21-redis-failover%E5%91%BD%E4%BB%A4%E5%AE%9E%E7%8E%B0/" class="post-title-link" itemprop="url">redis-failover命令实现</a>
         </h2>
 
         <div class="post-meta-container">
@@ -188,7 +188,7 @@
       </span>
       <span class="post-meta-item-text">发表于</span>
 
-      <time title="创建时间：2025-06-27 23:02:05" itemprop="dateCreated datePublished" datetime="2025-06-27T23:02:05+08:00">2025-06-27</time>
+      <time title="创建时间：2025-07-21 21:05:03" itemprop="dateCreated datePublished" datetime="2025-07-21T21:05:03+08:00">2025-07-21</time>
     </span>
     <span class="post-meta-item">
       <span class="post-meta-item-icon">
@@ -210,382 +210,32 @@
     
     
     <div class="post-body" itemprop="articleBody">
-          <h1 id="背景"><a href="#背景" class="headerlink" title="背景"></a>背景</h1><p>memcached作为历史上重要的缓存组件，以高qps著称，主要是以多线程的特性能做到抗热key，而这点redis无法做到。</p>
-<p>除去抗热key以外，似乎memcached已经越来越丧失对redis的优势，即使在qps领域，经过个人测试，中小key的qps承载量已经被redis超越。</p>
-<p>在加上memcached过于简单，只有简单string操作，没有高可用（主从），强依赖sdk做一致性哈希，难以水平扩容，以及在企业级能力如逃生、单元化等方面都难以建设。</p>
-<p>并考虑到redis8的展现的多线程能力已经可以抗超大并发的qps，据测试，redis8抗热key qps的量已经是redis6开单工作线程的3倍了。</p>
-<p>因此将memcached迁移到redis提上了日程，在笔者公司，有几千个memcached集群，业务代码历史悠久繁重，因此业务需求是不改一行代码，自身无需重新做任何发布部署便能成迁移成功。</p>
-<h1 id="详细方案"><a href="#详细方案" class="headerlink" title="详细方案"></a>详细方案</h1><p>笔者最终了选择twemproxy + redis-server到组合替换掉memcached集群。在改造过程中有两种路线</p>
-<ul>
-<li>让redis支持memcached协议，使得可以直接用memcached协议访问redis，用可配配置来作为开关，学习阿里云某个开源项目的做法（该项目已经无人维护）。</li>
-<li>改造twemproxy，使其做memcached到redis的协议转换，并在redis上实现一套memcached命令</li>
-</ul>
-<p>最终选择了改造twemproxy，并使用redis-module的方式实现以上迁移需求。</p>
-<h2 id="基本原理"><a href="#基本原理" class="headerlink" title="基本原理"></a>基本原理</h2><p><img src="/2025-06-27-memcached%E8%BF%81%E7%A7%BBredis%E5%AE%9E%E8%B7%B5/%E5%9F%BA%E6%9C%AC%E5%8E%9F%E7%90%86.drawio.svg"></p>
-<p>每一个mc命令均对应一个相同前缀的redis命令</p>
-<figure class="highlight shell"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br></pre></td><td class="code"><pre><span class="line">get -&gt; kcc_mc.get</span><br><span class="line">add -&gt; kcc_mc.add</span><br><span class="line">replace -&gt; kcc_mc.replace</span><br><span class="line">...</span><br></pre></td></tr></table></figure>
-
-<p>除了多key命令，每一个mc命令解析后都会原样的按resp协议转发给redis</p>
-<figure class="highlight shell"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br></pre></td><td class="code"><pre><span class="line">set key 0 0 3\r\n</span><br><span class="line">val\r\n </span><br><span class="line"><span class="meta prompt_"></span></span><br><span class="line"><span class="meta prompt_">------&gt;</span><span class="language-bash"></span></span><br><span class="line"><span class="language-bash"></span></span><br><span class="line">*6\r\n</span><br><span class="line"><span class="meta prompt_">$</span><span class="language-bash">10\r\n</span></span><br><span class="line">kcc_mc.set\r\n</span><br><span class="line"><span class="meta prompt_">$</span><span class="language-bash">3\r\n</span></span><br><span class="line">key\r\n</span><br><span class="line"><span class="meta prompt_">$</span><span class="language-bash">1\r\n</span></span><br><span class="line">0\r\n</span><br><span class="line"><span class="meta prompt_">$</span><span class="language-bash">1\r\n</span></span><br><span class="line">0\r\n</span><br><span class="line"><span class="meta prompt_">$</span><span class="language-bash">1\r\n</span></span><br><span class="line">3\r\n</span><br><span class="line"><span class="meta prompt_">$</span><span class="language-bash">3\r\n</span></span><br><span class="line">val\r\n</span><br></pre></td></tr></table></figure>
-
-<p>而redis-module处理的返回，只会有两种情况，即redis自身错误-ERR或字符串回复。</p>
-<figure class="highlight shell"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br></pre></td><td class="code"><pre><span class="line">-ERR xxxx\r\n</span><br><span class="line">或者</span><br><span class="line"><span class="meta prompt_">$</span><span class="language-bash">5\r\n</span></span><br><span class="line">xxxxx\r\n</span><br></pre></td></tr></table></figure>
-
-<p>redis module的实现为，对于每一个mc的命令，其生成回复为resp的字符串回复，中间嵌套mc回复，如mc的get命令回复如下</p>
-<figure class="highlight shell"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br></pre></td><td class="code"><pre><span class="line"><span class="meta prompt_">$</span><span class="language-bash">25\r\n</span></span><br><span class="line">VALUE 0 0 5\r\n</span><br><span class="line">hello\r\n</span><br><span class="line">END\r\n</span><br><span class="line">\r\n</span><br></pre></td></tr></table></figure>
-
-<p>对于应该返回mc的错误场景，同样用字符串回复嵌套</p>
-<figure class="highlight shell"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br></pre></td><td class="code"><pre><span class="line"><span class="meta prompt_">$</span><span class="language-bash">22\r\n</span></span><br><span class="line">SERVER_ERROR unknown\r\n</span><br><span class="line">\r\n</span><br></pre></td></tr></table></figure>
-
-<h2 id="proxy实现"><a href="#proxy实现" class="headerlink" title="proxy实现"></a>proxy实现</h2><p>以下说明皆基于最新twemproxy开源版本0.5.0release</p>
-<h3 id="基本处理"><a href="#基本处理" class="headerlink" title="基本处理"></a>基本处理</h3><p>在配置文件中引入新的配置项，该配置为bool值，一旦该值置为1，原先proxy的决定工况(redis or mc)的变量将失效。</p>
-<p><img src="/2025-06-27-memcached%E8%BF%81%E7%A7%BBredis%E5%AE%9E%E8%B7%B5/%E5%9F%BA%E6%9C%AC%E5%A4%84%E7%90%86.png"></p>
-<p>对于每一个发送过来的mc命令，在命令完全解析完毕后，确定要往redis一侧发送前，做协议转换。具体操作为</p>
-<ol>
-<li>确定参数个数n，生成*n\r\n</li>
-<li>根据原mc的命令字符串，生成增加前缀”kcc_mc.”的字符串，并以resp协议的方式追加到缓冲区中</li>
-<li>每一个mc的参数逐个追加到缓冲区中</li>
-<li>对于写命令的value字段，考虑其长度可能会超过一个缓冲区，直接将原缓冲区mbuf整体移动赋予目标。</li>
+          <h1 id="前言"><a href="#前言" class="headerlink" title="前言"></a>前言</h1><p>之前在哨兵笔记中提到过一种failover的优化手法，即利用redis的6.0.20引入的<code>failover</code>命令来做failover，更快更安全，不丢数据。</p>
+<p>这里特此记录一下他怎么实现的。</p>
+<h1 id="failover命令"><a href="#failover命令" class="headerlink" title="failover命令"></a>failover命令</h1><p>注意非cluster和哨兵，就是redis6.0.20后引入的failover命令，可指定slave的ip:port和超时时间，是否force等。</p>
+<p>实现的具体过程如下</p>
+<h2 id="原主节点"><a href="#原主节点" class="headerlink" title="原主节点"></a>原主节点</h2><ol>
+<li>主节点收到该命令后，切换状态机<code>FAILOVER_WAIT_FOR_SYNC</code>，并暂停写操作（即接收操作但不处理）</li>
+<li>等指定的从节点的<code>replica-&gt;repl_ack_off == server.master_repl_offset</code>跟上后，切换状态<code>FAILOVER_IN_PROGRESS</code></li>
+<li>开始直接对该slave发起sync连接，开始部分重同步，即标准的一系列步骤，直到发送<code>PSYNC</code>时判断当前状态机为<code>FAILOVER_IN_PROGRESS</code>，增加命令参数<code>FAILOVER</code></li>
 </ol>
-<p>在收到redis的回复命令后，在回包给客户端之前，做协议转换，具体操作为</p>
-<ol>
-<li>对于-ERR xxx的redis错误，直接去除前4个字节”-ERR”, 并在缓冲区前追加”SERVER_ERROR”,以符合mc的错误格式</li>
-<li>对于约定好的字符串回复（$xx\r\n），去除第一行，以及最后的”\r\n”字符。</li>
-</ol>
-<h3 id="命令分段"><a href="#命令分段" class="headerlink" title="命令分段"></a>命令分段</h3><p>mc的多key命令只有两种，即get和gets。</p>
-<p>需要在协议转换后，做预处理和后处理。</p>
-<p>整体流程如下</p>
-<p><img src="/2025-06-27-memcached%E8%BF%81%E7%A7%BBredis%E5%AE%9E%E8%B7%B5/%E5%91%BD%E4%BB%A4%E5%88%86%E6%AE%B5.drawio.svg"></p>
-<p>错误处理</p>
-<p>我们将错误归为两类</p>
-<ul>
-<li>redis原生错误，即”-ERR xxx”</li>
-<li>mc格式的错误，即用resp协议的字符串套用的mc错误，如”$18\r\nSERVER_ERROR xxx\r\n\r\n”</li>
-</ul>
-<p>对于非分段命令，只要是redis一侧成功发回来的回复，我们均在协议处理后直接返回给客户端</p>
-<p>对于分段命令，只要出现了其中一个sub_msg错误，我们将返回给客户端</p>
-<p><img src="/2025-06-27-memcached%E8%BF%81%E7%A7%BBredis%E5%AE%9E%E8%B7%B5/%E9%94%99%E8%AF%AF%E4%BF%A1%E6%81%AF.png"></p>
-<h3 id="mc-redis双协议支持"><a href="#mc-redis双协议支持" class="headerlink" title="mc+redis双协议支持"></a>mc+redis双协议支持</h3><p>实际上，笔者最终在twemproxy上实现了同时支持redis协议和mc协议的方案。主要思路是通过请求的第一个字节是否为<code>*</code>或<code>+</code>来更换处理协议函数集。</p>
-<p>对于不转发到redis-server的命令可以无条件直接处理，而对于需要转发到redis-server的命令集可以设置一个拦截函数，规定哪些命令可以通过proxy转发，如可以允许scan命令转发用于集群扫表。</p>
-<p>总体目标:</p>
-<ol>
-<li>proxy实现支持redis和memcached的协议包混合，即一个客户端连接，既可以发送redis命令，又可以发送mc命令。</li>
-<li>需要对redis透传命令实现拦截器，即从稳定性考虑，必须能够支持选择性的透传redis命令，如当前只需要透传kcc_scan命令即可。</li>
-</ol>
-<p>难点:</p>
-<ol>
-<li>对于一个新的命令请求，我们无法判断使用哪种协议解析函数对其解析</li>
-<li>对于s_conn(proxy与redis-server的连接)，两种命令请求都在同一条tcp上，收到redis-server的回包时难以判断该回包是哪种类型。对于mc的命令需要做redis2mc的协议转换，而redis的回复可直接透传或多key命令聚合后再透传。</li>
-</ol>
-<p>实现方案:</p>
-<ol>
-<li>对于mc2redis的proxy集群，收到一个命令包时先默认使用mc的解析函数解析，在状态机初始处判断该命令包的第一个字符是否为”*”或”+”，如果是，完全替换该msg的所有处理函数，并重入命令解析函数。</li>
-<li>彻底区分redis与mc命令集，并提供拦截函数用于判断可透传的redis命令集，在请求向redis-server发送前进行判断，若不能进行转发，返回客户端错误。<br>对于s_conn的回包，利用tcp的有序性，取出挂在等待其回复队列的第一条msg作为对端请求msg，通过对端msg的”mc2redis”标识判断其是否需要做redis到memcached的协议转换。</li>
-</ol>
-<p><img src="/2025-06-27-memcached%E8%BF%81%E7%A7%BBredis%E5%AE%9E%E8%B7%B5/%E5%8F%8C%E5%8D%8F%E8%AE%AE%E6%94%AF%E6%8C%81.svg"></p>
-<h2 id="redis-module实现"><a href="#redis-module实现" class="headerlink" title="redis-module实现"></a>redis-module实现</h2><p>对应每一个mc命令，我们需要调研清楚其语义，如参数范围和对应的返回值表现。</p>
-<p>这里不叙述任何的语义细节。主要阐述一下跟架构设计相关的实现思想。</p>
-<ol>
-<li>维护cas_id的全局递增</li>
-</ol>
-<p>对于每一个module的object，很显然可以跟随RdbSave将其flag和cas_id存放到到rdb中，但是全局cas_id如何维护递增？比如主从复制，从节点是需要拿到主节点的全局cas_id大小的。</p>
-<p>实际上可以放到<code>aux_save()</code>里面，将这个全局id存进去，在<code>aux_load()</code>时再取出来。</p>
-<ol start="2">
-<li>AOF重写怎么处理？</li>
-</ol>
-<p>如果我们是用原命令来做aof重写，势必会丢失该对象的cas_id。实际上，我们可以实现一个新命令如<code>mc.restore</code>。用这个新命令把flag、对象的cas_id，和全局cas_id一起存进去。</p>
-<hr>
-<h2 id="redis-module-深入实现细节"><a href="#redis-module-深入实现细节" class="headerlink" title="redis-module 深入实现细节"></a>redis-module 深入实现细节</h2><blockquote>
-<p>上文对 module 的核心设计思路做了高层说明，本节从源码视角展开，逐一分析每个关键实现点。</p>
-</blockquote>
-<h3 id="数据类型设计：McTypeObject"><a href="#数据类型设计：McTypeObject" class="headerlink" title="数据类型设计：McTypeObject"></a>数据类型设计：McTypeObject</h3><p>Module 注册了一个名为 <code>&quot;memcached&quot;</code> 的自定义数据类型（<code>RedisModuleType</code>），每一个 mc key 对应一个 <code>McTypeObject</code> 实例：</p>
-<figure class="highlight c"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">typedef</span> <span class="class"><span class="keyword">struct</span> __<span class="title">attribute__</span> ((__<span class="title">packed__</span>)) &#123;</span></span><br><span class="line">    <span class="type">uint64_t</span> cas;    <span class="comment">// CAS 令牌，用于乐观锁（Compare-And-Swap）</span></span><br><span class="line">    <span class="type">uint32_t</span> flags;  <span class="comment">// memcached 的 flags 字段，客户端自定义语义（如序列化方式）</span></span><br><span class="line">    sds data;        <span class="comment">// value 数据，使用 Redis 的 SDS 字符串</span></span><br><span class="line">&#125; McTypeObject;</span><br></pre></td></tr></table></figure>
-
-<p>使用 <code>__attribute__ ((__packed__))</code> 是为了消除结构体对齐产生的内存填充，减少内存占用。</p>
-<p><strong>为什么不用原生 Redis String 类型？</strong> 因为原生 string 命令（<code>GET</code>&#x2F;<code>SET</code>）若能直接访问 mc 迁移过来的 key，会存在安全风险。引入自定义类型后，原生字符串命令访问该 key 将返回 <code>WRONGTYPE</code> 类型错误，从而在协议层隔离了 mc 数据与 redis 数据的访问路径。</p>
-<h3 id="全局-CAS-ID-管理"><a href="#全局-CAS-ID-管理" class="headerlink" title="全局 CAS ID 管理"></a>全局 CAS ID 管理</h3><figure class="highlight c"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br></pre></td><td class="code"><pre><span class="line"><span class="type">static</span> <span class="type">uint64_t</span> cas_id = <span class="number">0</span>;</span><br><span class="line"></span><br><span class="line"><span class="type">uint64_t</span> <span class="title function_">get_cas_id</span><span class="params">()</span> &#123;</span><br><span class="line">    <span class="type">uint64_t</span> next_id = ++cas_id;</span><br><span class="line">    <span class="keyword">return</span> next_id;</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
-
-<p><code>cas_id</code> 是一个进程级别的全局单调递增计数器，每次写操作（<code>set/add/replace/append/prepend/cas/incr/decr</code>）都会调用 <code>get_cas_id()</code> 分配一个新的 CAS 值并写入 <code>McTypeObject</code>。</p>
-<p><strong>CAS 的作用</strong>：客户端通过 <code>gets</code> 命令获取 key 时会拿到当前的 <code>cas_id</code>，之后执行 <code>cas</code> 命令时携带这个 ID。Module 会比对当前对象的 cas 与客户端传入的 cas，若不一致说明此期间有其他客户端修改了该 key，返回 <code>EXISTS</code>，实现乐观锁语义。</p>
-<p><strong>跨重启的 CAS 连续性</strong>：通过 RDB 的 <code>AuxSave/AuxLoad</code> 机制持久化和恢复全局 <code>cas_id</code>（见下文持久化章节），确保重启后分配的 CAS ID 不会与历史值重叠。</p>
-<h3 id="过期时间转换：realtime"><a href="#过期时间转换：realtime" class="headerlink" title="过期时间转换：realtime()"></a>过期时间转换：realtime()</h3><p>Memcached 的 exptime 语义与 Redis 存在差异，module 通过 <code>realtime()</code> 函数统一转换为 Redis 的绝对毫秒时间戳：</p>
-<figure class="highlight c"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br></pre></td><td class="code"><pre><span class="line"><span class="meta">#<span class="keyword">define</span> REALTIME_MAXDELTA  60*60*24*30  <span class="comment">// 30天，单位秒</span></span></span><br><span class="line"></span><br><span class="line"><span class="type">static</span> <span class="type">mstime_t</span> <span class="title function_">realtime</span><span class="params">(<span class="type">const</span> <span class="type">int32_t</span> exptime)</span> &#123;</span><br><span class="line">    <span class="keyword">if</span> (exptime == <span class="number">0</span>)  <span class="keyword">return</span> REDISMODULE_NO_EXPIRE; <span class="comment">// 0 表示永不过期</span></span><br><span class="line">    <span class="keyword">if</span> (exptime &lt; <span class="number">0</span>)   <span class="keyword">return</span> <span class="number">0</span>;                     <span class="comment">// 负数表示立即过期（直接删除）</span></span><br><span class="line"></span><br><span class="line">    <span class="type">mstime_t</span> now = RedisModule_Milliseconds();</span><br><span class="line"></span><br><span class="line">    <span class="keyword">if</span> (exptime &gt; REALTIME_MAXDELTA) &#123;</span><br><span class="line">        <span class="comment">// 超过 30 天的值被解释为绝对 Unix 时间戳（秒）</span></span><br><span class="line">        <span class="keyword">if</span> (exptime &lt;= now / <span class="number">1000</span>) <span class="keyword">return</span> <span class="number">0</span>;         <span class="comment">// 已过期</span></span><br><span class="line">        <span class="keyword">return</span> (<span class="type">mstime_t</span>)exptime * <span class="number">1000</span>;</span><br><span class="line">    &#125; <span class="keyword">else</span> &#123;</span><br><span class="line">        <span class="comment">// 30 天以内的值被解释为相对秒数，转换为绝对毫秒时间</span></span><br><span class="line">        <span class="keyword">return</span> now + (<span class="type">mstime_t</span>)exptime * <span class="number">1000</span>;</span><br><span class="line">    &#125;</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
-
-<p>这与原生 memcached 的行为完全一致：<strong>exptime ≤ 30天时为相对时间，&gt; 30天时为绝对 Unix 时间戳</strong>。</p>
-<h3 id="noreply-机制"><a href="#noreply-机制" class="headerlink" title="noreply 机制"></a>noreply 机制</h3><p>所有写命令（<code>set/add/replace/append/prepend/cas/delete/touch/incr/decr</code>）均支持 <code>noreply</code> 参数。</p>
-<figure class="highlight c"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br></pre></td><td class="code"><pre><span class="line"><span class="type">int</span> reply = <span class="number">1</span>;</span><br><span class="line"><span class="keyword">if</span> (RedisModule_StringCompare(argv[argc - <span class="number">2</span>], noreply) == <span class="number">0</span>) &#123;</span><br><span class="line">    reply = <span class="number">0</span>;</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
-
-<p><code>noreply</code> 是模块初始化时预先缓存好的全局 <code>RedisModuleString</code>，避免每次命令调用都重新构建字符串。所有回包函数在 <code>reply == 0</code> 时直接返回 <code>REDISMODULE_OK</code> 不写入任何响应，对应 mc 协议的静默写入语义。</p>
-<h3 id="命令实现全览"><a href="#命令实现全览" class="headerlink" title="命令实现全览"></a>命令实现全览</h3><h4 id="写命令（存储类）"><a href="#写命令（存储类）" class="headerlink" title="写命令（存储类）"></a>写命令（存储类）</h4><table>
-<thead>
-<tr>
-<th>MC 命令</th>
-<th>Redis Module 命令</th>
-<th>语义</th>
-</tr>
-</thead>
-<tbody><tr>
-<td><code>set</code></td>
-<td><code>kcc_mc.set</code></td>
-<td>无条件写入，key 不存在则新建，存在则覆盖</td>
-</tr>
-<tr>
-<td><code>add</code></td>
-<td><code>kcc_mc.add</code></td>
-<td>仅在 key <strong>不存在</strong>时写入，存在返回 <code>NOT_STORED</code></td>
-</tr>
-<tr>
-<td><code>replace</code></td>
-<td><code>kcc_mc.replace</code></td>
-<td>仅在 key <strong>已存在</strong>时写入，不存在返回 <code>NOT_STORED</code></td>
-</tr>
-<tr>
-<td><code>append</code></td>
-<td><code>kcc_mc.append</code></td>
-<td>在已有 value <strong>末尾追加</strong>，key 不存在返回 <code>NOT_STORED</code></td>
-</tr>
-<tr>
-<td><code>prepend</code></td>
-<td><code>kcc_mc.prepend</code></td>
-<td>在已有 value <strong>头部追加</strong>，key 不存在返回 <code>NOT_STORED</code></td>
-</tr>
-<tr>
-<td><code>cas</code></td>
-<td><code>kcc_mc.cas</code></td>
-<td>CAS 原子更新，CAS 不匹配返回 <code>EXISTS</code></td>
-</tr>
-</tbody></table>
-<p>所有写命令注册时均带有 <code>&quot;write deny-oom&quot;</code> flag，在内存不足（OOM）时 Redis 会拒绝执行这些命令。</p>
-<p><strong>SET 命令流程：</strong></p>
-<p><img src="/2025-06-27-memcached%E8%BF%81%E7%A7%BBredis%E5%AE%9E%E8%B7%B5/mc_set_flow.svg" alt="SET命令流程"></p>
-<p><strong>ADD 命令的特殊逻辑：</strong></p>
-<p><code>add</code> 命令在 key 已存在（且为 McType）时，除了返回 <code>NOT_STORED</code>，还会主动调用 <code>RedisModule_SetLRU(key, 0)</code> 刷新该 key 的 LRU 时钟。这是为了让 <code>add</code> 操作也能体现出”key 被访问过”的语义，与原生 mc 的行为保持一致。</p>
-<p><strong>APPEND&#x2F;PREPEND 的过期时间继承：</strong></p>
-<figure class="highlight c"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br></pre></td><td class="code"><pre><span class="line"><span class="type">mstime_t</span> old_expire = RedisModule_GetAbsExpire(key);</span><br><span class="line">RedisModule_ModuleTypeSetValue(key, McType, new_mco);</span><br><span class="line">RedisModule_SetAbsExpire(key, old_expire);</span><br></pre></td></tr></table></figure>
-
-<p><code>append</code>&#x2F;<code>prepend</code> 在更新 value 时，会先取出旧 key 的过期时间，在 <code>ModuleTypeSetValue</code>（此操作会清除过期时间）之后再重新设置回去，确保过期时间不变。这与原生 memcached 的行为一致——追加&#x2F;前置操作不改变 key 的过期时间。</p>
-<p><strong>CAS 命令的乐观锁：</strong></p>
-<p><img src="/2025-06-27-memcached%E8%BF%81%E7%A7%BBredis%E5%AE%9E%E8%B7%B5/mc_cas_flow.svg" alt="CAS命令乐观锁流程"></p>
-<h4 id="读命令"><a href="#读命令" class="headerlink" title="读命令"></a>读命令</h4><p><strong>GET 命令（支持多 key）：</strong></p>
-<p><code>kcc_mc.get</code> 和 <code>kcc_mc.gets</code> 支持在一条命令中传入多个 key，在 module 侧实现 key 批量聚合查询的逻辑：</p>
-<figure class="highlight c"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br></pre></td><td class="code"><pre><span class="line">RedisModuleString *res = RedisModule_CreateString(ctx, <span class="string">&quot;&quot;</span>, <span class="number">0</span>);</span><br><span class="line"><span class="type">int</span> idx = KEY_IDX;</span><br><span class="line"><span class="keyword">for</span> ( ; idx &lt; argc; idx++) &#123;</span><br><span class="line">    <span class="comment">// 依次查找每个 key</span></span><br><span class="line">    RedisModuleKey *key = RedisModule_OpenKey(ctx, argv[idx], REDISMODULE_READ | REDISMODULE_OPEN_KEY_NOTOUCH);</span><br><span class="line">    <span class="keyword">if</span> (RedisModule_KeyType(key) == REDISMODULE_KEYTYPE_EMPTY) &#123;</span><br><span class="line">        RedisModule_CloseKey(key);</span><br><span class="line">        <span class="keyword">continue</span>;  <span class="comment">// key 不存在时直接跳过，不报错</span></span><br><span class="line">    &#125;</span><br><span class="line">    <span class="comment">// 拼接 VALUE &lt;key&gt; &lt;flags&gt; &lt;bytes&gt;\r\n&lt;data&gt;\r\n</span></span><br><span class="line">    ...</span><br><span class="line">    RedisModule_SetLRU(key, <span class="number">0</span>);  <span class="comment">// 刷新 LRU 时钟</span></span><br><span class="line">&#125;</span><br><span class="line">RedisModule_StringAppendBuffer(ctx, res, <span class="string">&quot;END\r\n&quot;</span>, <span class="number">5</span>);</span><br></pre></td></tr></table></figure>
-
-<p>返回格式完全符合 mc 协议：</p>
-<figure class="highlight plaintext"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br></pre></td><td class="code"><pre><span class="line">VALUE key1 &lt;flags&gt; &lt;bytes&gt;\r\n</span><br><span class="line">&lt;data&gt;\r\n</span><br><span class="line">VALUE key2 &lt;flags&gt; &lt;bytes&gt;\r\n</span><br><span class="line">&lt;data&gt;\r\n</span><br><span class="line">END\r\n</span><br></pre></td></tr></table></figure>
-
-<p><code>gets</code> 与 <code>get</code> 的区别仅在于多输出一个 <code>&lt;cas_id&gt;</code> 字段：</p>
-<figure class="highlight plaintext"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">VALUE key1 &lt;flags&gt; &lt;bytes&gt; &lt;cas_id&gt;\r\n</span><br></pre></td></tr></table></figure>
-
-<p>注意，<code>get</code> 和 <code>gets</code> 命令使用 <code>REDISMODULE_OPEN_KEY_NOTOUCH</code> 标志打开 key，但随后会手动调用 <code>RedisModule_SetLRU(key, 0)</code> 来更新 LRU。这是因为直接用 <code>NOTOUCH</code> 避免了 Redis 内部的自动 LRU 更新，但 mc 语义需要 get 操作更新访问时间，因此需要手动补充。</p>
-<h4 id="INCR-DECR-命令"><a href="#INCR-DECR-命令" class="headerlink" title="INCR&#x2F;DECR 命令"></a>INCR&#x2F;DECR 命令</h4><figure class="highlight c"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br></pre></td><td class="code"><pre><span class="line">McTypeObject *mco = (McTypeObject *)RedisModule_ModuleTypeGetValue(key);</span><br><span class="line"><span class="type">unsigned</span> <span class="type">long</span> <span class="type">long</span> value;</span><br><span class="line"><span class="keyword">if</span> (string2ull(mco-&gt;data, &amp;value) == <span class="number">0</span>) &#123;</span><br><span class="line">    <span class="keyword">return</span> ReplyMemcacheSimpleString(ctx, KCC_MC_MODULE_CANNOT_INCR_OR_DECR, reply);</span><br><span class="line">&#125;</span><br><span class="line">value += delta;  <span class="comment">// INCR：加法</span></span><br><span class="line"><span class="comment">// 或者 DECR：</span></span><br><span class="line"><span class="keyword">if</span> (delta &gt; value) &#123;</span><br><span class="line">    value = <span class="number">0</span>;   <span class="comment">// 下溢时截断为 0，不返回负数</span></span><br><span class="line">&#125; <span class="keyword">else</span> &#123;</span><br><span class="line">    value -= delta;</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
-
-<p>INCR&#x2F;DECR 的关键特点：</p>
-<ol>
-<li>要求 value 必须是合法的无符号整型字符串，否则返回 <code>CLIENT_ERROR cannot increment or decrement non-numeric value</code></li>
-<li>DECR 下溢时截断为 0（不产生负数），与原生 mc 一致</li>
-<li>操作完成后返回的是新值的字符串（带 <code>\r\n</code>），不是 <code>STORED</code></li>
-<li>同样会继承旧 key 的过期时间（<code>GetAbsExpire</code> + <code>SetAbsExpire</code>），操作不改变 TTL</li>
-</ol>
-<h4 id="DELETE-命令的格式校验"><a href="#DELETE-命令的格式校验" class="headerlink" title="DELETE 命令的格式校验"></a>DELETE 命令的格式校验</h4><p>mc 的 <code>delete</code> 语法为：<code>delete &lt;key&gt; [&lt;time&gt;] [noreply]</code>，其中 <code>&lt;time&gt;</code> 字段在新版本 mc 中已废弃（必须为 0），但仍需兼容解析：</p>
-<figure class="highlight c"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">if</span> (argc &gt; <span class="number">2</span>) &#123;</span><br><span class="line">    <span class="type">int</span> hold_is_zero = RedisModule_StringCompare(argv[KEY_IDX + <span class="number">1</span>], num_zero) == <span class="number">0</span>;</span><br><span class="line">    <span class="keyword">if</span> (RedisModule_StringCompare(argv[argc - <span class="number">1</span>], noreply) == <span class="number">0</span>) &#123;</span><br><span class="line">        reply = <span class="number">0</span>;</span><br><span class="line">    &#125;</span><br><span class="line">    <span class="comment">// 合法的情况：</span></span><br><span class="line">    <span class="comment">// argc==3: delete key 0  或  delete key noreply</span></span><br><span class="line">    <span class="comment">// argc==4: delete key 0 noreply</span></span><br><span class="line">    <span class="type">int</span> valid = (argc == <span class="number">3</span> &amp;&amp; (hold_is_zero || !reply))</span><br><span class="line">             || (argc == <span class="number">4</span> &amp;&amp; hold_is_zero &amp;&amp; !reply);</span><br><span class="line">    <span class="keyword">if</span> (!valid) &#123;</span><br><span class="line">        <span class="keyword">return</span> ReplyMemcacheSimpleString(ctx, KCC_MC_MODULE_BAD_TOUCH_COMMAND, reply);</span><br><span class="line">    &#125;</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
-
-<h4 id="TOUCH-命令的特殊处理"><a href="#TOUCH-命令的特殊处理" class="headerlink" title="TOUCH 命令的特殊处理"></a>TOUCH 命令的特殊处理</h4><p><code>touch</code> 命令用于刷新 key 的过期时间而不读取 value：</p>
-<figure class="highlight c"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">if</span> (expire_ms == <span class="number">0</span>) &#123;</span><br><span class="line">    RedisModule_DeleteKey(key);   <span class="comment">// 过期时间为 0 意味着立即删除</span></span><br><span class="line">&#125; <span class="keyword">else</span> &#123;</span><br><span class="line">    RedisModule_SetAbsExpire(key, expire_ms);</span><br><span class="line">    RedisModule_SetLRU(key, <span class="number">0</span>);   <span class="comment">// 刷新 LRU 时钟</span></span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
-
-<p>当传入的 exptime 经 <code>realtime()</code> 转换后为 0（表示已过期），<code>touch</code> 会直接删除该 key 而非报错，这与原生 mc 的 touch 行为一致。</p>
-<h3 id="持久化机制"><a href="#持久化机制" class="headerlink" title="持久化机制"></a>持久化机制</h3><p>Module 实现了完整的 RDB + AOF 持久化钩子，注册如下：</p>
-<figure class="highlight c"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br></pre></td><td class="code"><pre><span class="line">RedisModuleTypeMethods tm = &#123;</span><br><span class="line">    .rdb_load        = McTypeRdbLoad,</span><br><span class="line">    .rdb_save        = McTypeRdbSave,</span><br><span class="line">    .aof_rewrite     = McTypeAofRewrite,</span><br><span class="line">    .<span class="built_in">free</span>            = McTypeFree,</span><br><span class="line">    .aux_load        = McTypeAuxLoad,</span><br><span class="line">    .aux_save        = McTypeAuxSave,</span><br><span class="line">    .aux_save_triggers = REDISMODULE_AUX_BEFORE_RDB,</span><br><span class="line">    .mem_usage       = McTypeMemUsage,</span><br><span class="line">&#125;;</span><br></pre></td></tr></table></figure>
-
-<h4 id="RDB-持久化"><a href="#RDB-持久化" class="headerlink" title="RDB 持久化"></a>RDB 持久化</h4><p>每个 McTypeObject 的序列化格式为（按顺序）：</p>
-<table>
-<thead>
-<tr>
-<th>字段</th>
-<th>类型</th>
-<th>说明</th>
-</tr>
-</thead>
-<tbody><tr>
-<td><code>cas</code></td>
-<td>uint64_t</td>
-<td>该 key 的 CAS 令牌</td>
-</tr>
-<tr>
-<td><code>flags</code></td>
-<td>uint32_t</td>
-<td>memcached flags 字段</td>
-</tr>
-<tr>
-<td><code>data</code></td>
-<td>string buffer</td>
-<td>value 数据</td>
-</tr>
-</tbody></table>
-<p><code>McTypeRdbSave</code> 将以上三个字段依次写入 RDB，<code>McTypeRdbLoad</code> 按相同顺序读回，重建 <code>McTypeObject</code>。</p>
-<h4 id="全局-CAS-ID-的-AUX-持久化"><a href="#全局-CAS-ID-的-AUX-持久化" class="headerlink" title="全局 CAS ID 的 AUX 持久化"></a>全局 CAS ID 的 AUX 持久化</h4><p>这是整个持久化方案中最关键、也最容易忽略的部分：</p>
-<figure class="highlight c"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br></pre></td><td class="code"><pre><span class="line"><span class="type">void</span> <span class="title function_">McTypeAuxSave</span><span class="params">(RedisModuleIO *rdb, <span class="type">int</span> when)</span> &#123;</span><br><span class="line">    assert(when == REDISMODULE_AUX_BEFORE_RDB);</span><br><span class="line">    RedisModule_SaveUnsigned(rdb, cas_id);   <span class="comment">// 在 RDB 正文之前写入全局 cas_id</span></span><br><span class="line">&#125;</span><br><span class="line"></span><br><span class="line"><span class="type">int</span> <span class="title function_">McTypeAuxLoad</span><span class="params">(RedisModuleIO *rdb, <span class="type">int</span> encver, <span class="type">int</span> when)</span> &#123;</span><br><span class="line">    assert(when == REDISMODULE_AUX_BEFORE_RDB);</span><br><span class="line">    <span class="type">uint64_t</span> old_cas_id = RedisModule_LoadUnsigned(rdb);</span><br><span class="line">    cas_id = old_cas_id;                     <span class="comment">// 恢复全局 cas_id</span></span><br><span class="line">    ...</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
-
-<p><code>aux_save_triggers</code> 是一个位掩码，<strong>直接控制 <code>aux_save</code>&#x2F;<code>aux_load</code> 回调是否被触发</strong>。这不是”选择时序”那么简单——如果不设置这个字段，<code>aux_save</code> 根本不会被调用。</p>
-<p>Redis 在 <code>rdbSaveModulesAux()</code> 中有如下守卫逻辑（<code>src/module.c</code>）：</p>
-<figure class="highlight c"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br></pre></td><td class="code"><pre><span class="line"><span class="comment">// module.c: rdbSaveModulesAux()</span></span><br><span class="line"><span class="keyword">if</span> (!mt-&gt;aux_save || !(mt-&gt;aux_save_triggers &amp; when))</span><br><span class="line">    <span class="keyword">continue</span>;   <span class="comment">// 跳过该 module，aux_save 不会执行</span></span><br></pre></td></tr></table></figure>
-
-<p>RDB 写入流程（<code>src/rdb.c</code>）中，<code>rdbSaveModulesAux</code> 被调用两次：</p>
-<figure class="highlight c"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br></pre></td><td class="code"><pre><span class="line"><span class="comment">// rdb.c: rdbSaveRio()</span></span><br><span class="line">rdbSaveModulesAux(rdb, REDISMODULE_AUX_BEFORE_RDB);  <span class="comment">// 在所有 key-value 之前</span></span><br><span class="line"><span class="comment">// ... 逐 db 写入所有 key-value ...</span></span><br><span class="line">rdbSaveModulesAux(rdb, REDISMODULE_AUX_AFTER_RDB);   <span class="comment">// 在所有 key-value 之后</span></span><br></pre></td></tr></table></figure>
-
-<p>设置为 <code>REDISMODULE_AUX_BEFORE_RDB</code> 的含义是：在 key-value 数据写入<strong>之前</strong>触发 aux 回调，这对于 CAS ID 的正确恢复是必要的——加载 RDB 时，<code>aux_load</code> 会先于所有 <code>rdb_load</code> 回调执行，从而在每个 McTypeObject 被装载之前就已恢复好全局 <code>cas_id</code>，确保后续新分配的 ID 不与历史值冲突。若改为 <code>AFTER_RDB</code>，虽然持久化能正常进行，但加载时序上 <code>cas_id</code> 会在所有 key 加载完毕后才被恢复，这个时间窗口内如果有其他操作（理论上不会，但时序依赖更脆弱）就存在隐患，且与代码中两处 <code>assert(when == REDISMODULE_AUX_BEFORE_RDB)</code> 的契约相违背。</p>
-<h4 id="AOF-重写：KCC-MC-RESTORE-命令"><a href="#AOF-重写：KCC-MC-RESTORE-命令" class="headerlink" title="AOF 重写：KCC_MC.RESTORE 命令"></a>AOF 重写：<code>KCC_MC.RESTORE</code> 命令</h4><figure class="highlight c"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br></pre></td><td class="code"><pre><span class="line"><span class="type">void</span> <span class="title function_">McTypeAofRewrite</span><span class="params">(RedisModuleIO *aof, RedisModuleString *key, <span class="type">void</span> *value)</span> &#123;</span><br><span class="line">    McTypeObject *mco = (McTypeObject *)value;</span><br><span class="line">    <span class="keyword">if</span> (mco) &#123;</span><br><span class="line">        RedisModuleString *data = RedisModule_CreateString(<span class="literal">NULL</span>, mco-&gt;data, sdslen(mco-&gt;data));</span><br><span class="line">        RedisModule_EmitAOF(aof, <span class="string">&quot;KCC_MC.RESTORE&quot;</span>, <span class="string">&quot;sllsl&quot;</span>, key, mco-&gt;flags, mco-&gt;cas, data, cas_id);</span><br><span class="line">    &#125;</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
-
-<p>AOF 重写时，每个 McTypeObject 被序列化为一条 <code>KCC_MC.RESTORE</code> 命令：</p>
-<figure class="highlight plaintext"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">KCC_MC.RESTORE &lt;key&gt; &lt;flags&gt; &lt;cas&gt; &lt;value&gt; &lt;global_cas_id&gt;</span><br></pre></td></tr></table></figure>
-
-<p><strong>为什么不用原始写命令（如 <code>kcc_mc.set</code>）来重写 AOF？</strong></p>
-<p>因为 <code>kcc_mc.set</code> 执行时会调用 <code>get_cas_id()</code> 分配<strong>新的</strong> CAS ID，会破坏原有的 CAS 值。而 <code>KCC_MC.RESTORE</code> 是专为 AOF 重写设计的内部命令，它直接将 <code>mco-&gt;cas</code> 还原到对象中，不重新分配 CAS ID。</p>
-<p>同时，每条 <code>RESTORE</code> 命令还携带了 <code>cas_id</code>（全局计数器当前值）：</p>
-<figure class="highlight c"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br></pre></td><td class="code"><pre><span class="line"><span class="comment">// 取 restore 命令中 old_cas_id 字段的最大值来恢复全局 cas_id</span></span><br><span class="line"><span class="keyword">if</span> (old_cas_id &gt; cas_id) &#123;</span><br><span class="line">    cas_id = old_cas_id;</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
-
-<p>实际上所有 <code>RESTORE</code> 命令里的 <code>old_cas_id</code> 是一样的（写入 AOF 时的快照值），只有第一条生效，后续的都是等值比较不变，这是一个防御性的保险措施。</p>
-<p>注意 AOF 重写无需显式记录 <code>EXPIREAT</code>，Redis 的 AOF 重写机制会自动在每条命令后追加 <code>PEXPIREAT</code> 命令来还原过期时间。</p>
-<h4 id="持久化流程全景"><a href="#持久化流程全景" class="headerlink" title="持久化流程全景"></a>持久化流程全景</h4><p><img src="/2025-06-27-memcached%E8%BF%81%E7%A7%BBredis%E5%AE%9E%E8%B7%B5/mc_persist_seq.svg" alt="持久化流程全景"></p>
-<h3 id="内存管理"><a href="#内存管理" class="headerlink" title="内存管理"></a>内存管理</h3><p>所有 <code>McTypeObject</code> 均通过 Redis 的 <code>RedisModule_Calloc</code>&#x2F;<code>RedisModule_Alloc</code>&#x2F;<code>RedisModule_Free</code> 管理内存，接入 Redis 的内存跟踪体系（<code>used_memory</code> 统计）。</p>
-<p><code>McTypeMemUsage</code> 用于精确上报该对象的内存占用：</p>
-<figure class="highlight c"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br></pre></td><td class="code"><pre><span class="line"><span class="type">size_t</span> <span class="title function_">McTypeMemUsage</span><span class="params">(<span class="type">const</span> <span class="type">void</span> *value)</span> &#123;</span><br><span class="line">    McTypeObject *mco = (McTypeObject *) value;</span><br><span class="line">    <span class="keyword">return</span> <span class="keyword">sizeof</span>(*mco) + sdsZmallocSize(mco-&gt;data);</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
-
-<p><code>sdsZmallocSize</code> 返回 SDS 字符串实际占用的 zmalloc 内存块大小（含 SDS header），比 <code>sdslen</code> 更准确地反映真实内存消耗。</p>
-<p>对于写操作，每次都会分配一个新的 <code>McTypeObject</code>，然后通过 <code>RedisModule_ModuleTypeSetValue</code> 替换旧对象。<code>ModuleTypeSetValue</code> 内部会自动调用旧对象的 <code>free</code> 方法（即 <code>McTypeFree</code>）回收内存：</p>
-<figure class="highlight c"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br></pre></td><td class="code"><pre><span class="line"><span class="type">void</span> <span class="title function_">McTypeFree</span><span class="params">(<span class="type">void</span> *value)</span> &#123;</span><br><span class="line">    <span class="keyword">if</span> (value) &#123;</span><br><span class="line">        McTypeObject *mco = (McTypeObject *) value;</span><br><span class="line">        <span class="keyword">if</span> (mco-&gt;data) &#123;</span><br><span class="line">            sdsfree(mco-&gt;data);   <span class="comment">// 释放 SDS 字符串</span></span><br><span class="line">        &#125;</span><br><span class="line">        RedisModule_Free(mco);    <span class="comment">// 释放 McTypeObject 本身</span></span><br><span class="line">    &#125;</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
-
-<h3 id="回复格式：RESP-包裹-MC-协议"><a href="#回复格式：RESP-包裹-MC-协议" class="headerlink" title="回复格式：RESP 包裹 MC 协议"></a>回复格式：RESP 包裹 MC 协议</h3><p>Module 所有命令的回复均使用 Redis 标准 RESP 的字符串类型包裹 MC 格式的内容：</p>
-<figure class="highlight c"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br></pre></td><td class="code"><pre><span class="line"><span class="comment">// 简单字符串回复（如 &quot;STORED\r\n&quot;）</span></span><br><span class="line"><span class="type">static</span> <span class="type">int</span> <span class="title function_">ReplyMemcacheSimpleString</span><span class="params">(RedisModuleCtx *ctx, <span class="type">const</span> <span class="type">char</span> *buf, <span class="type">int</span> reply)</span> &#123;</span><br><span class="line">    <span class="keyword">if</span> (!reply) <span class="keyword">return</span> REDISMODULE_OK;</span><br><span class="line">    <span class="keyword">return</span> RedisModule_ReplyWithCString(ctx, buf);</span><br><span class="line">&#125;</span><br><span class="line"></span><br><span class="line"><span class="comment">// 带长度的字节回复（如 get 的多行响应）</span></span><br><span class="line"><span class="type">static</span> <span class="type">int</span> <span class="title function_">ReplyMemcacheString</span><span class="params">(RedisModuleCtx *ctx, <span class="type">const</span> <span class="type">char</span> *buf, <span class="type">size_t</span> len, <span class="type">int</span> reply)</span> &#123;</span><br><span class="line">    <span class="keyword">if</span> (!reply) <span class="keyword">return</span> REDISMODULE_OK;</span><br><span class="line">    <span class="keyword">return</span> RedisModule_ReplyWithStringBuffer(ctx, buf, len);</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
-
-<p><code>ReplyWithCString</code> 底层实际是 <code>ReplyWithStringBuffer</code>，区别在于前者用 <code>strlen</code> 计算长度。对于包含 <code>\r\n</code> 的多行 mc 响应，必须使用带显式长度的 <code>ReplyWithStringBuffer</code>，否则遇到 <code>\0</code> 会截断。</p>
-<p>这也是 proxy 侧协议转换的基础：proxy 收到 <code>$xx\r\n&lt;mc_content&gt;\r\n</code> 格式的 RESP bulk string 后，去掉头部的 <code>$xx\r\n</code> 和尾部的 <code>\r\n</code>，剩下的内容就是合法的 mc 协议响应。</p>
-<h3 id="内部管理命令"><a href="#内部管理命令" class="headerlink" title="内部管理命令"></a>内部管理命令</h3><p>除了对应 mc 协议的用户命令，module 还提供了两个内部命令：</p>
-<h4 id="kcc-mc-restore"><a href="#kcc-mc-restore" class="headerlink" title="kcc_mc.restore"></a><code>kcc_mc.restore</code></h4><p>专为 AOF 重写和灾难恢复设计，不对外暴露给业务使用：</p>
-<figure class="highlight plaintext"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">KCC_MC.RESTORE &lt;key&gt; &lt;flags&gt; &lt;cas&gt; &lt;value&gt; &lt;global_cas_id&gt;</span><br></pre></td></tr></table></figure>
-
-<p>直接将指定的 <code>cas</code>、<code>flags</code>、<code>data</code> 写入 McTypeObject，并将 <code>global_cas_id</code> 与当前 <code>cas_id</code> 取最大值更新全局计数器。</p>
-<h4 id="kcc-mc-len"><a href="#kcc-mc-len" class="headerlink" title="kcc_mc.len"></a><code>kcc_mc.len</code></h4><p>返回指定 key 的 McTypeObject 的字段总字节数（<code>sizeof(cas) + sizeof(flags) + len(data)</code>），用于运维监控和 KCC 内部管理，不参与正常的 mc 协议流程：</p>
-<figure class="highlight c"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br></pre></td><td class="code"><pre><span class="line"><span class="type">size_t</span> len = <span class="keyword">sizeof</span>(mco-&gt;cas) + <span class="keyword">sizeof</span>(mco-&gt;flags) + sdslen(mco-&gt;data);</span><br><span class="line">RedisModule_ReplyWithLongLong(ctx, len);</span><br></pre></td></tr></table></figure>
-
-<p>注意此命令返回的是原生的 RESP 整数类型（<code>RedisModule_ReplyWithError</code>&#x2F;<code>ReplyWithLongLong</code>），不走 mc 格式包裹，因为该命令的使用方是运维工具而非 mc 客户端。</p>
-<h3 id="命令错误信息一览"><a href="#命令错误信息一览" class="headerlink" title="命令错误信息一览"></a>命令错误信息一览</h3><p>Module 定义了完整的客户端错误和服务端错误集合：</p>
-<table>
-<thead>
-<tr>
-<th>错误常量</th>
-<th>错误内容</th>
-<th>场景</th>
-</tr>
-</thead>
-<tbody><tr>
-<td><code>KCC_MC_MODULE_STORED</code></td>
-<td><code>STORED\r\n</code></td>
-<td>写入成功</td>
-</tr>
-<tr>
-<td><code>KCC_MC_MODULE_NOT_STORED</code></td>
-<td><code>NOT_STORED\r\n</code></td>
-<td>add&#x2F;replace&#x2F;append&#x2F;prepend 条件不满足</td>
-</tr>
-<tr>
-<td><code>KCC_MC_MODULE_NOT_FOUND</code></td>
-<td><code>NOT_FOUND\r\n</code></td>
-<td>delete&#x2F;touch&#x2F;incr&#x2F;decr key 不存在</td>
-</tr>
-<tr>
-<td><code>KCC_MC_MODULE_EXISTS</code></td>
-<td><code>EXISTS\r\n</code></td>
-<td>CAS 令牌不匹配</td>
-</tr>
-<tr>
-<td><code>KCC_MC_MODULE_DELETED</code></td>
-<td><code>DELETED\r\n</code></td>
-<td>delete 成功</td>
-</tr>
-<tr>
-<td><code>KCC_MC_MODULE_TOUCHED</code></td>
-<td><code>TOUCHED\r\n</code></td>
-<td>touch 成功</td>
-</tr>
-<tr>
-<td><code>KCC_MC_MODULE_OK</code></td>
-<td><code>OK\r\n</code></td>
-<td>通用成功（当前未使用）</td>
-</tr>
-<tr>
-<td><code>KCC_MC_MODULE_BAD_CMD_FORMAT</code></td>
-<td><code>CLIENT_ERROR bad command line format\r\n</code></td>
-<td>参数格式错误</td>
-</tr>
-<tr>
-<td><code>KCC_MC_MODULE_BAD_DATA_CHUNK</code></td>
-<td><code>CLIENT_ERROR bad data chunk\r\n</code></td>
-<td>value 实际长度与 nbytes 不符</td>
-</tr>
-<tr>
-<td><code>KCC_MC_MODULE_INVALID_EXPTIME</code></td>
-<td><code>CLIENT_ERROR invalid exptime argument\r\n</code></td>
-<td>exptime 非整数</td>
-</tr>
-<tr>
-<td><code>KCC_MC_MODULE_INVALID_NUMERIC</code></td>
-<td><code>CLIENT_ERROR invalid numeric delta argument\r\n</code></td>
-<td>incr&#x2F;decr delta 非整数</td>
-</tr>
-<tr>
-<td><code>KCC_MC_MODULE_CANNOT_INCR_OR_DECR</code></td>
-<td><code>CLIENT_ERROR cannot increment or decrement non-numeric value\r\n</code></td>
-<td>value 不是数字型字符串</td>
-</tr>
-<tr>
-<td><code>KCC_MC_MODULE_NOT_MEMCACHED_TYPE</code></td>
-<td><code>SERVER_ERROR MC2REDIS this key exist, not memcached type\r\n</code></td>
-<td>key 已存在但类型非 McType</td>
-</tr>
-<tr>
-<td><code>KCC_MC_MODULE_OUT_OF_MEMORY</code></td>
-<td><code>SERVER_ERROR MC2REDIS out of memory\r\n</code></td>
-<td>内存分配失败</td>
-</tr>
-<tr>
-<td><code>KCC_MC_MODULE_UNKNOWN_CMD</code></td>
-<td><code>SERVER_ERROR MC2REDIS server not supported\r\n</code></td>
-<td>参数数量不匹配</td>
-</tr>
-</tbody></table>
-<p>其中 <code>NOT_MEMCACHED_TYPE</code> 是一个关键的安全守门错误：当 Redis 中已经存在一个原生类型的 key（如原生 string、hash 等），mc 客户端尝试写入同名 key 时，module 会拒绝操作并返回该错误，防止数据类型混用。</p>
-<h1 id="QA"><a href="#QA" class="headerlink" title="QA"></a>QA</h1><ol>
-<li>二进制协议怎么处理？</li>
-</ol>
-<p>proxy后续可以处理两种命令，但转化为相同的文本redis命令，即redis命令只给出文本回复。据分析，所有的命令的文本回复在原理上，可以转换为二进制回复。只是实现问题。<br>附录(协议):<br><a target="_blank" rel="noopener" href="https://github.com/memcached/memcached/blob/master/doc/protocol.txt">https://github.com/memcached/memcached/blob/master/doc/protocol.txt</a><br><a target="_blank" rel="noopener" href="https://github.com/memcached/memcached/blob/master/doc/protocol-binary.txt">https://github.com/memcached/memcached/blob/master/doc/protocol-binary.txt</a></p>
-<ol start="2">
-<li>为什么采用redis-module？</li>
-</ol>
-<p>答：考虑到mc每一个命令都需要开发对应的redis命令，为了代码集中统一管理迭代，也符合redis官方的推荐实现。</p>
-<ol start="3">
-<li>为什么不采用哈希表实现？</li>
-</ol>
-<p>这样每一个mc的key都会变成哈希表，无论从性能开销还是内存开销上来说，都是完全没有经过测试和难以估量的。</p>
+<figure class="highlight c"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">if</span> (server.failover_state == FAILOVER_IN_PROGRESS) &#123;</span><br><span class="line">    reply = sendCommand(conn,<span class="string">&quot;PSYNC&quot;</span>,psync_replid,psync_offset,<span class="string">&quot;FAILOVER&quot;</span>,<span class="literal">NULL</span>);</span><br><span class="line">&#125; <span class="keyword">else</span> &#123;</span><br><span class="line">    reply = sendCommand(conn,<span class="string">&quot;PSYNC&quot;</span>,psync_replid,psync_offset,<span class="literal">NULL</span>);</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
 <ol start="4">
-<li>为什么不在module中直接用原生字符串，而是引入了新类型？</li>
+<li>收到<code>+CONTINUE [replid]</code>，则将原来的id放到replid2中，将返回的新id置为<code>server.replid</code>。最后断连自己的原先所有slave节点用于通知replid的变化。</li>
 </ol>
-<p>假如未来redis-sdk可以直接访问该redis，如果业务用string的get、set命令访问了mc的key，会有安全性风险。而引入新类型保证了原生string命令无法访问mc迁移过来的key，会返回类型错误。</p>
-<ol start="5">
-<li>为什么采用proxy做协议转换，而不是redis内核直接处理mc协议的方式，仿造ApsaraCache？</li>
+<figure class="highlight c"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br><span class="line">27</span><br><span class="line">28</span><br><span class="line">29</span><br><span class="line">30</span><br><span class="line">31</span><br><span class="line">32</span><br><span class="line">33</span><br><span class="line">34</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">if</span> (!<span class="built_in">strncmp</span>(reply,<span class="string">&quot;+CONTINUE&quot;</span>,<span class="number">9</span>)) &#123;</span><br><span class="line">    <span class="comment">/* Check the new replication ID advertised by the master. If it</span></span><br><span class="line"><span class="comment">     * changed, we need to set the new ID as primary ID, and set</span></span><br><span class="line"><span class="comment">     * secondary ID as the old master ID up to the current offset, so</span></span><br><span class="line"><span class="comment">     * that our sub-slaves will be able to PSYNC with us after a</span></span><br><span class="line"><span class="comment">     * disconnection. */</span></span><br><span class="line">    <span class="type">char</span> *start = reply+<span class="number">10</span>;</span><br><span class="line">    <span class="type">char</span> *end = reply+<span class="number">9</span>;</span><br><span class="line">    <span class="keyword">while</span>(end[<span class="number">0</span>] != <span class="string">&#x27;\r&#x27;</span> &amp;&amp; end[<span class="number">0</span>] != <span class="string">&#x27;\n&#x27;</span> &amp;&amp; end[<span class="number">0</span>] != <span class="string">&#x27;\0&#x27;</span>) end++;</span><br><span class="line">    <span class="keyword">if</span> (end-start == CONFIG_RUN_ID_SIZE) &#123;</span><br><span class="line">        <span class="type">char</span> new[CONFIG_RUN_ID_SIZE+<span class="number">1</span>];</span><br><span class="line">        <span class="built_in">memcpy</span>(new,start,CONFIG_RUN_ID_SIZE);</span><br><span class="line">        new[CONFIG_RUN_ID_SIZE] = <span class="string">&#x27;\0&#x27;</span>;</span><br><span class="line"></span><br><span class="line">        <span class="keyword">if</span> (<span class="built_in">strcmp</span>(new,server.cached_master-&gt;replid)) &#123;</span><br><span class="line">            <span class="comment">/* Master ID changed. */</span></span><br><span class="line">            serverLog(LL_WARNING,<span class="string">&quot;Master replication ID changed to %s&quot;</span>,new);</span><br><span class="line"></span><br><span class="line">            <span class="comment">/* Set the old ID as our ID2, up to the current offset+1. */</span></span><br><span class="line">            <span class="built_in">memcpy</span>(server.replid2,server.cached_master-&gt;replid,</span><br><span class="line">                <span class="keyword">sizeof</span>(server.replid2));</span><br><span class="line">            server.second_replid_offset = server.master_repl_offset+<span class="number">1</span>;</span><br><span class="line"></span><br><span class="line">            <span class="comment">/* Update the cached master ID and our own primary ID to the</span></span><br><span class="line"><span class="comment">             * new one. */</span></span><br><span class="line">            <span class="built_in">memcpy</span>(server.replid,new,<span class="keyword">sizeof</span>(server.replid));</span><br><span class="line">            <span class="built_in">memcpy</span>(server.cached_master-&gt;replid,new,<span class="keyword">sizeof</span>(server.replid));</span><br><span class="line"></span><br><span class="line">            <span class="comment">/* Disconnect all the sub-slaves: they need to be notified. */</span></span><br><span class="line">            disconnectSlaves();</span><br><span class="line">        &#125;</span><br><span class="line">    &#125;</span><br><span class="line">    ...</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+
+<h2 id="原从节点"><a href="#原从节点" class="headerlink" title="原从节点"></a>原从节点</h2><ol>
+<li>收到<code>PSYNC [replidid] [repl_offset] FAILOVER</code>后，开始与原主节点断连，生成新的replid，并<strong>断连自己所有的slave</strong>(让他们感知到replid变化)，最后将自己置为master</li>
 </ol>
-<ul>
-<li>redis内核侵入大，影响范围大。比如将引入新的redis配置参数。</li>
-<li>后续每次跟随开源社区升级redis版本都需要搬运迁移，有额外工作量且有稳定性风险。</li>
-<li>当前twemproxy开源社区已不维护，可以完全自研修改，无升级后顾之忧。</li>
-</ul>
-<ol start="6">
-<li>append&#x2F;prepend 为何不重置过期时间？</li>
+<figure class="highlight c"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br></pre></td><td class="code"><pre><span class="line"><span class="comment">/* Check if this is a failover request to a replica with the same replid and</span></span><br><span class="line"><span class="comment"> * become a master if so. */</span></span><br><span class="line"><span class="keyword">if</span> (c-&gt;argc &gt; <span class="number">3</span> &amp;&amp; !strcasecmp(c-&gt;argv[<span class="number">0</span>]-&gt;ptr,<span class="string">&quot;psync&quot;</span>) &amp;&amp; </span><br><span class="line">    !strcasecmp(c-&gt;argv[<span class="number">3</span>]-&gt;ptr,<span class="string">&quot;failover&quot;</span>))</span><br><span class="line">&#123;</span><br><span class="line">    serverLog(LL_WARNING, <span class="string">&quot;Failover request received for replid %s.&quot;</span>,</span><br><span class="line">        (<span class="type">unsigned</span> <span class="type">char</span> *)c-&gt;argv[<span class="number">1</span>]-&gt;ptr);</span><br><span class="line">    <span class="keyword">if</span> (!server.masterhost) &#123;</span><br><span class="line">        addReplyError(c, <span class="string">&quot;PSYNC FAILOVER can&#x27;t be sent to a master.&quot;</span>);</span><br><span class="line">        <span class="keyword">return</span>;</span><br><span class="line">    &#125;</span><br><span class="line"></span><br><span class="line">    <span class="keyword">if</span> (!strcasecmp(c-&gt;argv[<span class="number">1</span>]-&gt;ptr,server.replid)) &#123;</span><br><span class="line">        replicationUnsetMaster();</span><br><span class="line">        sds client = catClientInfoString(sdsempty(),c);</span><br><span class="line">        serverLog(LL_NOTICE,</span><br><span class="line">            <span class="string">&quot;MASTER MODE enabled (failover request from &#x27;%s&#x27;)&quot;</span>,client);</span><br><span class="line">        sdsfree(client);</span><br><span class="line">    &#125; <span class="keyword">else</span> &#123;</span><br><span class="line">        addReplyError(c, <span class="string">&quot;PSYNC FAILOVER replid must match my replid.&quot;</span>);</span><br><span class="line">        <span class="keyword">return</span>;            </span><br><span class="line">    &#125;</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+<figure class="highlight c"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br></pre></td><td class="code"><pre><span class="line"><span class="comment">/* Cancel replication, setting the instance as a master itself. */</span></span><br><span class="line"><span class="type">void</span> <span class="title function_">replicationUnsetMaster</span><span class="params">(<span class="type">void</span>)</span> &#123;</span><br><span class="line">    <span class="keyword">if</span> (server.masterhost == <span class="literal">NULL</span>) <span class="keyword">return</span>; <span class="comment">/* Nothing to do. */</span></span><br><span class="line">    ...</span><br><span class="line">    <span class="comment">/* Clear masterhost first, since the freeClient calls</span></span><br><span class="line"><span class="comment">     * replicationHandleMasterDisconnection which can attempt to re-connect. */</span></span><br><span class="line">    sdsfree(server.masterhost);</span><br><span class="line">    server.masterhost = <span class="literal">NULL</span>;</span><br><span class="line">    <span class="keyword">if</span> (server.master) freeClient(server.master);</span><br><span class="line">    replicationDiscardCachedMaster();</span><br><span class="line">    cancelReplicationHandshake(<span class="number">0</span>);</span><br><span class="line">    <span class="comment">/* When a slave is turned into a master, the current replication ID</span></span><br><span class="line"><span class="comment">     * (that was inherited from the master at synchronization time) is</span></span><br><span class="line"><span class="comment">     * used as secondary ID up to the current offset, and a new replication</span></span><br><span class="line"><span class="comment">     * ID is created to continue with a new replication history. */</span></span><br><span class="line">    shiftReplicationId();</span><br><span class="line">    <span class="comment">/* Disconnecting all the slaves is required: we need to inform slaves</span></span><br><span class="line"><span class="comment">     * of the replication ID change (see shiftReplicationId() call). However</span></span><br><span class="line"><span class="comment">     * the slaves will be able to partially resync with us, so it will be</span></span><br><span class="line"><span class="comment">     * a very fast reconnection. */</span></span><br><span class="line">    disconnectSlaves();</span><br><span class="line">    server.repl_state = REPL_STATE_NONE;</span><br><span class="line">    ...</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+<ol start="2">
+<li>因为该版本的redis支持psync2，因此返回<code>+CONTINUE [replid]</code>，注意是新的replid！</li>
 </ol>
-<p>与原生 mc 协议一致，追加&#x2F;前置操作属于修改操作而非重新创建，因此沿用旧 key 的过期时间。module 实现中通过先 <code>GetAbsExpire</code> 保存旧过期时间，在 <code>ModuleTypeSetValue</code> 后再 <code>SetAbsExpire</code> 还原来保证这一语义。</p>
-<ol start="7">
-<li>CAS ID 在主从复制时如何保证一致性？</li>
-</ol>
-<p>主节点上的所有写命令执行后都会调用 <code>RedisModule_ReplicateVerbatim(ctx)</code>，将原始命令原样复制到从节点。从节点执行同一条写命令时，<code>get_cas_id()</code> 会让 <code>cas_id</code> 递增，但由于命令参数中的 cas 值是通过 <code>ModuleTypeSetValue</code> 直接写入对象字段（而非依赖分配的新 ID），所以实际 key 的 cas 值在主从上完全一致。而全局 <code>cas_id</code> 计数器则通过 RDB 的 <code>AuxSave/AuxLoad</code> 在主从之间同步到相同的起点。</p>
 
       
     </div>
@@ -605,7 +255,7 @@
 
 
   <nav class="pagination">
-    <a class="extend prev" rel="prev" title="上一页" aria-label="上一页" href="/page/20/"><i class="fa fa-angle-left"></i></a><a class="page-number" href="/">1</a><span class="space">&hellip;</span><a class="page-number" href="/page/20/">20</a><span class="page-number current">21</span><a class="page-number" href="/page/22/">22</a><span class="space">&hellip;</span><a class="page-number" href="/page/45/">45</a><a class="extend next" rel="next" title="下一页" aria-label="下一页" href="/page/22/"><i class="fa fa-angle-right"></i></a>
+    <a class="extend prev" rel="prev" title="上一页" aria-label="上一页" href="/page/20/"><i class="fa fa-angle-left"></i></a><a class="page-number" href="/">1</a><span class="space">&hellip;</span><a class="page-number" href="/page/20/">20</a><span class="page-number current">21</span><a class="page-number" href="/page/22/">22</a><span class="space">&hellip;</span><a class="page-number" href="/page/47/">47</a><a class="extend next" rel="next" title="下一页" aria-label="下一页" href="/page/22/"><i class="fa fa-angle-right"></i></a>
   </nav>
 
 </div>
