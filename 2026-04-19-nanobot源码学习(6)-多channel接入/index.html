@@ -21,7 +21,7 @@
 
     <meta name="description" content="上篇回顾前五篇下来，nanobot 的核心引擎已经完整地过了一遍：记忆系统、provider 层、AgentLoop 主循环、工具系统、多 agent 协作。但有一个角度一直没讲清楚——外面的消息是怎么进来的。 笔记3讲 AgentLoop 时，入口是 process_direct()，直接传字符串就能用，完全没有”渠道”的概念。但真正部署 nanobot 的时候，用户可能是在飞书里发消息、在微信">
 <meta property="og:type" content="article">
-<meta property="og:title" content="nanobot源码学习笔记(6)-多channel接入">
+<meta property="og:title" content="nanobot源码学习(6)-多channel接入">
 <meta property="og:url" content="https://scut-corgis.github.io/2026-04-19-nanobot%E6%BA%90%E7%A0%81%E5%AD%A6%E4%B9%A0(6)-%E5%A4%9Achannel%E6%8E%A5%E5%85%A5/index.html">
 <meta property="og:site_name" content="corgis的笔记">
 <meta property="og:description" content="上篇回顾前五篇下来，nanobot 的核心引擎已经完整地过了一遍：记忆系统、provider 层、AgentLoop 主循环、工具系统、多 agent 协作。但有一个角度一直没讲清楚——外面的消息是怎么进来的。 笔记3讲 AgentLoop 时，入口是 process_direct()，直接传字符串就能用，完全没有”渠道”的概念。但真正部署 nanobot 的时候，用户可能是在飞书里发消息、在微信">
@@ -31,7 +31,7 @@
 <meta property="og:image" content="https://scut-corgis.github.io/2026-04-19-nanobot%E6%BA%90%E7%A0%81%E5%AD%A6%E4%B9%A0(6)-%E5%A4%9Achannel%E6%8E%A5%E5%85%A5/session_seq.svg">
 <meta property="og:image" content="https://scut-corgis.github.io/2026-04-19-nanobot%E6%BA%90%E7%A0%81%E5%AD%A6%E4%B9%A0(6)-%E5%A4%9Achannel%E6%8E%A5%E5%85%A5/feishu_seq.svg">
 <meta property="article:published_time" content="2026-04-19T14:00:00.000Z">
-<meta property="article:modified_time" content="2026-04-18T19:56:16.744Z">
+<meta property="article:modified_time" content="2026-04-18T19:59:02.162Z">
 <meta property="article:author" content="Corgis">
 <meta name="twitter:card" content="summary">
 <meta name="twitter:image" content="https://scut-corgis.github.io/2026-04-19-nanobot%E6%BA%90%E7%A0%81%E5%AD%A6%E4%B9%A0(6)-%E5%A4%9Achannel%E6%8E%A5%E5%85%A5/global_timeline.svg">
@@ -41,10 +41,10 @@
 
 
 
-<script class="next-config" data-name="page" type="application/json">{"sidebar":"","isHome":false,"isPost":true,"lang":"zh-CN","comments":true,"permalink":"https://scut-corgis.github.io/2026-04-19-nanobot%E6%BA%90%E7%A0%81%E5%AD%A6%E4%B9%A0(6)-%E5%A4%9Achannel%E6%8E%A5%E5%85%A5/","path":"2026-04-19-nanobot源码学习(6)-多channel接入/","title":"nanobot源码学习笔记(6)-多channel接入"}</script>
+<script class="next-config" data-name="page" type="application/json">{"sidebar":"","isHome":false,"isPost":true,"lang":"zh-CN","comments":true,"permalink":"https://scut-corgis.github.io/2026-04-19-nanobot%E6%BA%90%E7%A0%81%E5%AD%A6%E4%B9%A0(6)-%E5%A4%9Achannel%E6%8E%A5%E5%85%A5/","path":"2026-04-19-nanobot源码学习(6)-多channel接入/","title":"nanobot源码学习(6)-多channel接入"}</script>
 
 <script class="next-config" data-name="calendar" type="application/json">""</script>
-<title>nanobot源码学习笔记(6)-多channel接入 | corgis的笔记</title>
+<title>nanobot源码学习(6)-多channel接入 | corgis的笔记</title>
   
 
 
@@ -181,12 +181,12 @@
     </span>
 
     <span hidden itemprop="post" itemscope itemtype="http://schema.org/CreativeWork">
-      <meta itemprop="name" content="nanobot源码学习笔记(6)-多channel接入 | corgis的笔记">
+      <meta itemprop="name" content="nanobot源码学习(6)-多channel接入 | corgis的笔记">
       <meta itemprop="description" content="">
     </span>
       <header class="post-header">
         <h1 class="post-title" itemprop="name headline">
-          nanobot源码学习笔记(6)-多channel接入
+          nanobot源码学习(6)-多channel接入
         </h1>
 
         <div class="post-meta-container">
@@ -536,8 +536,8 @@
 
           <div class="post-nav">
             <div class="post-nav-item">
-                <a href="/2026-04-19-nanobot%E6%BA%90%E7%A0%81%E5%AD%A6%E4%B9%A0(5)-%E5%A4%9Aagent/" rel="prev" title="nanobot源码学习笔记(5)-多agent">
-                  <i class="fa fa-angle-left"></i> nanobot源码学习笔记(5)-多agent
+                <a href="/2026-04-19-nanobot%E6%BA%90%E7%A0%81%E5%AD%A6%E4%B9%A0(5)-%E5%A4%9Aagent/" rel="prev" title="nanobot源码学习(5)-多agent">
+                  <i class="fa fa-angle-left"></i> nanobot源码学习(5)-多agent
                 </a>
             </div>
             <div class="post-nav-item">
