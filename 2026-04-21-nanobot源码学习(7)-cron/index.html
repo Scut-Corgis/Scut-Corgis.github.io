@@ -1,0 +1,473 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+<meta name="viewport" content="width=device-width">
+<meta name="theme-color" content="#222"><meta name="generator" content="Hexo 7.3.0">
+
+  <link rel="apple-touch-icon" sizes="180x180" href="/images/apple-touch-icon-next.png">
+  <link rel="icon" type="image/png" sizes="32x32" href="/images/corgis.jpg">
+  <link rel="icon" type="image/png" sizes="16x16" href="/images/corgis.jpg">
+  <link rel="mask-icon" href="/images/logo.svg" color="#222">
+
+<link rel="stylesheet" href="/css/main.css">
+
+
+
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.2/css/all.min.css" integrity="sha256-XOqroi11tY4EFQMR9ZYwZWKj5ZXiftSx36RRuC3anlA=" crossorigin="anonymous">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/animate.css/3.1.1/animate.min.css" integrity="sha256-PR7ttpcvz8qrF57fur/yAx1qXMFJeJFiA6pSzWi0OIE=" crossorigin="anonymous">
+
+<script class="next-config" data-name="main" type="application/json">{"hostname":"scut-corgis.github.io","root":"/","images":"/images","scheme":"Muse","darkmode":false,"version":"8.20.0","exturl":false,"sidebar":{"position":"left","width_expanded":320,"width_dual_column":240,"display":"always","padding":18,"offset":12},"hljswrap":true,"copycode":{"enable":true,"style":null},"fold":{"enable":true,"height":500},"bookmark":{"enable":false,"color":"#222","save":"auto"},"mediumzoom":false,"lazyload":false,"pangu":false,"comments":{"style":"tabs","active":null,"storage":true,"lazyload":false,"nav":null},"stickytabs":false,"motion":{"enable":true,"async":false,"transition":{"menu_item":"fadeInDown","post_block":"fadeIn","post_header":"fadeInDown","post_body":"fadeInDown","coll_header":"fadeInLeft","sidebar":"fadeInUp"}},"prism":false,"i18n":{"placeholder":"搜索...","empty":"没有找到任何搜索结果：${query}","hits_time":"找到 ${hits} 个搜索结果（用时 ${time} 毫秒）","hits":"找到 ${hits} 个搜索结果"}}</script><script src="/js/config.js"></script>
+
+    <meta name="description" content="上篇回顾上一篇讲了多 channel 接入层，ChannelManager 把飞书、微信等渠道的消息统一桥接到 MessageBus。但有一类场景完全没有涉及：无用户消息触发，bot 主动执行任务。提醒、定期报告、自动化清理——这些都属于定时任务，nanobot 用 cron 模块来实现。  1. cron 是什么nanobot 的 cron 和传统 cron 最大的区别是：每个 job 的载荷不">
+<meta property="og:type" content="article">
+<meta property="og:title" content="nanobot源码学习(7)-cron">
+<meta property="og:url" content="https://scut-corgis.github.io/2026-04-21-nanobot%E6%BA%90%E7%A0%81%E5%AD%A6%E4%B9%A0(7)-cron/index.html">
+<meta property="og:site_name" content="corgis的笔记">
+<meta property="og:description" content="上篇回顾上一篇讲了多 channel 接入层，ChannelManager 把飞书、微信等渠道的消息统一桥接到 MessageBus。但有一类场景完全没有涉及：无用户消息触发，bot 主动执行任务。提醒、定期报告、自动化清理——这些都属于定时任务，nanobot 用 cron 模块来实现。  1. cron 是什么nanobot 的 cron 和传统 cron 最大的区别是：每个 job 的载荷不">
+<meta property="og:locale" content="zh_CN">
+<meta property="og:image" content="https://scut-corgis.github.io/2026-04-21-nanobot%E6%BA%90%E7%A0%81%E5%AD%A6%E4%B9%A0(7)-cron/timer_loop.svg">
+<meta property="og:image" content="https://scut-corgis.github.io/2026-04-21-nanobot%E6%BA%90%E7%A0%81%E5%AD%A6%E4%B9%A0(7)-cron/action_wal.svg">
+<meta property="og:image" content="https://scut-corgis.github.io/2026-04-21-nanobot%E6%BA%90%E7%A0%81%E5%AD%A6%E4%B9%A0(7)-cron/llm_cron_deliver.svg">
+<meta property="og:image" content="https://scut-corgis.github.io/2026-04-21-nanobot%E6%BA%90%E7%A0%81%E5%AD%A6%E4%B9%A0(7)-cron/gateway_init.svg">
+<meta property="article:published_time" content="2026-04-21T09:00:00.000Z">
+<meta property="article:modified_time" content="2026-04-20T08:23:10.208Z">
+<meta property="article:author" content="Corgis">
+<meta name="twitter:card" content="summary">
+<meta name="twitter:image" content="https://scut-corgis.github.io/2026-04-21-nanobot%E6%BA%90%E7%A0%81%E5%AD%A6%E4%B9%A0(7)-cron/timer_loop.svg">
+
+
+<link rel="canonical" href="https://scut-corgis.github.io/2026-04-21-nanobot%E6%BA%90%E7%A0%81%E5%AD%A6%E4%B9%A0(7)-cron/">
+
+
+
+<script class="next-config" data-name="page" type="application/json">{"sidebar":"","isHome":false,"isPost":true,"lang":"zh-CN","comments":true,"permalink":"https://scut-corgis.github.io/2026-04-21-nanobot%E6%BA%90%E7%A0%81%E5%AD%A6%E4%B9%A0(7)-cron/","path":"2026-04-21-nanobot源码学习(7)-cron/","title":"nanobot源码学习(7)-cron"}</script>
+
+<script class="next-config" data-name="calendar" type="application/json">""</script>
+<title>nanobot源码学习(7)-cron | corgis的笔记</title>
+  
+
+
+
+
+
+
+
+
+  <noscript>
+    <link rel="stylesheet" href="/css/noscript.css">
+  </noscript>
+</head>
+
+<body itemscope itemtype="http://schema.org/WebPage" class="use-motion">
+  <div class="headband"></div>
+
+  <main class="main">
+    <div class="column">
+      <header class="header" itemscope itemtype="http://schema.org/WPHeader"><div class="site-brand-container">
+  <div class="site-nav-toggle">
+    <div class="toggle" aria-label="切换导航栏" role="button">
+        <span class="toggle-line"></span>
+        <span class="toggle-line"></span>
+        <span class="toggle-line"></span>
+    </div>
+  </div>
+
+  <div class="site-meta">
+
+    <a href="/" class="brand" rel="start">
+      <i class="logo-line"></i>
+      <p class="site-title">corgis的笔记</p>
+      <i class="logo-line"></i>
+    </a>
+  </div>
+
+  <div class="site-nav-right">
+    <div class="toggle popup-trigger" aria-label="搜索" role="button">
+    </div>
+  </div>
+</div>
+
+
+
+<nav class="site-nav">
+  <ul class="main-menu menu"><li class="menu-item menu-item-home"><a href="/" rel="section"><i class="fa fa-home fa-fw"></i>首页</a></li><li class="menu-item menu-item-about"><a href="/about/" rel="section"><i class="fa fa-user fa-fw"></i>关于</a></li><li class="menu-item menu-item-categories"><a href="/categories/" rel="section"><i class="fa fa-th fa-fw"></i>分类</a></li><li class="menu-item menu-item-archives"><a href="/archives/" rel="section"><i class="fa fa-archive fa-fw"></i>归档</a></li>
+  </ul>
+</nav>
+
+
+
+
+</header>
+        
+  
+  <aside class="sidebar">
+
+    <div class="sidebar-inner sidebar-nav-active sidebar-toc-active">
+      <ul class="sidebar-nav">
+        <li class="sidebar-nav-toc">
+          文章目录
+        </li>
+        <li class="sidebar-nav-overview">
+          站点概览
+        </li>
+      </ul>
+
+      <div class="sidebar-panel-container">
+        <!--noindex-->
+        <div class="post-toc-wrap sidebar-panel">
+            <div class="post-toc animated"><ol class="nav"><li class="nav-item nav-level-1"><a class="nav-link" href="#%E4%B8%8A%E7%AF%87%E5%9B%9E%E9%A1%BE"><span class="nav-number">1.</span> <span class="nav-text">上篇回顾</span></a></li><li class="nav-item nav-level-1"><a class="nav-link" href="#1-cron-%E6%98%AF%E4%BB%80%E4%B9%88"><span class="nav-number">2.</span> <span class="nav-text">1. cron 是什么</span></a><ol class="nav-child"><li class="nav-item nav-level-2"><a class="nav-link" href="#cron-vs-heartbeat"><span class="nav-number">2.1.</span> <span class="nav-text">cron vs heartbeat</span></a></li></ol></li><li class="nav-item nav-level-1"><a class="nav-link" href="#2-%E7%B1%BB%E5%9E%8B%E7%B3%BB%E7%BB%9F"><span class="nav-number">3.</span> <span class="nav-text">2. 类型系统</span></a><ol class="nav-child"><li class="nav-item nav-level-2"><a class="nav-link" href="#2-1-CronSchedule%EF%BC%9A%E8%A7%A6%E5%8F%91%E6%97%B6%E6%9C%BA"><span class="nav-number">3.1.</span> <span class="nav-text">2.1 CronSchedule：触发时机</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#2-2-CronPayload%EF%BC%9A%E8%A7%A6%E5%8F%91%E5%90%8E%E5%81%9A%E4%BB%80%E4%B9%88"><span class="nav-number">3.2.</span> <span class="nav-text">2.2 CronPayload：触发后做什么</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#2-3-CronJobState%EF%BC%9A%E8%BF%90%E8%A1%8C%E7%8A%B6%E6%80%81"><span class="nav-number">3.3.</span> <span class="nav-text">2.3 CronJobState：运行状态</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#2-4-CronJob"><span class="nav-number">3.4.</span> <span class="nav-text">2.4 CronJob</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#2-5-CronStore"><span class="nav-number">3.5.</span> <span class="nav-text">2.5 CronStore</span></a></li></ol></li><li class="nav-item nav-level-1"><a class="nav-link" href="#3-CronService-%E6%9E%B6%E6%9E%84"><span class="nav-number">4.</span> <span class="nav-text">3. CronService 架构</span></a><ol class="nav-child"><li class="nav-item nav-level-2"><a class="nav-link" href="#3-1-%E5%AD%98%E5%82%A8%E6%96%87%E4%BB%B6"><span class="nav-number">4.1.</span> <span class="nav-text">3.1 存储文件</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#3-2-%E5%88%9D%E5%A7%8B%E5%8C%96%E5%8F%82%E6%95%B0"><span class="nav-number">4.2.</span> <span class="nav-text">3.2 初始化参数</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#3-3-%E4%B8%A4%E4%B8%AA%E7%8A%B6%E6%80%81%E6%A0%87%E5%BF%97"><span class="nav-number">4.3.</span> <span class="nav-text">3.3 两个状态标志</span></a></li></ol></li><li class="nav-item nav-level-1"><a class="nav-link" href="#4-%E8%B0%83%E5%BA%A6%E5%BC%95%E6%93%8E%EF%BC%9A%E5%AE%9A%E6%97%B6%E5%99%A8%E9%A9%B1%E5%8A%A8%E5%BE%AA%E7%8E%AF"><span class="nav-number">5.</span> <span class="nav-text">4. 调度引擎：定时器驱动循环</span></a><ol class="nav-child"><li class="nav-item nav-level-2"><a class="nav-link" href="#4-1-start"><span class="nav-number">5.1.</span> <span class="nav-text">4.1 start()</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#4-2-arm-timer"><span class="nav-number">5.2.</span> <span class="nav-text">4.2 _arm_timer()</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#4-3-on-timer-%EF%BC%9A%E6%A0%B8%E5%BF%83%E8%B0%83%E5%BA%A6"><span class="nav-number">5.3.</span> <span class="nav-text">4.3 _on_timer()：核心调度</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#4-4-%E4%B8%89%E7%A7%8D%E8%B0%83%E5%BA%A6%E6%A8%A1%E5%BC%8F%E7%9A%84%E8%AE%A1%E7%AE%97"><span class="nav-number">5.4.</span> <span class="nav-text">4.4 三种调度模式的计算</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#4-5-execute-job"><span class="nav-number">5.5.</span> <span class="nav-text">4.5 _execute_job()</span></a></li></ol></li><li class="nav-item nav-level-1"><a class="nav-link" href="#5-action-jsonl%EF%BC%9A%E7%A6%BB%E7%BA%BF%E5%86%99%E5%85%A5%E6%9C%BA%E5%88%B6"><span class="nav-number">6.</span> <span class="nav-text">5. action.jsonl：离线写入机制</span></a><ol class="nav-child"><li class="nav-item nav-level-2"><a class="nav-link" href="#5-1-%E4%BB%80%E4%B9%88%E6%98%AF%E2%80%9D%E7%A6%BB%E7%BA%BF%E2%80%9D"><span class="nav-number">6.1.</span> <span class="nav-text">5.1 什么是”离线”</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#5-2-%E7%B1%BB-WAL-%E6%9C%BA%E5%88%B6"><span class="nav-number">6.2.</span> <span class="nav-text">5.2 类 WAL 机制</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#5-3-merge-action"><span class="nav-number">6.3.</span> <span class="nav-text">5.3 _merge_action()</span></a></li></ol></li><li class="nav-item nav-level-1"><a class="nav-link" href="#6-%E7%94%A8%E6%88%B7%E5%A6%82%E4%BD%95%E6%B7%BB%E5%8A%A0-cron-job"><span class="nav-number">7.</span> <span class="nav-text">6. 用户如何添加 cron job</span></a><ol class="nav-child"><li class="nav-item nav-level-2"><a class="nav-link" href="#6-1-%E8%87%AA%E7%84%B6%E8%AF%AD%E8%A8%80%E5%AF%B9%E8%AF%9D%EF%BC%88%E6%9C%80%E5%B8%B8%E7%94%A8%EF%BC%89"><span class="nav-number">7.1.</span> <span class="nav-text">6.1 自然语言对话（最常用）</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#6-2-%E4%BB%A3%E7%A0%81%E7%9B%B4%E6%8E%A5%E8%B0%83%E7%94%A8"><span class="nav-number">7.2.</span> <span class="nav-text">6.2 代码直接调用</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#6-3-%E7%B3%BB%E7%BB%9F%E5%86%85%E9%83%A8%E6%B3%A8%E5%86%8C%EF%BC%88register-system-job%EF%BC%89"><span class="nav-number">7.3.</span> <span class="nav-text">6.3 系统内部注册（register_system_job）</span></a></li></ol></li><li class="nav-item nav-level-1"><a class="nav-link" href="#7-CronTool%EF%BC%9ALLM-%E7%9A%84%E8%B0%83%E5%BA%A6%E6%8E%A5%E5%8F%A3"><span class="nav-number">8.</span> <span class="nav-text">7. CronTool：LLM 的调度接口</span></a><ol class="nav-child"><li class="nav-item nav-level-2"><a class="nav-link" href="#7-1-%E4%B8%8A%E4%B8%8B%E6%96%87%E7%BB%91%E5%AE%9A"><span class="nav-number">8.1.</span> <span class="nav-text">7.1 上下文绑定</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#7-2-%E9%98%B2%E9%80%92%E5%BD%92%E6%B3%A8%E5%86%8C%EF%BC%9A-in-cron-context"><span class="nav-number">8.2.</span> <span class="nav-text">7.2 防递归注册：_in_cron_context</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#7-3-deliver-%E4%B8%8E%E6%99%BA%E8%83%BD%E6%8E%A8%E9%80%81"><span class="nav-number">8.3.</span> <span class="nav-text">7.3 deliver 与智能推送</span></a></li></ol></li><li class="nav-item nav-level-1"><a class="nav-link" href="#8-Dream%EF%BC%9A%E7%B3%BB%E7%BB%9F%E4%BB%BB%E5%8A%A1%E6%B3%A8%E5%86%8C"><span class="nav-number">9.</span> <span class="nav-text">8. Dream：系统任务注册</span></a></li><li class="nav-item nav-level-1"><a class="nav-link" href="#9-%E6%95%B4%E4%BD%93%E8%B0%83%E7%94%A8%E9%93%BE"><span class="nav-number">10.</span> <span class="nav-text">9. 整体调用链</span></a></li><li class="nav-item nav-level-1"><a class="nav-link" href="#%E5%B0%8F%E7%BB%93"><span class="nav-number">11.</span> <span class="nav-text">小结</span></a></li></ol></div>
+        </div>
+        <!--/noindex-->
+
+        <div class="site-overview-wrap sidebar-panel">
+          <div class="site-author animated" itemprop="author" itemscope itemtype="http://schema.org/Person">
+    <img class="site-author-image" itemprop="image" alt="Corgis"
+      src="/images/corgis.jpg">
+  <p class="site-author-name" itemprop="name">Corgis</p>
+  <div class="site-description" itemprop="description">用于成长过程中，记录值得对外分享的技术，如开源代码理解、国外课程项目，个人对一些领域的心得等</div>
+</div>
+<div class="site-state-wrap animated">
+  <nav class="site-state">
+      <div class="site-state-item site-state-posts">
+        <a href="/archives/">
+          <span class="site-state-item-count">50</span>
+          <span class="site-state-item-name">日志</span>
+        </a>
+      </div>
+      <div class="site-state-item site-state-categories">
+          <a href="/categories/">
+        <span class="site-state-item-count">16</span>
+        <span class="site-state-item-name">分类</span></a>
+      </div>
+  </nav>
+</div>
+
+        </div>
+      </div>
+        <div class="back-to-top animated" role="button" aria-label="返回顶部">
+          <i class="fa fa-arrow-up"></i>
+          <span>0%</span>
+        </div>
+    </div>
+
+    
+  </aside>
+
+
+    </div>
+
+    <div class="main-inner post posts-expand">
+
+
+  
+
+
+<div class="post-block">
+  
+  
+
+  <article itemscope itemtype="http://schema.org/Article" class="post-content" lang="zh-CN">
+    <link itemprop="mainEntityOfPage" href="https://scut-corgis.github.io/2026-04-21-nanobot%E6%BA%90%E7%A0%81%E5%AD%A6%E4%B9%A0(7)-cron/">
+
+    <span hidden itemprop="author" itemscope itemtype="http://schema.org/Person">
+      <meta itemprop="image" content="/images/corgis.jpg">
+      <meta itemprop="name" content="Corgis">
+    </span>
+
+    <span hidden itemprop="publisher" itemscope itemtype="http://schema.org/Organization">
+      <meta itemprop="name" content="corgis的笔记">
+      <meta itemprop="description" content="用于成长过程中，记录值得对外分享的技术，如开源代码理解、国外课程项目，个人对一些领域的心得等">
+    </span>
+
+    <span hidden itemprop="post" itemscope itemtype="http://schema.org/CreativeWork">
+      <meta itemprop="name" content="nanobot源码学习(7)-cron | corgis的笔记">
+      <meta itemprop="description" content="">
+    </span>
+      <header class="post-header">
+        <h1 class="post-title" itemprop="name headline">
+          nanobot源码学习(7)-cron
+        </h1>
+
+        <div class="post-meta-container">
+          <div class="post-meta">
+    <span class="post-meta-item">
+      <span class="post-meta-item-icon">
+        <i class="far fa-calendar"></i>
+      </span>
+      <span class="post-meta-item-text">发表于</span>
+
+      <time title="创建时间：2026-04-21 17:00:00" itemprop="dateCreated datePublished" datetime="2026-04-21T17:00:00+08:00">2026-04-21</time>
+    </span>
+    <span class="post-meta-item">
+      <span class="post-meta-item-icon">
+        <i class="far fa-folder"></i>
+      </span>
+      <span class="post-meta-item-text">分类于</span>
+        <span itemprop="about" itemscope itemtype="http://schema.org/Thing">
+          <a href="/categories/AI/" itemprop="url" rel="index"><span itemprop="name">AI</span></a>
+        </span>
+    </span>
+
+  
+</div>
+
+        </div>
+      </header>
+
+    
+    
+    
+    <div class="post-body" itemprop="articleBody"><h1 id="上篇回顾"><a href="#上篇回顾" class="headerlink" title="上篇回顾"></a>上篇回顾</h1><p>上一篇讲了多 channel 接入层，<code>ChannelManager</code> 把飞书、微信等渠道的消息统一桥接到 <code>MessageBus</code>。但有一类场景完全没有涉及：<strong>无用户消息触发，bot 主动执行任务</strong>。提醒、定期报告、自动化清理——这些都属于定时任务，nanobot 用 <code>cron</code> 模块来实现。</p>
+<hr>
+<h1 id="1-cron-是什么"><a href="#1-cron-是什么" class="headerlink" title="1. cron 是什么"></a>1. cron 是什么</h1><p>nanobot 的 cron 和传统 cron 最大的区别是：<strong>每个 job 的载荷不是一段代码，而是一条发给 agent 的消息</strong>。job 触发时，系统拼一条系统提示词塞进 <code>AgentLoop.process_direct()</code>，让 agent 去处理。定时任务和普通对话走完全相同的 LLM 调用链，复用全部工具能力，保留对话历史。</p>
+<p>典型场景：</p>
+<ul>
+<li><strong>提醒</strong>：每天 9 点提醒站起来喝水</li>
+<li><strong>定期报告</strong>：每小时汇总系统状态发到飞书群</li>
+<li><strong>自动化任务</strong>：每天凌晨 2 点跑数据清理并通知</li>
+</ul>
+<p>还有一类是系统内部任务：<strong>Dream 记忆整理</strong>（第1篇）通过 cron 定期触发，详见第8节。</p>
+<h2 id="cron-vs-heartbeat"><a href="#cron-vs-heartbeat" class="headerlink" title="cron vs heartbeat"></a>cron vs heartbeat</h2><p>nanobot 另有一个 <code>heartbeat</code> 模块，两者容易混淆：</p>
+<ul>
+<li><strong>heartbeat</strong>：固定间隔唤醒，先用 LLM 读取 <code>HEARTBEAT.md</code> 决策”有没有任务要做”（skip&#x2F;run），再执行。无 job 概念，不持久化，系统内部机制</li>
+<li><strong>cron</strong>：显式注册的任务，有精确时间表（支持 cron 表达式）、执行历史、持久化存储；用户和系统均可注册</li>
+</ul>
+<p>gateway 模式下二者同时运行，互不干扰。</p>
+<hr>
+<h1 id="2-类型系统"><a href="#2-类型系统" class="headerlink" title="2. 类型系统"></a>2. 类型系统</h1><p>代码在 <code>nanobot/cron/types.py</code>，共 5 个 dataclass。</p>
+<h2 id="2-1-CronSchedule：触发时机"><a href="#2-1-CronSchedule：触发时机" class="headerlink" title="2.1 CronSchedule：触发时机"></a>2.1 CronSchedule：触发时机</h2><figure class="highlight python"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br></pre></td><td class="code"><pre><span class="line"><span class="meta">@dataclass</span></span><br><span class="line"><span class="keyword">class</span> <span class="title class_">CronSchedule</span>:</span><br><span class="line">    kind: <span class="type">Literal</span>[<span class="string">&quot;at&quot;</span>, <span class="string">&quot;every&quot;</span>, <span class="string">&quot;cron&quot;</span>]</span><br><span class="line">    at_ms: <span class="built_in">int</span> | <span class="literal">None</span> = <span class="literal">None</span>    <span class="comment"># &quot;at&quot;：绝对时间戳（ms）</span></span><br><span class="line">    every_ms: <span class="built_in">int</span> | <span class="literal">None</span> = <span class="literal">None</span> <span class="comment"># &quot;every&quot;：间隔（ms）</span></span><br><span class="line">    expr: <span class="built_in">str</span> | <span class="literal">None</span> = <span class="literal">None</span>     <span class="comment"># &quot;cron&quot;：标准 cron 表达式</span></span><br><span class="line">    tz: <span class="built_in">str</span> | <span class="literal">None</span> = <span class="literal">None</span>       <span class="comment"># &quot;cron&quot; 专用：IANA 时区名</span></span><br></pre></td></tr></table></figure>
+
+<table>
+<thead>
+<tr>
+<th>kind</th>
+<th>含义</th>
+<th>示例</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><code>at</code></td>
+<td>绝对时间点，执行一次后禁用或删除</td>
+<td><code>at_ms=1740000000000</code></td>
+</tr>
+<tr>
+<td><code>every</code></td>
+<td>固定间隔循环</td>
+<td><code>every_ms=3600000</code>（每小时）</td>
+</tr>
+<tr>
+<td><code>cron</code></td>
+<td>标准 5 段 cron 表达式</td>
+<td><code>expr=&quot;0 9 * * *&quot;</code>（每天9点）</td>
+</tr>
+</tbody></table>
+<p><code>tz</code> 仅对 <code>cron</code> 模式有效，不指定时使用工具层传入的默认时区。</p>
+<h2 id="2-2-CronPayload：触发后做什么"><a href="#2-2-CronPayload：触发后做什么" class="headerlink" title="2.2 CronPayload：触发后做什么"></a>2.2 CronPayload：触发后做什么</h2><figure class="highlight python"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br></pre></td><td class="code"><pre><span class="line"><span class="meta">@dataclass</span></span><br><span class="line"><span class="keyword">class</span> <span class="title class_">CronPayload</span>:</span><br><span class="line">    kind: <span class="type">Literal</span>[<span class="string">&quot;system_event&quot;</span>, <span class="string">&quot;agent_turn&quot;</span>] = <span class="string">&quot;agent_turn&quot;</span></span><br><span class="line">    message: <span class="built_in">str</span> = <span class="string">&quot;&quot;</span></span><br><span class="line">    deliver: <span class="built_in">bool</span> = <span class="literal">False</span>      <span class="comment"># 是否将 agent 回复推送给用户</span></span><br><span class="line">    channel: <span class="built_in">str</span> | <span class="literal">None</span> = <span class="literal">None</span> <span class="comment"># 推送渠道（如 &quot;feishu&quot;）</span></span><br><span class="line">    to: <span class="built_in">str</span> | <span class="literal">None</span> = <span class="literal">None</span>      <span class="comment"># 推送目标（open_id 或手机号等）</span></span><br></pre></td></tr></table></figure>
+
+<p><code>kind</code> 决定执行路径：<code>agent_turn</code> 走完整的 agent 对话链；<code>system_event</code> 直接调用内部方法（Dream 使用此类型，不经过 LLM）。<code>deliver=True</code> 时，agent 的回复会通过 <code>channel/to</code> 推送给用户。</p>
+<h2 id="2-3-CronJobState：运行状态"><a href="#2-3-CronJobState：运行状态" class="headerlink" title="2.3 CronJobState：运行状态"></a>2.3 CronJobState：运行状态</h2><figure class="highlight python"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br></pre></td><td class="code"><pre><span class="line"><span class="meta">@dataclass</span></span><br><span class="line"><span class="keyword">class</span> <span class="title class_">CronJobState</span>:</span><br><span class="line">    next_run_at_ms: <span class="built_in">int</span> | <span class="literal">None</span> = <span class="literal">None</span></span><br><span class="line">    last_run_at_ms: <span class="built_in">int</span> | <span class="literal">None</span> = <span class="literal">None</span></span><br><span class="line">    last_status: <span class="type">Literal</span>[<span class="string">&quot;ok&quot;</span>, <span class="string">&quot;error&quot;</span>, <span class="string">&quot;skipped&quot;</span>] | <span class="literal">None</span> = <span class="literal">None</span></span><br><span class="line">    last_error: <span class="built_in">str</span> | <span class="literal">None</span> = <span class="literal">None</span></span><br><span class="line">    run_history: <span class="built_in">list</span>[CronRunRecord] = field(default_factory=<span class="built_in">list</span>)</span><br></pre></td></tr></table></figure>
+
+<p>每次执行后追加一条 <code>CronRunRecord</code>（记录时间、状态、耗时、错误），滚动保留最近 20 条（<code>_MAX_RUN_HISTORY = 20</code>）。</p>
+<h2 id="2-4-CronJob"><a href="#2-4-CronJob" class="headerlink" title="2.4 CronJob"></a>2.4 CronJob</h2><figure class="highlight python"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br></pre></td><td class="code"><pre><span class="line"><span class="meta">@dataclass</span></span><br><span class="line"><span class="keyword">class</span> <span class="title class_">CronJob</span>:</span><br><span class="line">    <span class="built_in">id</span>: <span class="built_in">str</span>                        <span class="comment"># 8位 uuid 截断</span></span><br><span class="line">    name: <span class="built_in">str</span></span><br><span class="line">    enabled: <span class="built_in">bool</span> = <span class="literal">True</span></span><br><span class="line">    schedule: CronSchedule = ...</span><br><span class="line">    payload: CronPayload = ...</span><br><span class="line">    state: CronJobState = ...</span><br><span class="line">    created_at_ms: <span class="built_in">int</span> = <span class="number">0</span></span><br><span class="line">    updated_at_ms: <span class="built_in">int</span> = <span class="number">0</span></span><br><span class="line">    delete_after_run: <span class="built_in">bool</span> = <span class="literal">False</span> <span class="comment"># at 类型默认 True，执行后从 store 删除</span></span><br></pre></td></tr></table></figure>
+
+<h2 id="2-5-CronStore"><a href="#2-5-CronStore" class="headerlink" title="2.5 CronStore"></a>2.5 CronStore</h2><figure class="highlight python"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br></pre></td><td class="code"><pre><span class="line"><span class="meta">@dataclass</span></span><br><span class="line"><span class="keyword">class</span> <span class="title class_">CronStore</span>:</span><br><span class="line">    version: <span class="built_in">int</span> = <span class="number">1</span></span><br><span class="line">    jobs: <span class="built_in">list</span>[CronJob] = field(default_factory=<span class="built_in">list</span>)</span><br></pre></td></tr></table></figure>
+
+<p><code>jobs.json</code> 的内存映射，版本号留作未来迁移用。</p>
+<hr>
+<h1 id="3-CronService-架构"><a href="#3-CronService-架构" class="headerlink" title="3. CronService 架构"></a>3. CronService 架构</h1><h2 id="3-1-存储文件"><a href="#3-1-存储文件" class="headerlink" title="3.1 存储文件"></a>3.1 存储文件</h2><figure class="highlight plaintext"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br></pre></td><td class="code"><pre><span class="line">&#123;workspace&#125;/cron/jobs.json      # 主存储：所有 job 的完整状态</span><br><span class="line">&#123;workspace&#125;/cron/action.jsonl   # 变更日志：离线写入的临时队列</span><br></pre></td></tr></table></figure>
+
+<p><strong>jobs.json</strong> 是 <code>CronStore</code> 的完整序列化，包含所有 job 的 schedule、payload、state（含执行历史）：</p>
+<figure class="highlight json"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br></pre></td><td class="code"><pre><span class="line"><span class="punctuation">&#123;</span></span><br><span class="line">  <span class="attr">&quot;version&quot;</span><span class="punctuation">:</span> <span class="number">1</span><span class="punctuation">,</span></span><br><span class="line">  <span class="attr">&quot;jobs&quot;</span><span class="punctuation">:</span> <span class="punctuation">[</span><span class="punctuation">&#123;</span></span><br><span class="line">    <span class="attr">&quot;id&quot;</span><span class="punctuation">:</span> <span class="string">&quot;a3f9c1b2&quot;</span><span class="punctuation">,</span></span><br><span class="line">    <span class="attr">&quot;name&quot;</span><span class="punctuation">:</span> <span class="string">&quot;每日提醒&quot;</span><span class="punctuation">,</span></span><br><span class="line">    <span class="attr">&quot;enabled&quot;</span><span class="punctuation">:</span> <span class="literal"><span class="keyword">true</span></span><span class="punctuation">,</span></span><br><span class="line">    <span class="attr">&quot;schedule&quot;</span><span class="punctuation">:</span> <span class="punctuation">&#123;</span> <span class="attr">&quot;kind&quot;</span><span class="punctuation">:</span> <span class="string">&quot;cron&quot;</span><span class="punctuation">,</span> <span class="attr">&quot;expr&quot;</span><span class="punctuation">:</span> <span class="string">&quot;0 9 * * *&quot;</span><span class="punctuation">,</span> <span class="attr">&quot;tz&quot;</span><span class="punctuation">:</span> <span class="string">&quot;Asia/Shanghai&quot;</span> <span class="punctuation">&#125;</span><span class="punctuation">,</span></span><br><span class="line">    <span class="attr">&quot;payload&quot;</span><span class="punctuation">:</span> <span class="punctuation">&#123;</span> <span class="attr">&quot;kind&quot;</span><span class="punctuation">:</span> <span class="string">&quot;agent_turn&quot;</span><span class="punctuation">,</span> <span class="attr">&quot;message&quot;</span><span class="punctuation">:</span> <span class="string">&quot;提醒站起来活动&quot;</span><span class="punctuation">,</span> <span class="attr">&quot;deliver&quot;</span><span class="punctuation">:</span> <span class="literal"><span class="keyword">true</span></span><span class="punctuation">,</span> <span class="attr">&quot;channel&quot;</span><span class="punctuation">:</span> <span class="string">&quot;feishu&quot;</span><span class="punctuation">,</span> <span class="attr">&quot;to&quot;</span><span class="punctuation">:</span> <span class="string">&quot;ou_xxx&quot;</span> <span class="punctuation">&#125;</span><span class="punctuation">,</span></span><br><span class="line">    <span class="attr">&quot;state&quot;</span><span class="punctuation">:</span> <span class="punctuation">&#123;</span></span><br><span class="line">      <span class="attr">&quot;nextRunAtMs&quot;</span><span class="punctuation">:</span> <span class="number">1745200800000</span><span class="punctuation">,</span></span><br><span class="line">      <span class="attr">&quot;lastRunAtMs&quot;</span><span class="punctuation">:</span> <span class="number">1745114400000</span><span class="punctuation">,</span></span><br><span class="line">      <span class="attr">&quot;lastStatus&quot;</span><span class="punctuation">:</span> <span class="string">&quot;ok&quot;</span><span class="punctuation">,</span></span><br><span class="line">      <span class="attr">&quot;lastError&quot;</span><span class="punctuation">:</span> <span class="literal"><span class="keyword">null</span></span><span class="punctuation">,</span></span><br><span class="line">      <span class="attr">&quot;runHistory&quot;</span><span class="punctuation">:</span> <span class="punctuation">[</span></span><br><span class="line">        <span class="punctuation">&#123;</span> <span class="attr">&quot;runAtMs&quot;</span><span class="punctuation">:</span> <span class="number">1745114400000</span><span class="punctuation">,</span> <span class="attr">&quot;status&quot;</span><span class="punctuation">:</span> <span class="string">&quot;ok&quot;</span><span class="punctuation">,</span> <span class="attr">&quot;durationMs&quot;</span><span class="punctuation">:</span> <span class="number">3120</span><span class="punctuation">,</span> <span class="attr">&quot;error&quot;</span><span class="punctuation">:</span> <span class="literal"><span class="keyword">null</span></span> <span class="punctuation">&#125;</span><span class="punctuation">,</span></span><br><span class="line">        <span class="punctuation">&#123;</span> <span class="attr">&quot;runAtMs&quot;</span><span class="punctuation">:</span> <span class="number">1745028000000</span><span class="punctuation">,</span> <span class="attr">&quot;status&quot;</span><span class="punctuation">:</span> <span class="string">&quot;error&quot;</span><span class="punctuation">,</span> <span class="attr">&quot;durationMs&quot;</span><span class="punctuation">:</span> <span class="number">502</span><span class="punctuation">,</span> <span class="attr">&quot;error&quot;</span><span class="punctuation">:</span> <span class="string">&quot;LLM timeout&quot;</span> <span class="punctuation">&#125;</span></span><br><span class="line">      <span class="punctuation">]</span></span><br><span class="line">    <span class="punctuation">&#125;</span><span class="punctuation">,</span></span><br><span class="line">    <span class="attr">&quot;createdAtMs&quot;</span><span class="punctuation">:</span> <span class="number">1745114400000</span><span class="punctuation">,</span></span><br><span class="line">    <span class="attr">&quot;deleteAfterRun&quot;</span><span class="punctuation">:</span> <span class="literal"><span class="keyword">false</span></span></span><br><span class="line">  <span class="punctuation">&#125;</span><span class="punctuation">]</span></span><br><span class="line"><span class="punctuation">&#125;</span></span><br></pre></td></tr></table></figure>
+
+<p><strong>action.jsonl</strong> 是追加写入的变更日志，每行一个操作（add&#x2F;update&#x2F;del），用于多进程安全和离线注册：</p>
+<figure class="highlight plaintext"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br></pre></td><td class="code"><pre><span class="line">&#123;&quot;action&quot;: &quot;add&quot;, &quot;params&quot;: &#123;&quot;id&quot;: &quot;b7d2e5a1&quot;, &quot;name&quot;: &quot;每周报告&quot;, &quot;schedule&quot;: &#123;&quot;kind&quot;: &quot;cron&quot;, &quot;expr&quot;: &quot;0 10 * * 1&quot;&#125;, ...&#125;&#125;</span><br><span class="line">&#123;&quot;action&quot;: &quot;del&quot;, &quot;params&quot;: &#123;&quot;job_id&quot;: &quot;a3f9c1b2&quot;&#125;&#125;</span><br></pre></td></tr></table></figure>
+
+<p>两个文件的协作方式：平时只写 jobs.json；当服务未运行或有外部进程需要变更 job 时，追加写入 action.jsonl；服务启动或下一轮 <code>_on_timer()</code> 开始时，将 action.jsonl 重放合并进 jobs.json，然后清空 action.jsonl。详见第5节。</p>
+<h2 id="3-2-初始化参数"><a href="#3-2-初始化参数" class="headerlink" title="3.2 初始化参数"></a>3.2 初始化参数</h2><figure class="highlight python"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">class</span> <span class="title class_">CronService</span>:</span><br><span class="line">    <span class="keyword">def</span> <span class="title function_">__init__</span>(<span class="params"></span></span><br><span class="line"><span class="params">        self,</span></span><br><span class="line"><span class="params">        store_path: Path,</span></span><br><span class="line"><span class="params">        on_job: <span class="type">Callable</span>[[CronJob], <span class="type">Coroutine</span>[<span class="type">Any</span>, <span class="type">Any</span>, <span class="built_in">str</span> | <span class="literal">None</span>]] | <span class="literal">None</span> = <span class="literal">None</span>,</span></span><br><span class="line"><span class="params">        max_sleep_ms: <span class="built_in">int</span> = <span class="number">300_000</span>,  <span class="comment"># 5分钟</span></span></span><br><span class="line"><span class="params">    </span>):</span><br></pre></td></tr></table></figure>
+
+<ul>
+<li><code>on_job</code>：job 触发时的回调，由 gateway 注入；<code>CronService</code> 本身不感知 agent 的存在</li>
+<li><code>max_sleep_ms</code>：无 job 时定时器的最长 sleep 时间，防止外部进程新增 job 后长时间未被发现</li>
+</ul>
+<h2 id="3-3-两个状态标志"><a href="#3-3-两个状态标志" class="headerlink" title="3.3 两个状态标志"></a>3.3 两个状态标志</h2><figure class="highlight python"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br></pre></td><td class="code"><pre><span class="line"><span class="variable language_">self</span>._running = <span class="literal">False</span>       <span class="comment"># 服务是否已 start()</span></span><br><span class="line"><span class="variable language_">self</span>._timer_active = <span class="literal">False</span>  <span class="comment"># 当前是否在 _on_timer() 执行中</span></span><br></pre></td></tr></table></figure>
+
+<hr>
+<h1 id="4-调度引擎：定时器驱动循环"><a href="#4-调度引擎：定时器驱动循环" class="headerlink" title="4. 调度引擎：定时器驱动循环"></a>4. 调度引擎：定时器驱动循环</h1><p><img src="/2026-04-21-nanobot%E6%BA%90%E7%A0%81%E5%AD%A6%E4%B9%A0(7)-cron/timer_loop.svg" alt="定时器驱动执行流程"></p>
+<h2 id="4-1-start"><a href="#4-1-start" class="headerlink" title="4.1 start()"></a>4.1 start()</h2><figure class="highlight python"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">async</span> <span class="keyword">def</span> <span class="title function_">start</span>(<span class="params">self</span>) -&gt; <span class="literal">None</span>:</span><br><span class="line">    <span class="variable language_">self</span>._running = <span class="literal">True</span></span><br><span class="line">    <span class="variable language_">self</span>._load_store()           <span class="comment"># 加载 jobs.json + 合并 action.jsonl</span></span><br><span class="line">    <span class="variable language_">self</span>._recompute_next_runs()  <span class="comment"># 重算所有 next_run_at_ms（跨重启时间已流逝）</span></span><br><span class="line">    <span class="variable language_">self</span>._save_store()</span><br><span class="line">    <span class="variable language_">self</span>._arm_timer()</span><br></pre></td></tr></table></figure>
+
+<h2 id="4-2-arm-timer"><a href="#4-2-arm-timer" class="headerlink" title="4.2 _arm_timer()"></a>4.2 _arm_timer()</h2><figure class="highlight python"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">def</span> <span class="title function_">_arm_timer</span>(<span class="params">self</span>) -&gt; <span class="literal">None</span>:</span><br><span class="line">    <span class="keyword">if</span> <span class="variable language_">self</span>._timer_task:</span><br><span class="line">        <span class="variable language_">self</span>._timer_task.cancel()</span><br><span class="line"></span><br><span class="line">    next_wake = <span class="variable language_">self</span>._get_next_wake_ms()</span><br><span class="line">    delay_ms = <span class="variable language_">self</span>.max_sleep_ms <span class="keyword">if</span> next_wake <span class="keyword">is</span> <span class="literal">None</span> \</span><br><span class="line">        <span class="keyword">else</span> <span class="built_in">min</span>(<span class="variable language_">self</span>.max_sleep_ms, <span class="built_in">max</span>(<span class="number">0</span>, next_wake - _now_ms()))</span><br><span class="line"></span><br><span class="line">    <span class="keyword">async</span> <span class="keyword">def</span> <span class="title function_">tick</span>():</span><br><span class="line">        <span class="keyword">await</span> asyncio.sleep(delay_ms / <span class="number">1000</span>)</span><br><span class="line">        <span class="keyword">if</span> <span class="variable language_">self</span>._running:</span><br><span class="line">            <span class="keyword">await</span> <span class="variable language_">self</span>._on_timer()</span><br><span class="line"></span><br><span class="line">    <span class="variable language_">self</span>._timer_task = asyncio.create_task(tick())</span><br></pre></td></tr></table></figure>
+
+<p>取所有 enabled job 中最近的 <code>next_run_at_ms</code>，sleep 对应时长后触发 <code>_on_timer()</code>。<code>_on_timer()</code> 结束后再次调用 <code>_arm_timer()</code>，形成自驱动循环。<code>max_sleep_ms</code> 保证即使无 job，定时器也会定期醒来扫描外部变更。</p>
+<h2 id="4-3-on-timer-：核心调度"><a href="#4-3-on-timer-：核心调度" class="headerlink" title="4.3 _on_timer()：核心调度"></a>4.3 _on_timer()：核心调度</h2><figure class="highlight python"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">async</span> <span class="keyword">def</span> <span class="title function_">_on_timer</span>(<span class="params">self</span>) -&gt; <span class="literal">None</span>:</span><br><span class="line">    <span class="variable language_">self</span>._load_store()       <span class="comment"># 重新加载，合并外部变更</span></span><br><span class="line">    <span class="variable language_">self</span>._timer_active = <span class="literal">True</span></span><br><span class="line">    <span class="keyword">try</span>:</span><br><span class="line">        now = _now_ms()</span><br><span class="line">        due_jobs = [</span><br><span class="line">            j <span class="keyword">for</span> j <span class="keyword">in</span> <span class="variable language_">self</span>._store.jobs</span><br><span class="line">            <span class="keyword">if</span> j.enabled <span class="keyword">and</span> j.state.next_run_at_ms <span class="keyword">and</span> now &gt;= j.state.next_run_at_ms</span><br><span class="line">        ]</span><br><span class="line">        <span class="keyword">for</span> job <span class="keyword">in</span> due_jobs:</span><br><span class="line">            <span class="keyword">await</span> <span class="variable language_">self</span>._execute_job(job)</span><br><span class="line">        <span class="variable language_">self</span>._save_store()</span><br><span class="line">    <span class="keyword">finally</span>:</span><br><span class="line">        <span class="variable language_">self</span>._timer_active = <span class="literal">False</span></span><br><span class="line">    <span class="variable language_">self</span>._arm_timer()</span><br></pre></td></tr></table></figure>
+
+<h2 id="4-4-三种调度模式的计算"><a href="#4-4-三种调度模式的计算" class="headerlink" title="4.4 三种调度模式的计算"></a>4.4 三种调度模式的计算</h2><figure class="highlight python"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">def</span> <span class="title function_">_compute_next_run</span>(<span class="params">schedule: CronSchedule, now_ms: <span class="built_in">int</span></span>) -&gt; <span class="built_in">int</span> | <span class="literal">None</span>:</span><br><span class="line">    <span class="keyword">if</span> schedule.kind == <span class="string">&quot;at&quot;</span>:</span><br><span class="line">        <span class="keyword">return</span> schedule.at_ms <span class="keyword">if</span> schedule.at_ms <span class="keyword">and</span> schedule.at_ms &gt; now_ms <span class="keyword">else</span> <span class="literal">None</span></span><br><span class="line"></span><br><span class="line">    <span class="keyword">if</span> schedule.kind == <span class="string">&quot;every&quot;</span>:</span><br><span class="line">        <span class="keyword">return</span> now_ms + schedule.every_ms   <span class="comment"># 从&quot;执行完那刻&quot;起算，不漂移</span></span><br><span class="line"></span><br><span class="line">    <span class="keyword">if</span> schedule.kind == <span class="string">&quot;cron&quot;</span> <span class="keyword">and</span> schedule.expr:</span><br><span class="line">        base_dt = datetime.fromtimestamp(now_ms / <span class="number">1000</span>, tz=tz)</span><br><span class="line">        cron = croniter(schedule.expr, base_dt)</span><br><span class="line">        next_dt = cron.get_next(datetime)</span><br><span class="line">        <span class="keyword">return</span> <span class="built_in">int</span>(next_dt.timestamp() * <span class="number">1000</span>)</span><br></pre></td></tr></table></figure>
+
+<ul>
+<li><code>at</code>：时间点过了返回 <code>None</code>，不再触发</li>
+<li><code>every</code>：每次执行后重算，以执行完成时刻为基准，避免执行耗时导致的时间漂移累积</li>
+<li><code>cron</code>：用 <a target="_blank" rel="noopener" href="https://github.com/kiorky/croniter">croniter</a> 解析表达式，<code>ZoneInfo</code> 处理时区，夏令时切换时行为正确</li>
+</ul>
+<h2 id="4-5-execute-job"><a href="#4-5-execute-job" class="headerlink" title="4.5 _execute_job()"></a>4.5 _execute_job()</h2><figure class="highlight python"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">async</span> <span class="keyword">def</span> <span class="title function_">_execute_job</span>(<span class="params">self, job: CronJob</span>) -&gt; <span class="literal">None</span>:</span><br><span class="line">    start_ms = _now_ms()</span><br><span class="line">    <span class="keyword">try</span>:</span><br><span class="line">        <span class="keyword">if</span> <span class="variable language_">self</span>.on_job:</span><br><span class="line">            <span class="keyword">await</span> <span class="variable language_">self</span>.on_job(job)</span><br><span class="line">        job.state.last_status = <span class="string">&quot;ok&quot;</span></span><br><span class="line">    <span class="keyword">except</span> Exception <span class="keyword">as</span> e:</span><br><span class="line">        job.state.last_status = <span class="string">&quot;error&quot;</span></span><br><span class="line">        job.state.last_error = <span class="built_in">str</span>(e)</span><br><span class="line"></span><br><span class="line">    end_ms = _now_ms()</span><br><span class="line">    job.state.last_run_at_ms = start_ms</span><br><span class="line">    job.state.run_history.append(CronRunRecord(</span><br><span class="line">        run_at_ms=start_ms, status=job.state.last_status,</span><br><span class="line">        duration_ms=end_ms - start_ms, error=job.state.last_error,</span><br><span class="line">    ))</span><br><span class="line">    job.state.run_history = job.state.run_history[-<span class="variable language_">self</span>._MAX_RUN_HISTORY:]</span><br><span class="line"></span><br><span class="line">    <span class="keyword">if</span> job.schedule.kind == <span class="string">&quot;at&quot;</span>:</span><br><span class="line">        <span class="keyword">if</span> job.delete_after_run:</span><br><span class="line">            <span class="variable language_">self</span>._store.jobs = [j <span class="keyword">for</span> j <span class="keyword">in</span> <span class="variable language_">self</span>._store.jobs <span class="keyword">if</span> j.<span class="built_in">id</span> != job.<span class="built_in">id</span>]</span><br><span class="line">        <span class="keyword">else</span>:</span><br><span class="line">            job.enabled = <span class="literal">False</span></span><br><span class="line">            job.state.next_run_at_ms = <span class="literal">None</span></span><br><span class="line">    <span class="keyword">else</span>:</span><br><span class="line">        job.state.next_run_at_ms = _compute_next_run(job.schedule, _now_ms())</span><br></pre></td></tr></table></figure>
+
+<p>无论成功失败都记录执行历史。<code>at</code> 类型执行完后，<code>delete_after_run=True</code> 则从 store 删除，否则置 <code>enabled=False</code>，确保不再触发。</p>
+<hr>
+<h1 id="5-action-jsonl：离线写入机制"><a href="#5-action-jsonl：离线写入机制" class="headerlink" title="5. action.jsonl：离线写入机制"></a>5. action.jsonl：离线写入机制</h1><h2 id="5-1-什么是”离线”"><a href="#5-1-什么是”离线”" class="headerlink" title="5.1 什么是”离线”"></a>5.1 什么是”离线”</h2><p>这里的”离线”特指 <code>CronService._running == False</code> 的情况，有两种场景：</p>
+<ol>
+<li><strong>gateway 未启动</strong>：用户在 <code>nanobot agent</code> 交互模式下创建了 cron job，此时没有 gateway 进程运行，没有任何 <code>CronService</code> 实例处于 running 状态</li>
+<li><strong>外部进程操作</strong>：gateway 已经运行，但另一个进程（如 <code>nanobot agent</code>）也实例化了一个 <code>CronService</code> 对象来操作 job——这个外部实例从未调用过 <code>start()</code>，对它自己而言 <code>_running=False</code></li>
+</ol>
+<p>两种情况下直接写 <code>jobs.json</code> 都不安全，gateway 的 <code>CronService</code> 实例随时可能在写同一个文件。</p>
+<h2 id="5-2-类-WAL-机制"><a href="#5-2-类-WAL-机制" class="headerlink" title="5.2 类 WAL 机制"></a>5.2 类 WAL 机制</h2><p>解决方案是 <code>action.jsonl</code>：</p>
+<ul>
+<li><strong>离线时</strong>：把操作（add&#x2F;del&#x2F;update）追加写入 <code>action.jsonl</code>——append-only，原子性强</li>
+<li><strong>合并时机</strong>：**<code>start()</code> 启动时<strong>，以及</strong>每次 <code>_on_timer()</code> 开始时**（每轮定时器唤醒都会调用 <code>_load_store()</code>，其中包含 <code>_merge_action()</code>）</li>
+</ul>
+<p><img src="/2026-04-21-nanobot%E6%BA%90%E7%A0%81%E5%AD%A6%E4%B9%A0(7)-cron/action_wal.svg" alt="离线写入与上线合并"></p>
+<p><code>_running</code> 决定走哪条路：</p>
+<figure class="highlight python"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">def</span> <span class="title function_">add_job</span>(<span class="params">self, ...</span>) -&gt; CronJob:</span><br><span class="line">    <span class="keyword">if</span> <span class="variable language_">self</span>._running:</span><br><span class="line">        store = <span class="variable language_">self</span>._load_store()</span><br><span class="line">        store.jobs.append(job)</span><br><span class="line">        <span class="variable language_">self</span>._save_store()</span><br><span class="line">        <span class="variable language_">self</span>._arm_timer()</span><br><span class="line">    <span class="keyword">else</span>:</span><br><span class="line">        <span class="variable language_">self</span>._append_action(<span class="string">&quot;add&quot;</span>, asdict(job))</span><br></pre></td></tr></table></figure>
+
+<p><code>remove_job()</code>、<code>enable_job()</code>、<code>update_job()</code> 遵循相同模式。</p>
+<h2 id="5-3-merge-action"><a href="#5-3-merge-action" class="headerlink" title="5.3 _merge_action()"></a>5.3 _merge_action()</h2><figure class="highlight python"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">def</span> <span class="title function_">_merge_action</span>(<span class="params">self</span>):</span><br><span class="line">    jobs_map = &#123;j.<span class="built_in">id</span>: j <span class="keyword">for</span> j <span class="keyword">in</span> <span class="variable language_">self</span>._store.jobs&#125;</span><br><span class="line">    <span class="keyword">with</span> <span class="variable language_">self</span>._lock:</span><br><span class="line">        <span class="keyword">with</span> <span class="built_in">open</span>(<span class="variable language_">self</span>._action_path, <span class="string">&quot;r&quot;</span>) <span class="keyword">as</span> f:</span><br><span class="line">            changed = <span class="literal">False</span></span><br><span class="line">            <span class="keyword">for</span> line <span class="keyword">in</span> f:</span><br><span class="line">                action = json.loads(line.strip())</span><br><span class="line">                <span class="keyword">if</span> action[<span class="string">&quot;action&quot;</span>] == <span class="string">&quot;del&quot;</span>:</span><br><span class="line">                    jobs_map.pop(action[<span class="string">&quot;params&quot;</span>].get(<span class="string">&quot;job_id&quot;</span>), <span class="literal">None</span>)</span><br><span class="line">                <span class="keyword">else</span>:</span><br><span class="line">                    jobs_map[action[<span class="string">&quot;params&quot;</span>][<span class="string">&quot;id&quot;</span>]] = CronJob.from_dict(action[<span class="string">&quot;params&quot;</span>])</span><br><span class="line">                changed = <span class="literal">True</span></span><br><span class="line">        <span class="variable language_">self</span>._store.jobs = <span class="built_in">list</span>(jobs_map.values())</span><br><span class="line">        <span class="keyword">if</span> <span class="variable language_">self</span>._running <span class="keyword">and</span> changed:</span><br><span class="line">            <span class="variable language_">self</span>._action_path.write_text(<span class="string">&quot;&quot;</span>, encoding=<span class="string">&quot;utf-8&quot;</span>)  <span class="comment"># 清空</span></span><br><span class="line">            <span class="variable language_">self</span>._save_store()</span><br></pre></td></tr></table></figure>
+
+<p>以 <code>&#123;id: job&#125;</code> map 重放所有操作，保证幂等。<code>FileLock</code> 保护读-处理-清空的整个临界区，防止并发 append 与清空之间的竞态。</p>
+<hr>
+<h1 id="6-用户如何添加-cron-job"><a href="#6-用户如何添加-cron-job" class="headerlink" title="6. 用户如何添加 cron job"></a>6. 用户如何添加 cron job</h1><p>用户有两条路径注册 job，最终都走到 <code>CronService.add_job()</code>。</p>
+<h2 id="6-1-自然语言对话（最常用）"><a href="#6-1-自然语言对话（最常用）" class="headerlink" title="6.1 自然语言对话（最常用）"></a>6.1 自然语言对话（最常用）</h2><p>在任意渠道（飞书、微信、CLI 等）直接告诉 bot：</p>
+<figure class="highlight plaintext"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br></pre></td><td class="code"><pre><span class="line">每天早上 9 点提醒我站起来活动</span><br><span class="line">下周一 10 点提醒我开周会</span><br><span class="line">每隔 2 小时检查一次系统状态并发到飞书</span><br></pre></td></tr></table></figure>
+
+<p>agent 的 LLM 会将自然语言解析为 <code>CronTool</code> 的工具调用，完整流程见第7节。这是普通用户使用 cron 的主要方式，不需要了解任何底层细节。</p>
+<h2 id="6-2-代码直接调用"><a href="#6-2-代码直接调用" class="headerlink" title="6.2 代码直接调用"></a>6.2 代码直接调用</h2><p>开发者或系统内部可以跳过 LLM，直接构造 <code>CronSchedule</code> 调用 <code>CronService.add_job()</code>：</p>
+<figure class="highlight python"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br><span class="line">27</span><br><span class="line">28</span><br><span class="line">29</span><br><span class="line">30</span><br><span class="line">31</span><br><span class="line">32</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">from</span> nanobot.cron.service <span class="keyword">import</span> CronService</span><br><span class="line"><span class="keyword">from</span> nanobot.cron.types <span class="keyword">import</span> CronSchedule</span><br><span class="line"></span><br><span class="line">cron = CronService(store_path)</span><br><span class="line"></span><br><span class="line"><span class="comment"># 每天 9 点（cron 表达式）</span></span><br><span class="line">cron.add_job(</span><br><span class="line">    name=<span class="string">&quot;morning-standup&quot;</span>,</span><br><span class="line">    schedule=CronSchedule(kind=<span class="string">&quot;cron&quot;</span>, expr=<span class="string">&quot;0 9 * * *&quot;</span>, tz=<span class="string">&quot;Asia/Shanghai&quot;</span>),</span><br><span class="line">    message=<span class="string">&quot;提醒站起来活动&quot;</span>,</span><br><span class="line">    deliver=<span class="literal">True</span>,</span><br><span class="line">    channel=<span class="string">&quot;feishu&quot;</span>,</span><br><span class="line">    to=<span class="string">&quot;ou_xxx&quot;</span>,</span><br><span class="line">)</span><br><span class="line"></span><br><span class="line"><span class="comment"># 每小时一次</span></span><br><span class="line">cron.add_job(</span><br><span class="line">    name=<span class="string">&quot;hourly-check&quot;</span>,</span><br><span class="line">    schedule=CronSchedule(kind=<span class="string">&quot;every&quot;</span>, every_ms=<span class="number">3_600_000</span>),</span><br><span class="line">    message=<span class="string">&quot;检查系统状态并汇报&quot;</span>,</span><br><span class="line">    deliver=<span class="literal">False</span>,</span><br><span class="line">)</span><br><span class="line"></span><br><span class="line"><span class="comment"># 一次性定时（at 模式，执行后自动删除）</span></span><br><span class="line">cron.add_job(</span><br><span class="line">    name=<span class="string">&quot;meeting-reminder&quot;</span>,</span><br><span class="line">    schedule=CronSchedule(kind=<span class="string">&quot;at&quot;</span>, at_ms=<span class="number">1745200800000</span>),</span><br><span class="line">    message=<span class="string">&quot;10分钟后开周会，提前准备&quot;</span>,</span><br><span class="line">    deliver=<span class="literal">True</span>,</span><br><span class="line">    channel=<span class="string">&quot;feishu&quot;</span>,</span><br><span class="line">    to=<span class="string">&quot;ou_xxx&quot;</span>,</span><br><span class="line">)</span><br></pre></td></tr></table></figure>
+
+<p>注意：若此时 gateway 未运行（<code>_running=False</code>），<code>add_job()</code> 会把操作写入 <code>action.jsonl</code>，等 gateway 启动时自动合并生效。</p>
+<h2 id="6-3-系统内部注册（register-system-job）"><a href="#6-3-系统内部注册（register-system-job）" class="headerlink" title="6.3 系统内部注册（register_system_job）"></a>6.3 系统内部注册（register_system_job）</h2><p>Dream 等系统任务通过 <code>register_system_job()</code> 注册，幂等，每次 gateway 重启都会重新注册并重算执行时间。此类 job 的 <code>payload.kind=&quot;system_event&quot;</code>，用户可见但不可删除（<code>protected</code>）。详见第8节。</p>
+<hr>
+<h1 id="7-CronTool：LLM-的调度接口"><a href="#7-CronTool：LLM-的调度接口" class="headerlink" title="7. CronTool：LLM 的调度接口"></a>7. CronTool：LLM 的调度接口</h1><p><code>CronService</code> 是纯调度引擎，不关心 job 来源。用户用自然语言说”提醒我明天开会”时，经由 <code>CronTool</code> 完成注册。</p>
+<figure class="highlight python"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br></pre></td><td class="code"><pre><span class="line"><span class="meta">@tool_parameters(<span class="params">tool_parameters_schema(<span class="params"></span></span></span></span><br><span class="line"><span class="params"><span class="params"><span class="meta">    action=StringSchema(<span class="params"><span class="string">&quot;Action to perform&quot;</span>, enum=[<span class="string">&quot;add&quot;</span>, <span class="string">&quot;list&quot;</span>, <span class="string">&quot;remove&quot;</span>]</span>),</span></span></span></span><br><span class="line"><span class="params"><span class="params"><span class="meta">    message=StringSchema(<span class="params"><span class="string">&quot;Instruction for the agent when job triggers&quot;</span></span>),</span></span></span></span><br><span class="line"><span class="params"><span class="params"><span class="meta">    every_seconds=IntegerSchema(<span class="params"><span class="number">0</span>, description=<span class="string">&quot;Interval in seconds&quot;</span></span>),</span></span></span></span><br><span class="line"><span class="params"><span class="params"><span class="meta">    cron_expr=StringSchema(<span class="params"><span class="string">&quot;Cron expression like &#x27;0 9 * * *&#x27;&quot;</span></span>),</span></span></span></span><br><span class="line"><span class="params"><span class="params"><span class="meta">    tz=StringSchema(<span class="params"><span class="string">&quot;Optional IANA timezone&quot;</span></span>),</span></span></span></span><br><span class="line"><span class="params"><span class="params"><span class="meta">    at=StringSchema(<span class="params"><span class="string">&quot;ISO datetime for one-time execution&quot;</span></span>),</span></span></span></span><br><span class="line"><span class="params"><span class="params"><span class="meta">    deliver=BooleanSchema(<span class="params">description=<span class="string">&quot;Whether to deliver result to user&quot;</span>, default=<span class="literal">True</span></span>),</span></span></span></span><br><span class="line"><span class="params"><span class="params"><span class="meta">    job_id=StringSchema(<span class="params"><span class="string">&quot;Job ID (for remove)&quot;</span></span>),</span></span></span></span><br><span class="line"><span class="params"><span class="params"><span class="meta">    required=[<span class="string">&quot;action&quot;</span>],</span></span></span></span><br><span class="line"><span class="params"><span class="params"><span class="meta"></span>)</span>)</span></span><br><span class="line"><span class="keyword">class</span> <span class="title class_">CronTool</span>(<span class="title class_ inherited__">Tool</span>):</span><br></pre></td></tr></table></figure>
+
+<h2 id="7-1-上下文绑定"><a href="#7-1-上下文绑定" class="headerlink" title="7.1 上下文绑定"></a>7.1 上下文绑定</h2><p>每次 agent 处理消息时，通过 <code>set_context()</code> 注入当前 channel 和 chat_id：</p>
+<figure class="highlight python"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">def</span> <span class="title function_">set_context</span>(<span class="params">self, channel: <span class="built_in">str</span>, chat_id: <span class="built_in">str</span></span>) -&gt; <span class="literal">None</span>:</span><br><span class="line">    <span class="variable language_">self</span>._channel = channel</span><br><span class="line">    <span class="variable language_">self</span>._chat_id = chat_id</span><br></pre></td></tr></table></figure>
+
+<p>创建 job 时这两个值存入 <code>CronPayload</code>，触发时推送到<strong>注册 job 时所在的会话</strong>。</p>
+<h2 id="7-2-防递归注册：-in-cron-context"><a href="#7-2-防递归注册：-in-cron-context" class="headerlink" title="7.2 防递归注册：_in_cron_context"></a>7.2 防递归注册：_in_cron_context</h2><p>cron job 执行中，agent 可能再次调用 <code>cron(action=add, ...)</code>，导致 job 在运行时不断自我复制。用 <code>ContextVar</code> 标记当前执行上下文：</p>
+<figure class="highlight python"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line"><span class="variable language_">self</span>._in_cron_context: ContextVar[<span class="built_in">bool</span>] = ContextVar(<span class="string">&quot;cron_in_context&quot;</span>, default=<span class="literal">False</span>)</span><br></pre></td></tr></table></figure>
+
+<p>gateway 的 <code>on_cron_job</code> 回调设置标记：</p>
+<figure class="highlight python"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br></pre></td><td class="code"><pre><span class="line">cron_token = cron_tool.set_cron_context(<span class="literal">True</span>)</span><br><span class="line"><span class="keyword">try</span>:</span><br><span class="line">    resp = <span class="keyword">await</span> agent.process_direct(...)</span><br><span class="line"><span class="keyword">finally</span>:</span><br><span class="line">    cron_tool.reset_cron_context(cron_token)</span><br></pre></td></tr></table></figure>
+
+<p><code>execute()</code> 里检查：</p>
+<figure class="highlight python"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">if</span> action == <span class="string">&quot;add&quot;</span> <span class="keyword">and</span> <span class="variable language_">self</span>._in_cron_context.get():</span><br><span class="line">    <span class="keyword">return</span> <span class="string">&quot;Error: cannot schedule new jobs from within a cron job execution&quot;</span></span><br></pre></td></tr></table></figure>
+
+<h2 id="7-3-deliver-与智能推送"><a href="#7-3-deliver-与智能推送" class="headerlink" title="7.3 deliver 与智能推送"></a>7.3 deliver 与智能推送</h2><p>job 触发后 agent 生成回复，<code>deliver=True</code> 时通过 <code>evaluate_response()</code> 再调一次 LLM 判断是否值得推送：</p>
+<figure class="highlight python"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">if</span> job.payload.deliver <span class="keyword">and</span> job.payload.to <span class="keyword">and</span> response:</span><br><span class="line">    should_notify = <span class="keyword">await</span> evaluate_response(response, reminder_note, provider, agent.model)</span><br><span class="line">    <span class="keyword">if</span> should_notify:</span><br><span class="line">        <span class="keyword">await</span> bus.publish_outbound(OutboundMessage(</span><br><span class="line">            channel=job.payload.channel <span class="keyword">or</span> <span class="string">&quot;cli&quot;</span>,</span><br><span class="line">            chat_id=job.payload.to,</span><br><span class="line">            content=response,</span><br><span class="line">        ))</span><br></pre></td></tr></table></figure>
+
+<p>对于”检查系统状态，一切正常”这类没有实质内容的回复，<code>evaluate_response()</code> 会返回 <code>False</code>，不触发推送。</p>
+<p>完整的 LLM 调用 → 创建 job → 触发执行 → deliver 流程：</p>
+<p><img src="/2026-04-21-nanobot%E6%BA%90%E7%A0%81%E5%AD%A6%E4%B9%A0(7)-cron/llm_cron_deliver.svg" alt="LLM 调用链：add 到 deliver"></p>
+<hr>
+<h1 id="8-Dream：系统任务注册"><a href="#8-Dream：系统任务注册" class="headerlink" title="8. Dream：系统任务注册"></a>8. Dream：系统任务注册</h1><p>第1篇讲的 Dream 记忆整理系统，其定期触发正是通过 cron 实现的。gateway 启动时：</p>
+<figure class="highlight python"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br></pre></td><td class="code"><pre><span class="line">cron.register_system_job(CronJob(</span><br><span class="line">    <span class="built_in">id</span>=<span class="string">&quot;dream&quot;</span>,</span><br><span class="line">    name=<span class="string">&quot;dream&quot;</span>,</span><br><span class="line">    schedule=dream_cfg.build_schedule(config.agents.defaults.timezone),</span><br><span class="line">    payload=CronPayload(kind=<span class="string">&quot;system_event&quot;</span>),</span><br><span class="line">))</span><br></pre></td></tr></table></figure>
+
+<p><code>on_cron_job</code> 回调中按 job 名特判：</p>
+<figure class="highlight python"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">async</span> <span class="keyword">def</span> <span class="title function_">on_cron_job</span>(<span class="params">job: CronJob</span>) -&gt; <span class="built_in">str</span> | <span class="literal">None</span>:</span><br><span class="line">    <span class="keyword">if</span> job.name == <span class="string">&quot;dream&quot;</span>:</span><br><span class="line">        <span class="keyword">await</span> agent.dream.run()   <span class="comment"># 直接调用内部方法，不走 agent 对话</span></span><br><span class="line">        <span class="keyword">return</span> <span class="literal">None</span></span><br><span class="line">    <span class="comment"># 其他 job 走 process_direct()</span></span><br></pre></td></tr></table></figure>
+
+<p><code>system_event</code> 类型不经 LLM 对话，不占用 session；用户执行 <code>cron(action=list)</code> 时能看到 dream job 但无法删除（<code>protected</code>）。</p>
+<p>cron 是 nanobot 所有定时自动化的统一基础设施，用户提醒和系统内部任务走同一套调度，仅执行路径不同。</p>
+<p>gateway 启动初始化完整流程：</p>
+<p><img src="/2026-04-21-nanobot%E6%BA%90%E7%A0%81%E5%AD%A6%E4%B9%A0(7)-cron/gateway_init.svg" alt="gateway 启动初始化"></p>
+<hr>
+<h1 id="9-整体调用链"><a href="#9-整体调用链" class="headerlink" title="9. 整体调用链"></a>9. 整体调用链</h1><p>三条线并行支撑 cron 系统的运转：</p>
+<p><strong>线1：用户对话注册</strong><br>用户发消息 → LLM 识别意图 → <code>CronTool.execute(action=add)</code> → <code>CronService.add_job()</code> → 写 <code>jobs.json</code> 并重算定时器</p>
+<p><strong>线2：定时器自驱动执行</strong><br><code>_arm_timer()</code> sleep → <code>_on_timer()</code> 扫描到期 job → <code>_execute_job()</code> → <code>on_cron_job</code> 回调 → <code>process_direct()</code> &#x2F; <code>dream.run()</code> → 按需 <code>bus.publish_outbound()</code> 推送用户</p>
+<p><strong>线3：多进程离线写入</strong><br>外部进程 <code>add_job()</code> → 写 <code>action.jsonl</code> → 下一轮 <code>_on_timer()</code> 触发 <code>_load_store()</code> → <code>_merge_action()</code> 合并 → 清空 <code>action.jsonl</code> → 写回 <code>jobs.json</code></p>
+<p>三条线通过 <code>jobs.json</code> 和 <code>action.jsonl</code> 共享状态，<code>FileLock</code> 保护并发写，<code>CronService</code> 内部只有一个 asyncio 定时器驱动整个调度循环。</p>
+<hr>
+<h1 id="小结"><a href="#小结" class="headerlink" title="小结"></a>小结</h1><p>nanobot 的 cron 模块做了一件值得关注的事：<strong>把调度引擎和执行载荷彻底解耦</strong>。引擎只管”什么时候触发”，触发后发生什么完全由外部注入的 <code>on_job</code> 回调决定——用户任务走 agent 对话，系统任务直接调内部接口，两者共用一套调度机制。</p>
+<p>这个设计的另一个体现是 <code>action.jsonl</code>。传统上一个本地调度器要么只允许单进程操作，要么需要数据库来协调并发写入。nanobot 用一个 append-only 的日志文件加上定期 merge 就解决了这个问题，足够简单，也足够可靠。</p>
+<p>在 nanobot 的整体架构里，cron它既承载用户通过自然语言注册的提醒任务，也承载 Dream 记忆整理这类系统级自动化，是”主动型 agent”能力的基础设施。</p>
+
+    </div>
+
+    
+    
+    
+
+    <footer class="post-footer">
+
+        
+
+          <div class="post-nav">
+            <div class="post-nav-item">
+                <a href="/2026-04-20-nanobot%E6%BA%90%E7%A0%81%E5%AD%A6%E4%B9%A0(6)-%E5%A4%9Achannel%E6%8E%A5%E5%85%A5/" rel="prev" title="nanobot源码学习(6)-多channel接入">
+                  <i class="fa fa-angle-left"></i> nanobot源码学习(6)-多channel接入
+                </a>
+            </div>
+            <div class="post-nav-item">
+                <a href="/2026-04-22-nanobot%E6%BA%90%E7%A0%81%E5%AD%A6%E4%B9%A0(8)-heartbeat/" rel="next" title="nanobot源码学习(8)-heartbeat">
+                  nanobot源码学习(8)-heartbeat <i class="fa fa-angle-right"></i>
+                </a>
+            </div>
+          </div>
+    </footer>
+  </article>
+</div>
+
+
+
+
+
+
+</div>
+  </main>
+
+  <footer class="footer">
+    <div class="footer-inner">
+
+  <div class="copyright">
+    &copy; 
+    <span itemprop="copyrightYear">2026</span>
+    <span class="with-love">
+      <i class="fa fa-heart"></i>
+    </span>
+    <span class="author" itemprop="copyrightHolder">Corgis</span>
+  </div>
+  <div class="powered-by">由 <a href="https://hexo.io/" rel="noopener" target="_blank">Hexo</a> & <a href="https://theme-next.js.org/muse/" rel="noopener" target="_blank">NexT.Muse</a> 强力驱动
+  </div>
+
+    </div>
+  </footer>
+
+  
+  <div class="toggle sidebar-toggle" role="button">
+    <span class="toggle-line"></span>
+    <span class="toggle-line"></span>
+    <span class="toggle-line"></span>
+  </div>
+  <div class="sidebar-dimmer"></div>
+  <div class="reading-progress-bar"></div>
+
+<noscript>
+  <div class="noscript-warning">Theme NexT works best with JavaScript enabled</div>
+</noscript>
+
+
+  
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/animejs/3.2.1/anime.min.js" integrity="sha256-XL2inqUJaslATFnHdJOi9GfQ60on8Wx1C2H8DYiN1xY=" crossorigin="anonymous"></script>
+<script src="/js/comments.js"></script><script src="/js/utils.js"></script><script src="/js/motion.js"></script><script src="/js/sidebar.js"></script><script src="/js/next-boot.js"></script>
+
+  
+
+
+
+
+
+
+  
+
+
+
+
+
+</body>
+</html>
