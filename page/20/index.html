@@ -159,7 +159,7 @@
   
 
   <article itemscope itemtype="http://schema.org/Article" class="post-content" lang="">
-    <link itemprop="mainEntityOfPage" href="https://scut-corgis.github.io/2025-09-23-k8s%E8%8A%82%E7%82%B9%E8%B0%83%E5%BA%A6%E7%AE%97%E6%B3%95%E7%A0%94%E7%A9%B6.md/k8s%E8%8A%82%E7%82%B9%E8%B0%83%E5%BA%A6%E7%AE%97%E6%B3%95%E7%A0%94%E7%A9%B6/">
+    <link itemprop="mainEntityOfPage" href="https://scut-corgis.github.io/2025-09-23-k8s%E8%8A%82%E7%82%B9%E8%B0%83%E5%BA%A6%E7%AE%97%E6%B3%95%E7%A0%94%E7%A9%B6/">
 
     <span hidden itemprop="author" itemscope itemtype="http://schema.org/Person">
       <meta itemprop="image" content="/images/corgis.jpg">
@@ -177,7 +177,7 @@
     </span>
       <header class="post-header">
         <h2 class="post-title" itemprop="name headline">
-          <a href="/2025-09-23-k8s%E8%8A%82%E7%82%B9%E8%B0%83%E5%BA%A6%E7%AE%97%E6%B3%95%E7%A0%94%E7%A9%B6.md/k8s%E8%8A%82%E7%82%B9%E8%B0%83%E5%BA%A6%E7%AE%97%E6%B3%95%E7%A0%94%E7%A9%B6/" class="post-title-link" itemprop="url">k8s节点调度算法研究</a>
+          <a href="/2025-09-23-k8s%E8%8A%82%E7%82%B9%E8%B0%83%E5%BA%A6%E7%AE%97%E6%B3%95%E7%A0%94%E7%A9%B6/" class="post-title-link" itemprop="url">k8s节点调度算法研究</a>
         </h2>
 
         <div class="post-meta-container">
@@ -306,7 +306,7 @@
 <figure class="highlight sh"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br></pre></td><td class="code"><pre><span class="line">X 节点 → (100 - 50)×25/50 + 50 = 75 分</span><br><span class="line">Y 节点 → (100 - 50)×50/50 + 50 = 100 分</span><br><span class="line">Z 节点 → 50×(100 - 75)/(100 - 50) = 25 分</span><br></pre></td></tr></table></figure>
 <p>在上述算法中，50% 是我们希望所有节点达到的目标利用率。若希望降低调度激进程度，可将其下调至 40%，从而大幅降低在负载峰值或意外负载下利用率超过 50% 的可能性。因此，实践中若要实现 X% 的利用率目标，建议将配置值设为 X-10。</p>
 <p>利用率阈值 X% 可配置。</p>
-<h4 id="算法分析"><a href="#算法分析" class="headerlink" title="算法分析"></a>算法分析</h4><p><img src="/tlp-graph.png"></p>
+<h4 id="算法分析"><a href="#算法分析" class="headerlink" title="算法分析"></a>算法分析</h4><p><img src="/2025-09-23-k8s%E8%8A%82%E7%82%B9%E8%B0%83%E5%BA%A6%E7%AE%97%E6%B3%95%E7%A0%94%E7%A9%B6/tlp-graph.png"></p>
 <p>上述图像为算法中所述分段函数的可视化呈现(X&#x3D;50)，从中可得出以下几点关键结论：</p>
 <ol>
 <li>当利用率从 0 升至 50% 时，我们会优先选择这些节点进行 Pod 的打包调度。</li>
@@ -329,11 +329,11 @@
 <blockquote>
 <p>注意下面的图，因为用k8s的概念画的，请把pod理解为我们上文一直说的节点，node理解为机器</p>
 </blockquote>
-<p><img src="/image6.png"></p>
+<p><img src="/2025-09-23-k8s%E8%8A%82%E7%82%B9%E8%B0%83%E5%BA%A6%E7%AE%97%E6%B3%95%E7%A0%94%E7%A9%B6/image6.png"></p>
 <p>按照步骤2～4，可以算出各资源利用率的平均值和标准差见下表</p>
-<p><img src="/image9.png"></p>
+<p><img src="/2025-09-23-k8s%E8%8A%82%E7%82%B9%E8%B0%83%E5%BA%A6%E7%AE%97%E6%B3%95%E7%A0%94%E7%A9%B6/image9.png"></p>
 <p>按照步骤5～6，可以算出每个机器的得分如下：</p>
-<p><img src="/image1.png"></p>
+<p><img src="/2025-09-23-k8s%E8%8A%82%E7%82%B9%E8%B0%83%E5%BA%A6%E7%AE%97%E6%B3%95%E7%A0%94%E7%A9%B6/image1.png"></p>
 <p>因此选出机器3。</p>
 <h1 id="后续"><a href="#后续" class="headerlink" title="后续"></a>后续</h1><p>后续我们上面的算法全都试了试，核心算法都没有采用，因为跑出来的结果很难表现出是优越于当前的。</p>
 <p>我们最后采用的算法是，高权重的全局方差最小 + 低权重Trimaran算法。</p>

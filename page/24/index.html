@@ -215,9 +215,47 @@
 <h1 id="failover命令"><a href="#failover命令" class="headerlink" title="failover命令"></a>failover命令</h1><p>注意非cluster和哨兵，就是redis6.0.20后引入的failover命令，可指定slave的ip:port和超时时间，是否force等。</p>
 <p>实现的具体过程如下</p>
 <h2 id="原主节点"><a href="#原主节点" class="headerlink" title="原主节点"></a>原主节点</h2><ol>
-<li>主节点收到该命令后，切换状态机<code>FAILOVER_WAIT_FOR_SYNC</code>，并暂停写操作（即接收操作但不处理）</li>
-<li>等指定的从节点的<code>replica-&gt;repl_ack_off == server.master_repl_offset</code>跟上后，切换状态<code>FAILOVER_IN_PROGRESS</code></li>
-<li>开始直接对该slave发起sync连接，开始部分重同步，即标准的一系列步骤，直到发送<code>PSYNC</code>时判断当前状态机为<code>FAILOVER_IN_PROGRESS</code>，增加命令参数<code>FAILOVER</code></li>
+<li><p>主节点收到该命令后，切换状态机<code>FAILOVER_WAIT_FOR_SYNC</code>，并暂停写操作（即接收操作但不处理）</p>
+<p>这里 pause 类型是 <code>CLIENT_PAUSE_WRITE</code>，超时时间设为 <code>LLONG_MAX</code>，必须由代码显式放行，不会自动过期。<code>CLIENT_PAUSE_WRITE</code> 只 block 写命令和有副作用的命令（<code>CMD_WRITE | CMD_MAY_REPLICATE</code>，如 PUBLISH、XADD），<strong>纯只读命令（GET、HGET 等）不受影响</strong>，仍可正常服务。这是刻意的设计——只需阻止新写入防止 offset 持续增大，读请求可以继续服务以降低业务影响。</p>
+<p>pause 放行的唯一入口是 <code>clearFailoverState()</code>，触发时机如下：</p>
+<table>
+<thead>
+<tr>
+<th>场景</th>
+<th>触发路径</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>failover <strong>成功</strong>（PSYNC 握手通过）</td>
+<td><code>syncWithMaster</code> 回调 → <code>clearFailoverState()</code></td>
+</tr>
+<tr>
+<td>failover <strong>失败</strong>（replica 拒绝 PSYNC）</td>
+<td><code>abortFailover()</code> → <code>clearFailoverState()</code></td>
+</tr>
+<tr>
+<td><strong>超时</strong>（无 <code>FORCE</code> 参数）</td>
+<td><code>updateFailoverStatus()</code> → <code>abortFailover()</code> → <code>clearFailoverState()</code></td>
+</tr>
+<tr>
+<td>超时（有 <code>FORCE</code> 参数）</td>
+<td>强制推进到 <code>FAILOVER_IN_PROGRESS</code>，等 PSYNC 结果后再走上面路径</td>
+</tr>
+<tr>
+<td>手动 <code>FAILOVER ABORT</code></td>
+<td><code>abortFailover()</code> → <code>clearFailoverState()</code></td>
+</tr>
+<tr>
+<td>PSYNC 写入阶段出错</td>
+<td><code>abortFailover()</code> → <code>clearFailoverState()</code></td>
+</tr>
+</tbody></table>
+<p>放行后被积压的写命令会被唤醒，但此时原主已降为从节点，写命令会收到 <code>READONLY</code> 错误。</p>
+</li>
+<li><p>等指定的从节点的<code>replica-&gt;repl_ack_off == server.master_repl_offset</code>跟上后，切换状态<code>FAILOVER_IN_PROGRESS</code></p>
+</li>
+<li><p>开始直接对该slave发起sync连接，开始部分重同步，即标准的一系列步骤，直到发送<code>PSYNC</code>时判断当前状态机为<code>FAILOVER_IN_PROGRESS</code>，增加命令参数<code>FAILOVER</code></p>
+</li>
 </ol>
 <figure class="highlight c"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">if</span> (server.failover_state == FAILOVER_IN_PROGRESS) &#123;</span><br><span class="line">    reply = sendCommand(conn,<span class="string">&quot;PSYNC&quot;</span>,psync_replid,psync_offset,<span class="string">&quot;FAILOVER&quot;</span>,<span class="literal">NULL</span>);</span><br><span class="line">&#125; <span class="keyword">else</span> &#123;</span><br><span class="line">    reply = sendCommand(conn,<span class="string">&quot;PSYNC&quot;</span>,psync_replid,psync_offset,<span class="literal">NULL</span>);</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
 <ol start="4">
@@ -225,7 +263,7 @@
 </ol>
 <figure class="highlight c"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br><span class="line">27</span><br><span class="line">28</span><br><span class="line">29</span><br><span class="line">30</span><br><span class="line">31</span><br><span class="line">32</span><br><span class="line">33</span><br><span class="line">34</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">if</span> (!<span class="built_in">strncmp</span>(reply,<span class="string">&quot;+CONTINUE&quot;</span>,<span class="number">9</span>)) &#123;</span><br><span class="line">    <span class="comment">/* Check the new replication ID advertised by the master. If it</span></span><br><span class="line"><span class="comment">     * changed, we need to set the new ID as primary ID, and set</span></span><br><span class="line"><span class="comment">     * secondary ID as the old master ID up to the current offset, so</span></span><br><span class="line"><span class="comment">     * that our sub-slaves will be able to PSYNC with us after a</span></span><br><span class="line"><span class="comment">     * disconnection. */</span></span><br><span class="line">    <span class="type">char</span> *start = reply+<span class="number">10</span>;</span><br><span class="line">    <span class="type">char</span> *end = reply+<span class="number">9</span>;</span><br><span class="line">    <span class="keyword">while</span>(end[<span class="number">0</span>] != <span class="string">&#x27;\r&#x27;</span> &amp;&amp; end[<span class="number">0</span>] != <span class="string">&#x27;\n&#x27;</span> &amp;&amp; end[<span class="number">0</span>] != <span class="string">&#x27;\0&#x27;</span>) end++;</span><br><span class="line">    <span class="keyword">if</span> (end-start == CONFIG_RUN_ID_SIZE) &#123;</span><br><span class="line">        <span class="type">char</span> new[CONFIG_RUN_ID_SIZE+<span class="number">1</span>];</span><br><span class="line">        <span class="built_in">memcpy</span>(new,start,CONFIG_RUN_ID_SIZE);</span><br><span class="line">        new[CONFIG_RUN_ID_SIZE] = <span class="string">&#x27;\0&#x27;</span>;</span><br><span class="line"></span><br><span class="line">        <span class="keyword">if</span> (<span class="built_in">strcmp</span>(new,server.cached_master-&gt;replid)) &#123;</span><br><span class="line">            <span class="comment">/* Master ID changed. */</span></span><br><span class="line">            serverLog(LL_WARNING,<span class="string">&quot;Master replication ID changed to %s&quot;</span>,new);</span><br><span class="line"></span><br><span class="line">            <span class="comment">/* Set the old ID as our ID2, up to the current offset+1. */</span></span><br><span class="line">            <span class="built_in">memcpy</span>(server.replid2,server.cached_master-&gt;replid,</span><br><span class="line">                <span class="keyword">sizeof</span>(server.replid2));</span><br><span class="line">            server.second_replid_offset = server.master_repl_offset+<span class="number">1</span>;</span><br><span class="line"></span><br><span class="line">            <span class="comment">/* Update the cached master ID and our own primary ID to the</span></span><br><span class="line"><span class="comment">             * new one. */</span></span><br><span class="line">            <span class="built_in">memcpy</span>(server.replid,new,<span class="keyword">sizeof</span>(server.replid));</span><br><span class="line">            <span class="built_in">memcpy</span>(server.cached_master-&gt;replid,new,<span class="keyword">sizeof</span>(server.replid));</span><br><span class="line"></span><br><span class="line">            <span class="comment">/* Disconnect all the sub-slaves: they need to be notified. */</span></span><br><span class="line">            disconnectSlaves();</span><br><span class="line">        &#125;</span><br><span class="line">    &#125;</span><br><span class="line">    ...</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
 
-
+<p>   这里断连其他从节点（sub-slaves）是让它们感知到 replid 变化——但注意，原主此时已降为从节点，其他从节点断连后仍只知道连接原主的地址，重连后会收到 <code>-NOMASTERLINK</code> 拒绝（原主自身还在连接新主的过程中）。其他从节点需要<strong>等 Sentinel 或外部通过 <code>REPLICAOF</code> 指向新主地址</strong>后，才能真正切过去。</p>
 <h2 id="原从节点"><a href="#原从节点" class="headerlink" title="原从节点"></a>原从节点</h2><ol>
 <li>收到<code>PSYNC [replidid] [repl_offset] FAILOVER</code>后，开始与原主节点断连，生成新的replid，并<strong>断连自己所有的slave</strong>(让他们感知到replid变化)，最后将自己置为master</li>
 </ol>
@@ -233,6 +271,13 @@
 
 <figure class="highlight c"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br></pre></td><td class="code"><pre><span class="line"><span class="comment">/* Cancel replication, setting the instance as a master itself. */</span></span><br><span class="line"><span class="type">void</span> <span class="title function_">replicationUnsetMaster</span><span class="params">(<span class="type">void</span>)</span> &#123;</span><br><span class="line">    <span class="keyword">if</span> (server.masterhost == <span class="literal">NULL</span>) <span class="keyword">return</span>; <span class="comment">/* Nothing to do. */</span></span><br><span class="line">    ...</span><br><span class="line">    <span class="comment">/* Clear masterhost first, since the freeClient calls</span></span><br><span class="line"><span class="comment">     * replicationHandleMasterDisconnection which can attempt to re-connect. */</span></span><br><span class="line">    sdsfree(server.masterhost);</span><br><span class="line">    server.masterhost = <span class="literal">NULL</span>;</span><br><span class="line">    <span class="keyword">if</span> (server.master) freeClient(server.master);</span><br><span class="line">    replicationDiscardCachedMaster();</span><br><span class="line">    cancelReplicationHandshake(<span class="number">0</span>);</span><br><span class="line">    <span class="comment">/* When a slave is turned into a master, the current replication ID</span></span><br><span class="line"><span class="comment">     * (that was inherited from the master at synchronization time) is</span></span><br><span class="line"><span class="comment">     * used as secondary ID up to the current offset, and a new replication</span></span><br><span class="line"><span class="comment">     * ID is created to continue with a new replication history. */</span></span><br><span class="line">    shiftReplicationId();</span><br><span class="line">    <span class="comment">/* Disconnecting all the slaves is required: we need to inform slaves</span></span><br><span class="line"><span class="comment">     * of the replication ID change (see shiftReplicationId() call). However</span></span><br><span class="line"><span class="comment">     * the slaves will be able to partially resync with us, so it will be</span></span><br><span class="line"><span class="comment">     * a very fast reconnection. */</span></span><br><span class="line">    disconnectSlaves();</span><br><span class="line">    server.repl_state = REPL_STATE_NONE;</span><br><span class="line">    ...</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
 
+<p>   <code>shiftReplicationId()</code> 是这里的核心：它把旧 replid（即原主的 replid，也是所有兄弟从节点所记的 replid）移到 <code>server.replid2</code>，同时记录 <code>second_replid_offset = master_repl_offset + 1</code>，再生成一个全新的 <code>server.replid</code>。</p>
+   <figure class="highlight c"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br></pre></td><td class="code"><pre><span class="line"><span class="comment">// shiftReplicationId()</span></span><br><span class="line"><span class="built_in">memcpy</span>(server.replid2, server.replid, <span class="keyword">sizeof</span>(server.replid));</span><br><span class="line">server.second_replid_offset = server.master_repl_offset + <span class="number">1</span>;</span><br><span class="line">changeReplicationId();  <span class="comment">// 生成新 replid</span></span><br></pre></td></tr></table></figure>
+
+<p>   之后 Sentinel（或外部）将其他从节点通过 <code>REPLICAOF</code> 切向新主地址，其他从节点断连原主后，<code>replicationCacheMaster()</code> 会将旧 master 信息缓存到 <code>cached_master</code>（内含原主的旧 replid），重连新主时发出：</p>
+   <figure class="highlight plaintext"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">PSYNC &lt;旧replid&gt; &lt;自己的offset&gt;</span><br></pre></td></tr></table></figure>
+
+<p>   新主在 <code>masterTryPartialResynchronization()</code> 中匹配 <code>server.replid2</code>（即旧 replid），只要 offset 在有效范围内（<code>&lt;= second_replid_offset</code>），就回复 <code>+CONTINUE</code> 并发送 backlog 差量，实现<strong>无需全量同步的快速切换</strong>。</p>
 <ol start="2">
 <li>因为该版本的redis支持psync2，因此返回<code>+CONTINUE [replid]</code>，注意是新的replid！</li>
 </ol>

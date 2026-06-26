@@ -22,24 +22,24 @@
     <meta name="description" content="背景之前其实已经看过了非常多种的热key算法，自己也用space-saving实现过一套proxy上的热key收集和缓存。但是最近看到的CMS算法，我觉得也非常好，时间复杂度低，原理清晰简单，空间消耗也是常数。 CMS算法的全称叫Count-Min Sketch，redis的开源module布隆过滤器RedisBloom就是基于它实现的统计元素的使用计数。 Count-Min Sketch核心原理">
 <meta property="og:type" content="article">
 <meta property="og:title" content="用CMS实现redis热key采集">
-<meta property="og:url" content="https://scut-corgis.github.io/2025-11-24-%E7%94%A8CMS%E5%AE%9E%E7%8E%B0redis%E7%83%ADkey%E9%87%87%E9%9B%86.md/%E7%94%A8CMS%E5%AE%9E%E7%8E%B0redis%E7%83%ADkey%E9%87%87%E9%9B%86/index.html">
+<meta property="og:url" content="https://scut-corgis.github.io/2025-11-24-%E7%94%A8CMS%E5%AE%9E%E7%8E%B0redis%E7%83%ADkey%E9%87%87%E9%9B%86/index.html">
 <meta property="og:site_name" content="corgis的笔记">
 <meta property="og:description" content="背景之前其实已经看过了非常多种的热key算法，自己也用space-saving实现过一套proxy上的热key收集和缓存。但是最近看到的CMS算法，我觉得也非常好，时间复杂度低，原理清晰简单，空间消耗也是常数。 CMS算法的全称叫Count-Min Sketch，redis的开源module布隆过滤器RedisBloom就是基于它实现的统计元素的使用计数。 Count-Min Sketch核心原理">
 <meta property="og:locale" content="zh_CN">
-<meta property="og:image" content="https://scut-corgis.github.io/%E5%8E%9F%E7%90%86.png">
-<meta property="og:image" content="https://scut-corgis.github.io/%E5%8E%9F%E7%90%862.png">
+<meta property="og:image" content="https://scut-corgis.github.io/2025-11-24-%E7%94%A8CMS%E5%AE%9E%E7%8E%B0redis%E7%83%ADkey%E9%87%87%E9%9B%86/%E5%8E%9F%E7%90%86.png">
+<meta property="og:image" content="https://scut-corgis.github.io/2025-11-24-%E7%94%A8CMS%E5%AE%9E%E7%8E%B0redis%E7%83%ADkey%E9%87%87%E9%9B%86/%E5%8E%9F%E7%90%862.png">
 <meta property="article:published_time" content="2025-11-24T06:27:05.000Z">
-<meta property="article:modified_time" content="2026-04-20T08:23:10.378Z">
+<meta property="article:modified_time" content="2026-06-26T07:05:09.880Z">
 <meta property="article:author" content="Corgis">
 <meta name="twitter:card" content="summary">
-<meta name="twitter:image" content="https://scut-corgis.github.io/%E5%8E%9F%E7%90%86.png">
+<meta name="twitter:image" content="https://scut-corgis.github.io/2025-11-24-%E7%94%A8CMS%E5%AE%9E%E7%8E%B0redis%E7%83%ADkey%E9%87%87%E9%9B%86/%E5%8E%9F%E7%90%86.png">
 
 
-<link rel="canonical" href="https://scut-corgis.github.io/2025-11-24-%E7%94%A8CMS%E5%AE%9E%E7%8E%B0redis%E7%83%ADkey%E9%87%87%E9%9B%86.md/%E7%94%A8CMS%E5%AE%9E%E7%8E%B0redis%E7%83%ADkey%E9%87%87%E9%9B%86/">
+<link rel="canonical" href="https://scut-corgis.github.io/2025-11-24-%E7%94%A8CMS%E5%AE%9E%E7%8E%B0redis%E7%83%ADkey%E9%87%87%E9%9B%86/">
 
 
 
-<script class="next-config" data-name="page" type="application/json">{"sidebar":"","isHome":false,"isPost":true,"lang":"zh-CN","comments":true,"permalink":"https://scut-corgis.github.io/2025-11-24-%E7%94%A8CMS%E5%AE%9E%E7%8E%B0redis%E7%83%ADkey%E9%87%87%E9%9B%86.md/%E7%94%A8CMS%E5%AE%9E%E7%8E%B0redis%E7%83%ADkey%E9%87%87%E9%9B%86/","path":"2025-11-24-用CMS实现redis热key采集.md/用CMS实现redis热key采集/","title":"用CMS实现redis热key采集"}</script>
+<script class="next-config" data-name="page" type="application/json">{"sidebar":"","isHome":false,"isPost":true,"lang":"zh-CN","comments":true,"permalink":"https://scut-corgis.github.io/2025-11-24-%E7%94%A8CMS%E5%AE%9E%E7%8E%B0redis%E7%83%ADkey%E9%87%87%E9%9B%86/","path":"2025-11-24-用CMS实现redis热key采集/","title":"用CMS实现redis热key采集"}</script>
 
 <script class="next-config" data-name="calendar" type="application/json">""</script>
 <title>用CMS实现redis热key采集 | corgis的笔记</title>
@@ -166,7 +166,7 @@
   
 
   <article itemscope itemtype="http://schema.org/Article" class="post-content" lang="zh-CN">
-    <link itemprop="mainEntityOfPage" href="https://scut-corgis.github.io/2025-11-24-%E7%94%A8CMS%E5%AE%9E%E7%8E%B0redis%E7%83%ADkey%E9%87%87%E9%9B%86.md/%E7%94%A8CMS%E5%AE%9E%E7%8E%B0redis%E7%83%ADkey%E9%87%87%E9%9B%86/">
+    <link itemprop="mainEntityOfPage" href="https://scut-corgis.github.io/2025-11-24-%E7%94%A8CMS%E5%AE%9E%E7%8E%B0redis%E7%83%ADkey%E9%87%87%E9%9B%86/">
 
     <span hidden itemprop="author" itemscope itemtype="http://schema.org/Person">
       <meta itemprop="image" content="/images/corgis.jpg">
@@ -219,8 +219,8 @@
     <div class="post-body" itemprop="articleBody"><h1 id="背景"><a href="#背景" class="headerlink" title="背景"></a>背景</h1><p>之前其实已经看过了非常多种的热key算法，自己也用space-saving实现过一套proxy上的热key收集和缓存。但是最近看到的CMS算法，我觉得也非常好，时间复杂度低，原理清晰简单，空间消耗也是常数。</p>
 <p>CMS算法的全称叫Count-Min Sketch，redis的开源module布隆过滤器RedisBloom就是基于它实现的统计元素的使用计数。</p>
 <h1 id="Count-Min-Sketch"><a href="#Count-Min-Sketch" class="headerlink" title="Count-Min Sketch"></a>Count-Min Sketch</h1><h2 id="核心原理"><a href="#核心原理" class="headerlink" title="核心原理"></a>核心原理</h2><p>基于哈希函数和二维数组（矩阵），通过多个哈希函数将元素映射到二维数组的不同位置，并对对应位置的计数器进行累加，以此来估算元素的频率。</p>
-<p><img src="/%E5%8E%9F%E7%90%86.png"></p>
-<h2 id="具体逻辑"><a href="#具体逻辑" class="headerlink" title="具体逻辑"></a>具体逻辑</h2><p><img src="/%E5%8E%9F%E7%90%862.png"></p>
+<p><img src="/2025-11-24-%E7%94%A8CMS%E5%AE%9E%E7%8E%B0redis%E7%83%ADkey%E9%87%87%E9%9B%86/%E5%8E%9F%E7%90%86.png"></p>
+<h2 id="具体逻辑"><a href="#具体逻辑" class="headerlink" title="具体逻辑"></a>具体逻辑</h2><p><img src="/2025-11-24-%E7%94%A8CMS%E5%AE%9E%E7%8E%B0redis%E7%83%ADkey%E9%87%87%E9%9B%86/%E5%8E%9F%E7%90%862.png"></p>
 <ol>
 <li>数据结构：假设有 d 个哈希函数h1, h2 … hd ，以及一个大小为w*d的二维数组（计数器矩阵） C 。这里 w 表示每个哈希函数映射的桶（bucket）的数量， d 表示哈希函数的个数。</li>
 <li>元素计数：当一个元素 x 出现时，分别通过 d 个哈希函数计算其在二维数组中的位置。即对于第 i 个哈希函数hi，计算hi(x) ，得到一个在 0 到 w 之间的索引值，然后将矩阵 C 中第 i 列、索引值对应的位置的计数器加 1 ，也就是 (C[i][hi(x)]++) 。</li>
@@ -263,7 +263,7 @@
 
           <div class="post-nav">
             <div class="post-nav-item">
-                <a href="/2025-09-23-k8s%E8%8A%82%E7%82%B9%E8%B0%83%E5%BA%A6%E7%AE%97%E6%B3%95%E7%A0%94%E7%A9%B6.md/k8s%E8%8A%82%E7%82%B9%E8%B0%83%E5%BA%A6%E7%AE%97%E6%B3%95%E7%A0%94%E7%A9%B6/" rel="prev" title="k8s节点调度算法研究">
+                <a href="/2025-09-23-k8s%E8%8A%82%E7%82%B9%E8%B0%83%E5%BA%A6%E7%AE%97%E6%B3%95%E7%A0%94%E7%A9%B6/" rel="prev" title="k8s节点调度算法研究">
                   <i class="fa fa-angle-left"></i> k8s节点调度算法研究
                 </a>
             </div>

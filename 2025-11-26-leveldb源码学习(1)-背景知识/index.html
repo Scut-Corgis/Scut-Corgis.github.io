@@ -27,7 +27,7 @@
 <meta property="og:description" content="学习背景虽然我的工作内容是纯缓存redis，但是也经常跟做磁盘数据库的同学交流沟通，我发现深入的理解rocksdb这种十分常用的kv数据库是相当有必要的。它能补齐我磁盘数据库知识缺失的一块。 并且，不能只从宏观原理上理解，比如只理解lsm-tree就可以了，我渴望从更深层的底层源码理解它的运作。 考虑到rocksdb过于复杂以至于并不适合新手学习lsm-tree的kv引擎，加上有句话说：“跟lev">
 <meta property="og:locale" content="zh_CN">
 <meta property="article:published_time" content="2025-11-26T07:21:12.000Z">
-<meta property="article:modified_time" content="2026-04-20T08:23:10.096Z">
+<meta property="article:modified_time" content="2026-06-26T07:05:09.336Z">
 <meta property="article:author" content="Corgis">
 <meta name="twitter:card" content="summary">
 
@@ -282,6 +282,9 @@
 <p>压实操作会丢弃被覆盖的值（overwritten values）；若不存在更高编号的层级包含与当前键范围重叠的文件，则会一并丢弃该键的删除标记（deletion markers）。</p>
 <h3 id="时间开销-Timing"><a href="#时间开销-Timing" class="headerlink" title="时间开销 Timing"></a>时间开销 Timing</h3><p>Level-0 压实操作最多会从 Level-0 读取 4 个 1MB 大小的文件，最坏情况下需读取所有 Level-1 文件（总计 10MB）。即，压实过程需读取 14MB 数据并写入 14MB 数据。</p>
 <p>除特殊的 Level-0 压实外，会从 L 层级选取 1 个 2MB 大小的文件。最坏情况下，该文件会与 L+1 层级的约 12 个文件重叠（其中 10 个源于 L+1 层级的总大小是 L 层级的 10 倍，另外 2 个源于 L 层级与 L+1 层级的文件键范围通常无法对齐，导致边界处额外重叠）。因此，压实操作需读取 26MB 数据并写入 26MB 数据。假设现代硬盘的 I&#x2F;O 速率为 100MB&#x2F;s（常规水平），最坏情况下压实耗时约 0.5 秒。</p>
+<blockquote>
+<p>假设 Level L 中选取了一个 2MB<br>文件，其键范围为 [k1, k2]。在同样的键范围 [k1, k2] 内，Level L+1 的数据密度约为 Level L 的 10<br>倍，所以该范围内约有 2MB × 10 &#x3D; 20MB 的数据。而 Level L+1 的每个 SSTable 文件大小也约 2MB，因此<br>20MB &#x2F; 2MB ≈ 10 个文件 。加边界2个就12个。</p>
+</blockquote>
 <p>若将后台写入速率限制在较低水平（例如，硬盘峰值速率 100MB&#x2F;s 的 10%），一次压实操作可能耗时长达 5 秒。若用户写入速率为 10MB&#x2F;s，Level-0 可能会累积大量文件（约 50 个文件，用于存储 5 秒内写入的 50MB 数据）。这会导致读取时需合并更多文件，显著增加读取开销。</p>
 <blockquote>
 <p>26MB&#x2F;(10MB&#x2F;s) &#x3D; 2.6秒，但这是最理想的情况，文档写5秒估计是测试结果。</p>
@@ -330,7 +333,7 @@
 
           <div class="post-nav">
             <div class="post-nav-item">
-                <a href="/2025-11-24-%E7%94%A8CMS%E5%AE%9E%E7%8E%B0redis%E7%83%ADkey%E9%87%87%E9%9B%86.md/%E7%94%A8CMS%E5%AE%9E%E7%8E%B0redis%E7%83%ADkey%E9%87%87%E9%9B%86/" rel="prev" title="用CMS实现redis热key采集">
+                <a href="/2025-11-24-%E7%94%A8CMS%E5%AE%9E%E7%8E%B0redis%E7%83%ADkey%E9%87%87%E9%9B%86/" rel="prev" title="用CMS实现redis热key采集">
                   <i class="fa fa-angle-left"></i> 用CMS实现redis热key采集
                 </a>
             </div>

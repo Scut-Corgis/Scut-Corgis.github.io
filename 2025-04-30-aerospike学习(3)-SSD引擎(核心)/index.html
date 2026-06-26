@@ -32,7 +32,7 @@
 <meta property="og:image" content="https://scut-corgis.github.io/2025-04-30-aerospike%E5%AD%A6%E4%B9%A0(3)-SSD%E5%BC%95%E6%93%8E(%E6%A0%B8%E5%BF%83)/wblock%E7%A2%8E%E7%89%87%E6%95%B4%E7%90%86.svg">
 <meta property="og:image" content="https://scut-corgis.github.io/2025-04-30-aerospike%E5%AD%A6%E4%B9%A0(3)-SSD%E5%BC%95%E6%93%8E(%E6%A0%B8%E5%BF%83)/wblock%E7%8A%B6%E6%80%81%E8%BD%AC%E7%A7%BB.svg">
 <meta property="article:published_time" content="2025-04-30T13:41:51.000Z">
-<meta property="article:modified_time" content="2026-04-20T08:23:10.046Z">
+<meta property="article:modified_time" content="2026-06-26T07:05:09.165Z">
 <meta property="article:author" content="Corgis">
 <meta name="twitter:card" content="summary">
 <meta name="twitter:image" content="https://scut-corgis.github.io/2025-04-30-aerospike%E5%AD%A6%E4%B9%A0(3)-SSD%E5%BC%95%E6%93%8E(%E6%A0%B8%E5%BF%83)/ssd%E7%BB%93%E6%9E%84.png">
@@ -231,7 +231,7 @@
 <p>ssd以页为单位读写，以块为单位擦除。寻址时间是几乎可以不计的。</p>
 <p>操作系统通过传给ssd硬件驱动页号，对其页进行读写。在ssd内部，每个页只允许写入一次，如果第二次写入，则必须搬迁到其他的页中，并擦除原来页所在的整个块。</p>
 <p>对于传统的lsm结构，如rocksdb，其追加写模式最初是为机械硬盘设计的，能减少占比最大的寻道时间。但一定程度上也对ssd结构友好。大量的追加写会使得操作系统尽量传连续的页号给ssd，ssd的ftl也会尽量使其能够在同一个块中进行写入，保证每个页只会写入一次，减少了因搬迁造成的性能损耗。</p>
-<p>但显然这有缺陷，首先，上层无法控制操作系统传多少连续的页号，举个例子，可能一个块有32个页，而上层传的地址范围，对应页号到操作系统可能是间断的，比如3、7、9个页，那么就做了三次访问ssd的io操作。当然上面的这种情况操作系统会做足够的优化，只要你不主动调用sync刷盘，操作系统会自己决定什么时候刷page cache，影响不算大。第二种情况是无法控制一个文件会不会跨块，我们知道compaction涉及到删除文件，那么删除一个文件可能会擦除别的文件的块，造成ssd内部的页数据搬运。</p>
+<p>但显然这有缺陷，首先，上层无法控制操作系统传多少连续的页号，举个例子，一个块有32个页，而上层传的地址范围，对应页号到操作系统可能是间断的，比如3、7、9个页，那么就做了三次访问ssd的io操作。当然上面的这种情况操作系统会做足够的优化，只要你不主动调用sync刷盘，操作系统会自己决定什么时候刷page cache，影响不算大。第二种情况是无法控制一个文件会不会跨块，我们知道compaction涉及到删除文件，那么删除一个文件可能会擦除别的文件的块，造成ssd内部的页数据搬运。</p>
 <p>再者，lsm不可避免的引入了读放大和写放大。读操作而言，如果内存中读不到数据，读可能会读多层sst文件。写操作而言，每一个写操作最终可能有10多倍的写io放大，浪费了很多ssd的带宽。</p>
 <p>对于顺序写文件模型，内核实现存在一个普遍的问题，即只能单线程写wal。比如对于rocksdb，一般会选一个writer_leader出来做某批write_batch的write()系统调用，并调用sync刷盘。但as可以多线程写盘，最大化利用ssd写带宽。</p>
 <p>总的来说，lsm树性能很好，但不是对ssd结构最优的。大致有以下几点：</p>

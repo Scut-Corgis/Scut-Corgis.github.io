@@ -266,7 +266,6 @@
 <p>但<code>failover to</code>命令是有感的，其有两种工作方式，一种是禁写主节点，直到从的offset完全跟上主后再主从切换。一种是直接切换，也就是会丢失所有未同步到从节点的数据。</p>
 <p>因此本文阐述了一种新能力，可以让业务无感知的迁移master节点。</p>
 <h1 id="方法"><a href="#方法" class="headerlink" title="方法"></a>方法</h1><p>主要方法如下：通过修改sentinel的内核，引入了<code>silent-failover</code>命令，通过两阶段的failover，即<code>prepare</code>和<code>done</code>实现无感迁移master。其中从节点需要打开可写开关。</p>
-<p>一种迁移的示意图如下:<br><img src="/%E8%BF%81%E7%A7%BB%E7%A4%BA%E6%84%8F%E5%9B%BE.png"></p>
 <p>引入一个新的哨兵命令，格式如下</p>
 <blockquote>
 <p>sentinel silent-failover master-name slave-node &lt;prepare|done&gt;</p>
@@ -521,9 +520,6 @@
 <h3 id="配置从节点可写（可选）"><a href="#配置从节点可写（可选）" class="headerlink" title="配置从节点可写（可选）"></a>配置从节点可写（可选）</h3><p>如果目标从节点默认配置为只读，需要先打开可写开关：</p>
 <figure class="highlight bash"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br></pre></td><td class="code"><pre><span class="line"><span class="comment"># 在目标从节点上执行</span></span><br><span class="line">CONFIG SET replica-read-only no</span><br><span class="line"></span><br><span class="line"><span class="comment"># 或者在配置文件中设置</span></span><br><span class="line">replica-read-only no</span><br></pre></td></tr></table></figure>
 
-<h3 id="关闭自动修正（可选）"><a href="#关闭自动修正（可选）" class="headerlink" title="关闭自动修正（可选）"></a>关闭自动修正（可选）</h3><p>在某些场景下，可能需要关闭 sentinel 自动修正从节点复制关系：</p>
-<figure class="highlight bash"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br></pre></td><td class="code"><pre><span class="line"><span class="comment"># 关闭自动修正</span></span><br><span class="line">SENTINEL SET mymaster slave-can-auto-revert-to-configured-master no</span><br><span class="line"></span><br><span class="line"><span class="comment"># 执行 silent-failover ...</span></span><br><span class="line"></span><br><span class="line"><span class="comment"># 重新打开自动修正</span></span><br><span class="line">SENTINEL SET mymaster slave-can-auto-revert-to-configured-master <span class="built_in">yes</span></span><br></pre></td></tr></table></figure>
-
 <h2 id="常见错误场景"><a href="#常见错误场景" class="headerlink" title="常见错误场景"></a>常见错误场景</h2><h3 id="错误1-从节点状态不满足"><a href="#错误1-从节点状态不满足" class="headerlink" title="错误1: 从节点状态不满足"></a>错误1: 从节点状态不满足</h3><figure class="highlight plaintext"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">ERR Slave status is not ready</span><br></pre></td></tr></table></figure>
 
 <p><strong>原因</strong>：目标从节点不满足升级条件（优先级为0、S_DOWN、O_DOWN等）</p>
@@ -554,8 +550,39 @@
 <ol>
 <li><strong>prepare 阶段</strong>：发送假的 +switch-master 事件，让 proxy 切流到从节点，但实际主从关系未变</li>
 <li><strong>done 阶段</strong>：执行真正的主从切换，将从节点提升为主节点</li>
+<li><strong>全量同步收尾</strong>：done 阶段完成后，对新主的所有从节点逐一执行 <code>REPLICAOF NO ONE</code> + <code>REPLICAOF 新主</code>，触发全量同步，确保 prepare 阶段写入的数据不因新主再次宕机而丢失</li>
 </ol>
 <p>这套方案的核心挑战在于多 sentinel 之间的状态共识，通过 hello 消息扩展字段实现状态的同步与传播。</p>
+<h1 id="流程详细步骤"><a href="#流程详细步骤" class="headerlink" title="流程详细步骤"></a>流程详细步骤</h1><p>整体步骤见</p>
+<p><img src="/2026-01-22-redis%E6%97%A0%E6%84%9F%E8%BF%81%E7%A7%BBmaster/%E6%97%A0%E6%84%9F%E8%BF%81%E7%A7%BB%E6%AD%A5%E9%AA%A4.png"></p>
+<ol>
+<li>保存原slave readonly配置</li>
+<li>保存原节点优先级大小</li>
+<li>创建新从节点到目标机器上，等待数据同步完毕</li>
+<li>关闭sentinel自动修正topo能力</li>
+<li>将原主的所有从 slave of到新从上</li>
+<li>更新slave优先级，使得后续主宕机时能够选取新从作为新主</li>
+<li>关闭新从的readonly</li>
+<li>执行silent failover prepare</li>
+<li>等待proxy的qps归0</li>
+<li>kill掉原主，等待主从切换完毕</li>
+<li>恢复之前保留的各项配置</li>
+<li>新topo结构的slave原地发起迁移，确保拿到prepare期间写入的数据</li>
+</ol>
+<h1 id="潜在问题与修复"><a href="#潜在问题与修复" class="headerlink" title="潜在问题与修复"></a>潜在问题与修复</h1><h2 id="Prepare-阶段写数据的潜在丢失问题"><a href="#Prepare-阶段写数据的潜在丢失问题" class="headerlink" title="Prepare 阶段写数据的潜在丢失问题"></a>Prepare 阶段写数据的潜在丢失问题</h2><h3 id="问题描述"><a href="#问题描述" class="headerlink" title="问题描述"></a>问题描述</h3><p>Prepare 阶段存在一个需要注意的漏洞：proxy 收到 <code>+switch-master</code> 后将写操作切流到目标从节点（此时它还是从节点），但 <strong>Redis 从节点收到的写命令不会同步给自己的下游从节点</strong>，也<strong>不会更改自己的 replication offset</strong>（这是 Redis 为保证主从同步链路安全性的设计）。</p>
+<p>这意味着目标从节点的那些下游从节点，对 prepare 阶段写入的数据是完全不知情的。一旦在 done 流程完成后，新主节点（即原目标从节点）再次宕机，这部分写数据将无法从其下游从节点中找回，<strong>造成数据丢失</strong>。</p>
+<figure class="highlight plaintext"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br></pre></td><td class="code"><pre><span class="line">Prepare 阶段写入路径：</span><br><span class="line">  proxy → 目标从节点（只读→可写）</span><br><span class="line">                ↓ 不同步</span><br><span class="line">           目标从节点的下游从节点（感知不到这些写命令）</span><br><span class="line"></span><br><span class="line">若新主宕机：</span><br><span class="line">  下游从节点晋升为主 → prepare 阶段写入的数据永久丢失</span><br></pre></td></tr></table></figure>
+
+<h3 id="解决方案"><a href="#解决方案" class="headerlink" title="解决方案"></a>解决方案</h3><p>在整个 silent-failover 流程（prepare + done）全部完成后，对新主节点的<strong>所有从节点逐一强制全量同步</strong>，步骤如下：</p>
+<figure class="highlight bash"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br></pre></td><td class="code"><pre><span class="line"><span class="comment"># 对新主（例如 10.0.0.2:6379）的每一个从节点执行：</span></span><br><span class="line"></span><br><span class="line"><span class="comment"># 1. 先断开当前复制关系，使从节点成为独立节点</span></span><br><span class="line">REPLICAOF NO ONE</span><br><span class="line"></span><br><span class="line"><span class="comment"># 2. 再重新指向新主，触发全量同步（FULLRESYNC）</span></span><br><span class="line">REPLICAOF 10.0.0.2 6379</span><br></pre></td></tr></table></figure>
+
+<p>通过 <code>REPLICAOF NO ONE</code> + <code>REPLICAOF 新主</code> 的方式，强制从节点与新主进行全量同步（RDB 快照传输），从而将 prepare 阶段写入的数据完整地复制到所有从节点。此后即使新主再次宕机，下游从节点也持有完整数据，可以安全晋升。</p>
+<h2 id="关闭sentinel自动修正主从关系"><a href="#关闭sentinel自动修正主从关系" class="headerlink" title="关闭sentinel自动修正主从关系"></a>关闭sentinel自动修正主从关系</h2><p>从节点slaveof自动修正现象，在sentinel收到相关节点的info命令回复的时候执行的。</p>
+<p>在星型复制转为链式复制时，即s11和s12节点挂在s1上面时，sentinel会发现其挂的master是错误的，在20秒内会将其修正回slaveof M1节点，导致后续无感迁移失败。</p>
+<p>之前的处理方式是：在星型转链式后，立马执行<code>sentinel reset master</code>命令，以清空sentinel的缓存信息，但是这个清空动作必须快速的覆盖到3个sentinel，但是实际上又不允许同时<code>reset</code>三个sentinel，因为若此时一旦主节点宕机，将找不到任何从节点用于主从切换。</p>
+<p>同时，现在的无感迁移的逻辑是，在prepare执行完毕后，执行了prepare的sentinel也会自动的把链式重新修回星型，也不符合预期。</p>
+<p>因此开发了一个开关，在无感迁移流程中，需要关闭 sentinel 自动修正从节点复制关系：</p>
+<figure class="highlight bash"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br></pre></td><td class="code"><pre><span class="line"><span class="comment"># 关闭自动修正</span></span><br><span class="line">SENTINEL SET mymaster slave-can-auto-revert-to-configured-master no</span><br><span class="line"></span><br><span class="line"><span class="comment"># 执行 silent-failover ...</span></span><br><span class="line"></span><br><span class="line"><span class="comment"># 重新打开自动修正</span></span><br><span class="line">SENTINEL SET mymaster slave-can-auto-revert-to-configured-master <span class="built_in">yes</span></span><br></pre></td></tr></table></figure>
 
       
     </div>

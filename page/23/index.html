@@ -232,7 +232,47 @@
 </ul>
 <p>在每秒清空<code>hks_map</code>的同时，会对其遍历，以生成一个<strong>新的hkc_map</strong>。查看是否有访问次数大于<code>min_qps</code>的命令，如果有，将其导入<code>hkc_map</code>，如果此时老的<code>hkc_map</code>还有对应的rsp缓存，我们将其复制到新的以防止替换过程的缓存失效。</p>
 <p>以上为缓存功能的数据结构，为了展示热cmd，还存在一个<strong>聚合红黑树</strong><code>hk_record_map</code>:</p>
-<p>将每一秒的统计结果用求和的方式导入其中。假如每5秒，我们在<code>hk_record_map</code>中已经存入了5秒的数据，可以将其以访问次数转换为从大到小的队列，都附带当前导出的时间戳，输出该5秒的qps情况出去，即可以存放到一个总队列里。总队列可以设置一个允许存放的最长时间戳，超过时清理队列的队尾，即最老时间戳的数据。</p>
+<h3 id="hk-record-map-定位"><a href="#hk-record-map-定位" class="headerlink" title="hk_record_map 定位"></a>hk_record_map 定位</h3><p><code>hk_record_map</code> 是一个以 cmd（含 key 的命令字符串）为键的红黑树，每个节点记录该命令在一个统计窗口内的<strong>总请求数、缓存命中次数、响应延迟累计和最大响应延迟</strong>。它不参与缓存决策，仅作为旁路观测结构——在 <code>hkc_map</code> 返回结果（无论命中还是未命中）时顺带写入，最终通过 stats 接口对外展示热 key 的实际缓存效果。</p>
+<h3 id="数据流三阶段"><a href="#数据流三阶段" class="headerlink" title="数据流三阶段"></a>数据流三阶段</h3><p><strong>第一阶段：采集（主线程，每次请求）</strong></p>
+<p>每当 <code>hkc_map</code> 完成一次查找后，会以 <strong>10% 的概率</strong>对当前 cmd 进行采样记录，将本次是否命中及响应延迟写入 <code>hk_record_map</code>。若该 cmd 已在树中存在，则累加计数和延迟；若不存在，则新建节点插入树中。采用采样而非全量记录，是为了降低主线程的统计开销。</p>
+<p><strong>第二阶段：聚合（主线程，定期执行）</strong></p>
+<p>每隔 <strong>5 秒</strong>，主线程遍历一次 <code>hk_record_map</code>，将所有节点打上当前时间戳后依次插入 <code>curr_queue</code>（一个单向队列），随后清空 <code>hk_record_map</code>，开始下一轮采集。为了将数据进一步转交给读取方，主线程每隔 <strong>300ms</strong> 尝试用<strong>非阻塞锁</strong>将 <code>curr_queue</code> 合并到 <code>shadow_queue</code>。若此时锁被 stats 线程持有，则直接跳过本次合并，不阻塞主线程。为防止队列无限增长，<code>curr_queue</code> 条目数超过 <strong>2048</strong> 时新条目会被直接丢弃。</p>
+<p><strong>第三阶段：展示（stats 线程，按需）</strong></p>
+<p>stats 线程读取 <code>shadow_queue</code>，将其中每个节点的数据序列化为 JSON 输出。由于采集时只记录了 10% 的采样，展示时需要将计数<strong>乘以 10 再除以 5（窗口秒数）</strong>，还原出近似的真实 QPS。</p>
+<h3 id="关键设计点"><a href="#关键设计点" class="headerlink" title="关键设计点"></a>关键设计点</h3><table>
+<thead>
+<tr>
+<th>特性</th>
+<th>说明</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>采样率 10%</td>
+<td>降低主线程每次请求的统计开销</td>
+</tr>
+<tr>
+<td>双队列（curr &#x2F; shadow）</td>
+<td>主线程写 curr_queue，stats 线程读 shadow_queue，读写解耦</td>
+</tr>
+<tr>
+<td>非阻塞 trylock</td>
+<td>合并队列时若锁竞争则直接放弃，保证主线程不被统计逻辑阻塞</td>
+</tr>
+<tr>
+<td>容量保护</td>
+<td>curr_queue 超 2048 条时丢弃新条目，防止内存无限增长</td>
+</tr>
+<tr>
+<td>QPS 还原</td>
+<td>展示时 <code>count × 10 / 5 = 实际 QPS</code></td>
+</tr>
+</tbody></table>
+<h3 id="与-hks-map-hkc-map-的关系"><a href="#与-hks-map-hkc-map-的关系" class="headerlink" title="与 hks_map &#x2F; hkc_map 的关系"></a>与 hks_map &#x2F; hkc_map 的关系</h3><p>三个红黑树各司其职，形成”统计 → 缓存 → 观测”的完整链路：</p>
+<ul>
+<li><strong>hks_map</strong>：统计所有 cmd 的请求频率，每秒清空一次，用于评选热 key。</li>
+<li><strong>hkc_map</strong>：存储热 key 的缓存响应，命中时直接返回，不再穿透到 redis-server。</li>
+<li><strong>hk_record_map</strong>：记录 <code>hkc_map</code> 的命中与未命中情况，是对缓存效果的”旁路观测”，本身不影响请求的处理路径。</li>
+</ul>
 <h2 id="命令处理流程"><a href="#命令处理流程" class="headerlink" title="命令处理流程"></a>命令处理流程</h2><p>一个请求到来时，有以下操作步骤</p>
 <ol>
 <li>查看当前<code>hks_map</code>是否缓存了该热cmd，如果缓存了，直接将对应访问次数+1</li>

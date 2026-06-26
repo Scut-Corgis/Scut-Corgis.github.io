@@ -159,7 +159,7 @@
   
 
   <article itemscope itemtype="http://schema.org/Article" class="post-content" lang="">
-    <link itemprop="mainEntityOfPage" href="https://scut-corgis.github.io/2025-11-24-%E7%94%A8CMS%E5%AE%9E%E7%8E%B0redis%E7%83%ADkey%E9%87%87%E9%9B%86.md/%E7%94%A8CMS%E5%AE%9E%E7%8E%B0redis%E7%83%ADkey%E9%87%87%E9%9B%86/">
+    <link itemprop="mainEntityOfPage" href="https://scut-corgis.github.io/2025-11-24-%E7%94%A8CMS%E5%AE%9E%E7%8E%B0redis%E7%83%ADkey%E9%87%87%E9%9B%86/">
 
     <span hidden itemprop="author" itemscope itemtype="http://schema.org/Person">
       <meta itemprop="image" content="/images/corgis.jpg">
@@ -177,7 +177,7 @@
     </span>
       <header class="post-header">
         <h2 class="post-title" itemprop="name headline">
-          <a href="/2025-11-24-%E7%94%A8CMS%E5%AE%9E%E7%8E%B0redis%E7%83%ADkey%E9%87%87%E9%9B%86.md/%E7%94%A8CMS%E5%AE%9E%E7%8E%B0redis%E7%83%ADkey%E9%87%87%E9%9B%86/" class="post-title-link" itemprop="url">用CMS实现redis热key采集</a>
+          <a href="/2025-11-24-%E7%94%A8CMS%E5%AE%9E%E7%8E%B0redis%E7%83%ADkey%E9%87%87%E9%9B%86/" class="post-title-link" itemprop="url">用CMS实现redis热key采集</a>
         </h2>
 
         <div class="post-meta-container">
@@ -213,8 +213,8 @@
           <h1 id="背景"><a href="#背景" class="headerlink" title="背景"></a>背景</h1><p>之前其实已经看过了非常多种的热key算法，自己也用space-saving实现过一套proxy上的热key收集和缓存。但是最近看到的CMS算法，我觉得也非常好，时间复杂度低，原理清晰简单，空间消耗也是常数。</p>
 <p>CMS算法的全称叫Count-Min Sketch，redis的开源module布隆过滤器RedisBloom就是基于它实现的统计元素的使用计数。</p>
 <h1 id="Count-Min-Sketch"><a href="#Count-Min-Sketch" class="headerlink" title="Count-Min Sketch"></a>Count-Min Sketch</h1><h2 id="核心原理"><a href="#核心原理" class="headerlink" title="核心原理"></a>核心原理</h2><p>基于哈希函数和二维数组（矩阵），通过多个哈希函数将元素映射到二维数组的不同位置，并对对应位置的计数器进行累加，以此来估算元素的频率。</p>
-<p><img src="/%E5%8E%9F%E7%90%86.png"></p>
-<h2 id="具体逻辑"><a href="#具体逻辑" class="headerlink" title="具体逻辑"></a>具体逻辑</h2><p><img src="/%E5%8E%9F%E7%90%862.png"></p>
+<p><img src="/2025-11-24-%E7%94%A8CMS%E5%AE%9E%E7%8E%B0redis%E7%83%ADkey%E9%87%87%E9%9B%86/%E5%8E%9F%E7%90%86.png"></p>
+<h2 id="具体逻辑"><a href="#具体逻辑" class="headerlink" title="具体逻辑"></a>具体逻辑</h2><p><img src="/2025-11-24-%E7%94%A8CMS%E5%AE%9E%E7%8E%B0redis%E7%83%ADkey%E9%87%87%E9%9B%86/%E5%8E%9F%E7%90%862.png"></p>
 <ol>
 <li>数据结构：假设有 d 个哈希函数h1, h2 … hd ，以及一个大小为w*d的二维数组（计数器矩阵） C 。这里 w 表示每个哈希函数映射的桶（bucket）的数量， d 表示哈希函数的个数。</li>
 <li>元素计数：当一个元素 x 出现时，分别通过 d 个哈希函数计算其在二维数组中的位置。即对于第 i 个哈希函数hi，计算hi(x) ，得到一个在 0 到 w 之间的索引值，然后将矩阵 C 中第 i 列、索引值对应的位置的计数器加 1 ，也就是 (C[i][hi(x)]++) 。</li>
